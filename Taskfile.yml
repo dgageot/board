@@ -1,0 +1,17 @@
+version: "3"
+
+tasks:
+  run:
+    desc: Run the board server
+    cmds:
+      - go run .
+
+  build:
+    desc: Build the board binary
+    cmds:
+      - go build -o board .
+
+  lint:
+    desc: Run linter
+    cmds:
+      - golangci-lint run ./...

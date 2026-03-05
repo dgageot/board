@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docker Agent Board</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <h1>🐳 Docker Agent Board</h1>
+    <div class="header-actions">
+      <button id="btn-projects" class="btn btn-secondary" title="Manage projects">📁 Projects</button>
+      <button id="btn-columns" class="btn btn-secondary" title="Configure column prompts">⚙️ Columns</button>
+      <button id="btn-theme" class="btn btn-secondary" title="Toggle theme">🌙</button>
+    </div>
+  </header>
+
+  <main id="board"></main>
+
+  <dialog id="new-task-dialog" class="dialog-large">
+    <div class="dialog-header">
+      <span>🚀 New Task</span>
+      <button class="dialog-close" data-close title="Close">✕</button>
+    </div>
+    <form method="dialog" autocomplete="off" class="dialog-body">
+      <p class="dialog-subtitle">Create a new task for an agent to work on</p>
+      <div class="form-grid">
+        <label>Project
+          <select id="task-project"></select>
+        </label>
+        <label>Title
+          <input id="task-title" type="text" placeholder="e.g. Add user authentication" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        </label>
+      </div>
+      <label>Prompt
+        <textarea id="task-prompt" rows="10" placeholder="Describe in detail what the agent should do..." required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="submit" class="btn btn-primary" title="Create task">🤖 Create Task</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="projects-dialog">
+    <div class="dialog-header">
+      <span>📁 Projects</span>
+      <button class="dialog-close" data-close title="Close">✕</button>
+    </div>
+    <form method="dialog" autocomplete="off" class="dialog-body">
+      <div id="projects-list"></div>
+      <h3>Add Project</h3>
+      <label>Name
+        <input id="proj-name" type="text" placeholder="My Project" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </label>
+      <label>Repo Path
+        <input id="proj-repo" type="text" placeholder="/path/to/repo" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </label>
+      <label>Agent Config
+        <input id="proj-agent" type="text" placeholder="/path/to/agent.yaml" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </label>
+      <div class="dialog-actions">
+        <button type="submit" class="btn btn-primary">Add</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="terminal-dialog" class="dialog-terminal">
+    <div class="dialog-header">
+      <span id="terminal-title">Terminal</span>
+      <button class="dialog-close" id="close-terminal" title="Close">✕</button>
+    </div>
+    <div id="terminal-container"></div>
+  </dialog>
+
+  <dialog id="columns-dialog" class="dialog-large">
+    <div class="dialog-header">
+      <span>⚙️ Column Prompts</span>
+      <button class="dialog-close" data-close title="Close">✕</button>
+    </div>
+    <form method="dialog" autocomplete="off" class="dialog-body">
+      <p class="dialog-subtitle">Configure the prompt sent to the agent when a task enters each column</p>
+      <div id="columns-list"></div>
+      <div class="dialog-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="diff-dialog" class="dialog-terminal">
+    <div class="dialog-header">
+      <span id="diff-title">Diff</span>
+      <button class="dialog-close" id="close-diff" title="Close">✕</button>
+    </div>
+    <div id="diff-container"></div>
+  </dialog>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
