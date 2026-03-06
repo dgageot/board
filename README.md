@@ -1,4 +1,4 @@
-# 🐳 Board
+# 🐳 Kanban for Docker Agent
 
 A kanban board for orchestrating AI coding agents.
 
