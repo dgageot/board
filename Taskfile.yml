@@ -11,6 +11,11 @@ tasks:
     cmds:
       - go build -o board .
 
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./...
+
   lint:
     desc: Run linter
     cmds:
