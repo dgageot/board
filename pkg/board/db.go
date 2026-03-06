@@ -179,7 +179,7 @@ func detectVersion(db *sqlx.DB) int {
 const cardColumns = "id, title, col, status, auto, agent, repo_path, branch, worktree, session"
 
 func (s *SQLiteStore) ListCards() ([]*Card, error) {
-	var cards []*Card
+	cards := []*Card{}
 	if err := s.db.Select(&cards, "SELECT "+cardColumns+" FROM cards ORDER BY rowid"); err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (s *SQLiteStore) DeleteCard(id string) error {
 }
 
 func (s *SQLiteStore) ListCardsByColumn(column string) ([]*Card, error) {
-	var cards []*Card
+	cards := []*Card{}
 	if err := s.db.Select(&cards, "SELECT "+cardColumns+" FROM cards WHERE col = ?", column); err != nil {
 		return nil, err
 	}
@@ -247,7 +247,7 @@ func (s *SQLiteStore) ReinsertCard(c *Card) error {
 // --- Projects ---
 
 func (s *SQLiteStore) ListProjects() ([]*Project, error) {
-	var projects []*Project
+	projects := []*Project{}
 	if err := s.db.Select(&projects, "SELECT id, name, repo_path, agent FROM projects"); err != nil {
 		return nil, err
 	}
@@ -278,7 +278,7 @@ func (s *SQLiteStore) DeleteProject(id string) error {
 // --- Columns ---
 
 func (s *SQLiteStore) ListColumns() ([]Column, error) {
-	var cols []Column
+	cols := []Column{}
 	if err := s.db.Select(&cols, "SELECT id, name, emoji, prompt FROM columns ORDER BY pos"); err != nil {
 		return nil, err
 	}
