@@ -8,7 +8,7 @@ import (
 	"github.com/GianlucaP106/gotmux/gotmux"
 )
 
-// NewSession creates a tmux session and runs cagent in it.
+// NewSession creates a tmux session and runs docker agent in it.
 func NewSession(sessionName, workDir, agent, prompt string) error {
 	tmux, err := gotmux.DefaultTmux()
 	if err != nil {
@@ -50,7 +50,7 @@ func NewSession(sessionName, workDir, agent, prompt string) error {
 		return fmt.Errorf("no panes in window")
 	}
 
-	cmd := fmt.Sprintf("cagent run %s --yolo %q", agent, prompt)
+	cmd := fmt.Sprintf("docker agent run %s --yolo %q", agent, prompt)
 	if err := panes[0].SendKeys(cmd); err != nil {
 		return fmt.Errorf("send keys: %w", err)
 	}
@@ -61,7 +61,7 @@ func NewSession(sessionName, workDir, agent, prompt string) error {
 	return nil
 }
 
-// SendKeys sends a follow-up message to a running cagent session.
+// SendKeys sends a follow-up message to a running docker agent session.
 // It uses -l (literal) so the text is typed into the TUI as-is,
 // then sends Enter separately to submit it.
 func SendKeys(sessionName, message string) error {
