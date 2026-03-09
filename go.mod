@@ -4,22 +4,19 @@ go 1.26.1
 
 require (
 	github.com/GianlucaP106/gotmux v0.5.0
+	github.com/creack/pty v1.1.11
 	github.com/gorilla/websocket v1.4.2
 	github.com/jmoiron/sqlx v1.4.0
-	github.com/sorenisanerd/gotty v1.6.0
 	github.com/stretchr/testify v1.11.1
 	modernc.org/sqlite v1.46.1
 )
 
 require (
-	github.com/NYTimes/gziphandler v1.1.1 // indirect
-	github.com/creack/pty v1.1.11 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect

@@ -52,6 +52,7 @@
 
 html, body {
   height: 100%;
+  overflow: hidden;
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);

@@ -1,25 +1,27 @@
 package board
 
 import (
-	"context"
-	"io"
+	"cmp"
+	"encoding/json"
 	"log"
 	"net/http"
+	"os/exec"
+	"strconv"
+	"sync"
 
+	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
-	"github.com/sorenisanerd/gotty/backend/localcommand"
-	"github.com/sorenisanerd/gotty/webtty"
 )
 
-var wsUpgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	Subprotocols:    webtty.Protocols,
-	CheckOrigin:     func(*http.Request) bool { return true },
+// resizeMsg is the JSON message sent by the terminal client on resize.
+type resizeMsg struct {
+	Type string `json:"type"`
+	Cols uint16 `json:"cols"`
+	Rows uint16 `json:"rows"`
 }
 
 // handleTerminalWS upgrades the request to a WebSocket and bridges it
-// to a tmux attach session using gotty's webtty protocol.
+// to a tmux attach session using raw PTY I/O.
 func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	sessionName := r.PathValue("session")
 	if sessionName == "" {
@@ -27,81 +29,74 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("websocket upgrade: %v", err)
 		return
 	}
 	defer func() { _ = conn.Close() }()
 
-	if err := processTerminalConn(r.Context(), conn, sessionName); err != nil {
+	cols, _ := strconv.Atoi(r.URL.Query().Get("cols"))
+	rows, _ := strconv.Atoi(r.URL.Query().Get("rows"))
+
+	cmd := exec.Command("tmux", "-2", "attach", "-t", sessionName)
+	cmd.Env = append(cmd.Environ(), "TERM=xterm-256color")
+
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
+		Cols: uint16(cmp.Or(cols, 80)),
+		Rows: uint16(cmp.Or(rows, 24)),
+	})
+	if err != nil {
 		log.Printf("terminal session %s: %v", sessionName, err)
+		return
 	}
-}
+	defer func() { _ = ptmx.Close() }()
 
-func processTerminalConn(ctx context.Context, conn *websocket.Conn, sessionName string) error {
-	// Read the initial auth/init message (gotty protocol).
-	typ, _, err := conn.ReadMessage()
-	if err != nil {
-		return err
-	}
-	if typ != websocket.TextMessage {
-		return err
-	}
+	var wg sync.WaitGroup
 
-	// Create the local command: tmux -2 attach -t <session>
-	// Use -2 for 256-color and set TERM for proper TUI support.
-	slave, err := localcommand.New(
-		"tmux",
-		[]string{"-2", "attach", "-t", sessionName},
-		nil,
-	)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = slave.Close() }()
-
-	tty, err := webtty.New(
-		&wsConn{conn},
-		slave,
-		webtty.WithPermitWrite(),
-	)
-	if err != nil {
-		return err
-	}
-
-	return tty.Run(ctx)
-}
-
-// wsConn wraps a gorilla/websocket.Conn to implement io.ReadWriter
-// compatible with webtty.Master.
-type wsConn struct {
-	*websocket.Conn
-}
-
-func (w *wsConn) Write(p []byte) (int, error) {
-	writer, err := w.NextWriter(websocket.TextMessage)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = writer.Close() }()
-	return writer.Write(p)
-}
-
-func (w *wsConn) Read(p []byte) (int, error) {
-	for {
-		msgType, reader, err := w.NextReader()
-		if err != nil {
-			return 0, err
+	// PTY → WebSocket
+	wg.Go(func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				if writeErr := conn.WriteMessage(websocket.TextMessage, buf[:n]); writeErr != nil {
+					return
+				}
+			}
+			if err != nil {
+				return
+			}
 		}
-		if msgType != websocket.TextMessage {
-			continue
+	})
+
+	// WebSocket → PTY
+	wg.Go(func() {
+		defer func() { _ = conn.Close() }()
+
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+
+			if len(data) > 0 && data[0] == '{' {
+				var msg resizeMsg
+				if json.Unmarshal(data, &msg) == nil && msg.Type == "resize" {
+					_ = pty.Setsize(ptmx, &pty.Winsize{Cols: msg.Cols, Rows: msg.Rows})
+					continue
+				}
+			}
+
+			if _, err := ptmx.Write(data); err != nil {
+				return
+			}
 		}
-		b, err := io.ReadAll(reader)
-		if len(b) > len(p) {
-			return 0, err
-		}
-		n := copy(p, b)
-		return n, err
-	}
+	})
+
+	_ = cmd.Wait()
+	_ = conn.WriteMessage(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session ended"))
+	wg.Wait()
 }

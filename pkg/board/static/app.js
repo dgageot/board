@@ -268,9 +268,7 @@ function openTerminal(sessionName, title) {
   const container = document.getElementById("terminal-container");
   document.getElementById("terminal-title").textContent = title;
 
-  // Clean up any previous terminal
   closeTerminal();
-
   dialog.showModal();
 
   const term = new Terminal({
@@ -311,14 +309,27 @@ function openTerminal(sessionName, title) {
   const fitAddon = new FitAddon.FitAddon();
   term.loadAddon(fitAddon);
   term.open(container);
+  activeTerm = term;
 
-  // Small delay to let the dialog render before fitting
   requestAnimationFrame(() => {
     fitAddon.fit();
-    connectTerminalWS(term, fitAddon, sessionName);
-  });
 
-  activeTerm = term;
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${protocol}//${location.host}/api/terminal/${sessionName}?cols=${term.cols}&rows=${term.rows}`;
+    const socket = new WebSocket(url);
+    activeSocket = socket;
+
+    socket.onmessage = (e) => term.write(e.data);
+    socket.onclose = () => term.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
+    socket.onerror = () => term.write("\r\n\x1b[31m[connection error]\x1b[0m\r\n");
+
+    term.onData((data) => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(data);
+    });
+    term.onResize(({ cols, rows }) => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "resize", cols, rows }));
+    });
+  });
 
   const resizeHandler = () => {
     if (activeTerm) fitAddon.fit();
@@ -327,94 +338,11 @@ function openTerminal(sessionName, title) {
   dialog._resizeHandler = resizeHandler;
 }
 
-function connectTerminalWS(term, fitAddon, sessionName) {
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${protocol}//${location.host}/api/terminal/${sessionName}`;
-  const socket = new WebSocket(url, ["webtty"]);
-
-  activeSocket = socket;
-
-  socket.onopen = () => {
-    // Send the init message (gotty protocol expects it)
-    socket.send(JSON.stringify({ AuthToken: "", Arguments: "" }));
-
-    // Send initial resize after a tick (wait for server init messages)
-    setTimeout(() => {
-      sendResize(socket, term);
-    }, 100);
-  };
-
-  socket.onmessage = (event) => {
-    const data = event.data;
-    if (data.length === 0) return;
-
-    const msgType = data[0];
-    const payload = data.substring(1);
-
-    switch (msgType) {
-      case "1": // Output (base64 encoded)
-        try {
-          const decoded = atob(payload);
-          term.write(decoded);
-        } catch {
-          term.write(payload);
-        }
-        break;
-      case "2": // Pong
-        break;
-      case "3": // SetWindowTitle
-        document.getElementById("terminal-title").textContent = payload;
-        break;
-      case "4": // SetPreferences
-        break;
-      case "5": // SetReconnect
-        break;
-      case "6": // SetBufferSize
-        break;
-    }
-  };
-
-  socket.onclose = () => {
-    term.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
-  };
-
-  socket.onerror = () => {
-    term.write("\r\n\x1b[31m[connection error]\x1b[0m\r\n");
-  };
-
-  // Forward terminal input to server
-  term.onData((data) => {
-    if (socket.readyState === WebSocket.OPEN) {
-      socket.send("1" + data); // '1' = Input
-    }
-  });
-
-  // Forward resize events
-  term.onResize(() => {
-    sendResize(socket, term);
-  });
-
-  // Keepalive ping
-  const pingInterval = setInterval(() => {
-    if (socket.readyState === WebSocket.OPEN) {
-      socket.send("2"); // Ping
-    }
-  }, 30000);
-  socket._pingInterval = pingInterval;
-}
-
-function sendResize(socket, term) {
-  if (socket.readyState === WebSocket.OPEN) {
-    socket.send("3" + JSON.stringify({ Columns: term.cols, Rows: term.rows }));
-  }
-}
-
 function closeTerminal() {
   const dialog = document.getElementById("terminal-dialog");
   const container = document.getElementById("terminal-container");
 
   if (activeSocket) {
-    clearInterval(activeSocket._pingInterval);
     activeSocket.close();
     activeSocket = null;
   }
