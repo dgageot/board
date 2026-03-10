@@ -97,6 +97,11 @@ func (b *Board) handleNextCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if card.Status == StatusRunning {
+		writeError(w, fmt.Errorf("%w: cannot move a running card forward", errBadInput))
+		return
+	}
+
 	card.Column = nextCol
 	card.Status = StatusRunning
 	b.poller.ResetCard(card.ID)
@@ -141,6 +146,11 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 
 	srcIdx := columnIndex(cols, card.Column)
 	movedForward := card.Column != req.Column && dstIdx > srcIdx
+
+	if movedForward && card.Status == StatusRunning {
+		writeError(w, fmt.Errorf("%w: cannot move a running card forward", errBadInput))
+		return
+	}
 
 	card.Column = req.Column
 	card.Status = StatusRunning

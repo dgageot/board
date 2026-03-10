@@ -65,6 +65,7 @@ const API = {
 let cards = [];
 let projects = [];
 let columns = [];
+let draggedCard = null;
 
 async function refresh() {
   [cards, projects, columns] = await Promise.all([
@@ -92,6 +93,13 @@ function columnColor(index, total) {
   const g = Math.round(135 + (185 - 135) * t);
   const b = Math.round(61 + (80 - 61) * t);
   return `rgb(${r}, ${g}, ${b})`;
+}
+
+function isForwardMove(srcColId, dstColId) {
+  if (srcColId === dstColId) return false;
+  const srcIdx = columns.findIndex((c) => c.id === srcColId);
+  const dstIdx = columns.findIndex((c) => c.id === dstColId);
+  return dstIdx > srcIdx;
 }
 
 function renderBoard() {
@@ -127,6 +135,10 @@ function renderBoard() {
     // Drop zone handlers
     body.addEventListener("dragover", (e) => {
       e.preventDefault();
+      if (draggedCard?.status === "running" && isForwardMove(draggedCard.column, col.id)) {
+        e.dataTransfer.dropEffect = "none";
+        return;
+      }
       e.dataTransfer.dropEffect = "move";
       body.classList.add("drop-target");
     });
@@ -142,6 +154,7 @@ function renderBoard() {
       body.classList.remove("drop-target");
       const cardId = e.dataTransfer.getData("text/plain");
       if (!cardId) return;
+      if (draggedCard?.status === "running" && isForwardMove(draggedCard.column, col.id)) return;
       try {
         await API.moveCard(cardId, col.id);
       } catch (err) {
@@ -220,12 +233,14 @@ function renderCard(card, colId) {
   el.addEventListener("click", handleCardAction);
 
   el.addEventListener("dragstart", (e) => {
+    draggedCard = card;
     e.dataTransfer.setData("text/plain", card.id);
     e.dataTransfer.effectAllowed = "move";
     el.classList.add("dragging");
   });
 
   el.addEventListener("dragend", () => {
+    draggedCard = null;
     el.classList.remove("dragging");
   });
 
