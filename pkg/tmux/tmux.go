@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -55,7 +56,7 @@ func NewSession(sessionName, workDir, agent, prompt string) error {
 		return fmt.Errorf("list windows: %w", err)
 	}
 	if len(windows) == 0 {
-		return fmt.Errorf("no windows in session")
+		return errors.New("no windows in session")
 	}
 
 	panes, err := windows[0].ListPanes()
@@ -63,7 +64,7 @@ func NewSession(sessionName, workDir, agent, prompt string) error {
 		return fmt.Errorf("list panes: %w", err)
 	}
 	if len(panes) == 0 {
-		return fmt.Errorf("no panes in window")
+		return errors.New("no panes in window")
 	}
 
 	cmd := fmt.Sprintf("docker agent run %s --yolo %s", agent, shellQuote(prompt))
@@ -153,7 +154,7 @@ func PaneContent(sessionName string) (string, error) {
 		return "", err
 	}
 	if len(panes) == 0 {
-		return "", fmt.Errorf("no panes in session")
+		return "", errors.New("no panes in session")
 	}
 
 	return panes[0].CapturePane(nil)

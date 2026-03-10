@@ -9,6 +9,7 @@ linters:
     - containedctx
     - copyloopvar
     - decorder
+    - depguard
     - dogsled
     - durationcheck
     - errcheck
@@ -36,10 +37,12 @@ linters:
     - loggercheck
     - misspell
     - mirror
+    - modernize
     - nakedret
     - nolintlint
     - nosprintfhostport
     - nilnesserr
+    - perfsprint
     - predeclared
     - reassign
     - recvcheck
@@ -59,6 +62,15 @@ linters:
     - whitespace
     - wastedassign
   settings:
+    depguard:
+      rules:
+        testify_is_for_tests:
+          files:
+            - "**/*.go"
+            - "!**/*_test.go"
+          deny:
+            - pkg: github.com/stretchr/testify
+              desc: don't use testify in production code
     forbidigo:
       forbid:
         - pattern: context\.Background()
@@ -75,6 +87,7 @@ linters:
           msg: "do not use fmt.Print() or fmt.Println() in tests"
     gocritic:
       disabled-checks:
+        - dupImport
         - hugeParam
         - rangeValCopy
         - unnamedResult
