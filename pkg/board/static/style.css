@@ -530,8 +530,10 @@ dialog.dialog-terminal[open] {
   overflow: hidden;
   padding: 4px;
 
-  & .xterm {
+  & canvas {
+    display: block;
     height: 100%;
+    width: 100%;
   }
 }
 

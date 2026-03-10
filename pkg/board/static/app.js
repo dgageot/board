@@ -1,3 +1,8 @@
+import { init, Terminal as GhosttyTerminal, FitAddon } from 'ghostty-web';
+
+// Initialize ghostty-web WASM (must complete before creating terminals)
+const ghosttyReady = init();
+
 // --- Theme ---
 
 function getPreferredTheme() {
@@ -263,7 +268,7 @@ async function handleCardAction(e) {
 let activeTerm = null;
 let activeSocket = null;
 
-function openTerminal(sessionName, title) {
+async function openTerminal(sessionName, title) {
   const dialog = document.getElementById("terminal-dialog");
   const container = document.getElementById("terminal-container");
   document.getElementById("terminal-title").textContent = title;
@@ -271,7 +276,9 @@ function openTerminal(sessionName, title) {
   closeTerminal();
   dialog.showModal();
 
-  const term = new Terminal({
+  await ghosttyReady;
+
+  const term = new GhosttyTerminal({
     cursorBlink: true,
     fontSize: 13,
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
@@ -306,10 +313,20 @@ function openTerminal(sessionName, title) {
         },
   });
 
-  const fitAddon = new FitAddon.FitAddon();
+  const fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
   term.open(container);
   activeTerm = term;
+
+  // PR #136 fix: forward wheel events with coordinates when mouse tracking
+  // is active, so tmux panes and other TUI split views scroll correctly.
+  term.attachCustomWheelEventHandler((e) => {
+    if (term.hasMouseTracking()) {
+      term.inputHandler?.handleWheel(e);
+      return true;
+    }
+    return false;
+  });
 
   requestAnimationFrame(() => {
     fitAddon.fit();
