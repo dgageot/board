@@ -8,6 +8,12 @@ import (
 	"github.com/GianlucaP106/gotmux/gotmux"
 )
 
+// shellQuote wraps s in single quotes so that the shell passes it
+// through verbatim (no expansion of $, `, !, etc.).
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
 // NewSession creates a tmux session and runs docker agent in it.
 func NewSession(sessionName, workDir, agent, prompt string) error {
 	tmux, err := gotmux.DefaultTmux()
@@ -50,7 +56,7 @@ func NewSession(sessionName, workDir, agent, prompt string) error {
 		return fmt.Errorf("no panes in window")
 	}
 
-	cmd := fmt.Sprintf("docker agent run %s --yolo %q", agent, prompt)
+	cmd := fmt.Sprintf("docker agent run %s --yolo %s", agent, shellQuote(prompt))
 	if err := panes[0].SendKeys(cmd); err != nil {
 		return fmt.Errorf("send keys: %w", err)
 	}

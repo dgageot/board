@@ -8,14 +8,21 @@ import (
 	"strings"
 )
 
-// CreateWorktree creates a new git worktree with a new branch.
+// CreateWorktree creates a new git worktree with a new branch based on origin/main.
+// It fetches origin first to ensure the branch starts from the latest remote state.
 func CreateWorktree(repoPath, branch, worktreePath string) error {
-	cmd := exec.Command("git", "worktree", "add", "-b", branch, worktreePath)
+	cmd := exec.Command("git", "fetch", "origin", "main")
 	cmd.Dir = repoPath
-	out, err := cmd.CombinedOutput()
-	if err != nil {
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git fetch: %s: %w", out, err)
+	}
+
+	cmd = exec.Command("git", "worktree", "add", "-b", branch, worktreePath, "origin/main")
+	cmd.Dir = repoPath
+	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git worktree add: %s: %w", out, err)
 	}
+
 	return nil
 }
 

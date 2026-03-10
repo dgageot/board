@@ -196,7 +196,7 @@ function renderCard(card, colId) {
   const isRunning = card.status === "running";
   const isDone = colId === "done";
   const canMove = !isRunning && !isDone;
-  el.draggable = !isRunning;
+  el.draggable = true;
 
   const isLastCol = columns.length > 0 && columns[columns.length - 1].id === colId;
 
@@ -211,7 +211,7 @@ function renderCard(card, colId) {
     </div>
     <div class="card-actions">
       <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" data-session="${esc(card.session)}" title="Open terminal session">Terminal</button>
-      ${!isRunning ? `<button class="btn btn-small btn-secondary" data-action="diff" data-id="${card.id}" title="View worktree diff">Diff</button>` : ""}
+      <button class="btn btn-small btn-secondary" data-action="diff" data-id="${card.id}" title="View worktree diff">Diff</button>
       ${canMove ? `<button class="btn btn-small btn-secondary" data-action="next" data-id="${card.id}" title="Move to next column">→ Next</button>` : ""}
       <button class="btn btn-small btn-secondary btn-delete" data-action="delete" data-id="${card.id}" title="Delete task and worktree">✕</button>
     </div>
@@ -220,10 +220,6 @@ function renderCard(card, colId) {
   el.addEventListener("click", handleCardAction);
 
   el.addEventListener("dragstart", (e) => {
-    if (isRunning) {
-      e.preventDefault();
-      return;
-    }
     e.dataTransfer.setData("text/plain", card.id);
     e.dataTransfer.effectAllowed = "move";
     el.classList.add("dragging");

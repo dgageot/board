@@ -16,7 +16,7 @@ type Column struct {
 
 var defaultColumns = []Column{
 	{ID: "dev", Name: "Dev", Emoji: "🔨", Prompt: ""},
-	{ID: "simplify", Name: "Simplify", Emoji: "✨", Prompt: "Look at the local changes and try to simplify the code and architecture but don't remove any feature. I just want the code to be easier to read and maintain."},
+	{ID: "simplify", Name: "Simplify", Emoji: "✨", Prompt: "Start by committing any local changes. Then look at these changes and try to simplify the code and architecture but don't remove any feature. I just want the code to be easier to read and maintain."},
 	{ID: "review", Name: "Review", Emoji: "🔍", Prompt: "Review the local changes. Look for bugs, security issues, and code quality problems. Fix any issues you find."},
 	{ID: "fix", Name: "Fix", Emoji: "🔧", Prompt: "Run the linter and fix any lint issues. Run the tests and fix any failing tests."},
 	{ID: "push", Name: "Push", Emoji: "🚀", Prompt: "Squash all commits on this branch into a single commit with a clear and concise commit message. Push the branch to my fork (remote: dgageot). Then use gh to open a pull request."},
