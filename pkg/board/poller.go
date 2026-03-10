@@ -3,6 +3,7 @@ package board
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"time"
 )
@@ -29,19 +30,18 @@ func newPoller(store Store, sessions SessionManager, onChanged func()) *Poller {
 
 // stableThreshold is the number of consecutive unchanged polls
 // required before a card transitions from running to waiting.
-// With a 3-second poll interval, this means ~9 seconds of inactivity.
 const stableThreshold = 3
 
 // Run periodically checks tmux panes for activity changes.
+// It polls every ~1s with a small random jitter to avoid
+// aliasing with spinners that cycle at exact intervals.
 func (p *Poller) Run(ctx context.Context) {
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
 	for {
+		jitter := time.Duration(rand.IntN(400)) * time.Millisecond
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-time.After(800*time.Millisecond + jitter):
 		}
 
 		if p.poll() {

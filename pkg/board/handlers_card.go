@@ -3,6 +3,7 @@ package board
 import (
 	"fmt"
 	"net/http"
+	"os/exec"
 
 	"github.com/dgageot/board/pkg/git"
 )
@@ -84,42 +85,6 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 		_ = b.sessions.KillSession(sessionName)
 		git.RemoveWorktree(repoPath, wtPath, branch)
 		writeError(w, fmt.Errorf("insert card: %w", err))
-		return
-	}
-
-	b.broadcast()
-	writeJSON(w, card)
-}
-
-func (b *Board) handleNextCard(w http.ResponseWriter, r *http.Request) {
-	card, ok := b.getCard(w, r)
-	if !ok {
-		return
-	}
-
-	cols, _ := b.store.ListColumns()
-	nextCol := nextColumn(cols, card.Column)
-	if nextCol == "" {
-		writeError(w, fmt.Errorf("%w: already in last column", errBadInput))
-		return
-	}
-
-	if card.Status == StatusRunning {
-		writeError(w, fmt.Errorf("%w: cannot move a running card forward", errBadInput))
-		return
-	}
-
-	card.Column = nextCol
-	card.Status = StatusRunning
-	b.poller.ResetCard(card.ID)
-
-	if err := b.store.ReinsertCard(card); err != nil {
-		writeError(w, fmt.Errorf("reinsert card: %w", err))
-		return
-	}
-
-	if err := sendPromptToCard(b.store, b.sessions, card, columnPrompt(cols, nextCol)); err != nil {
-		writeError(w, err)
 		return
 	}
 
@@ -240,6 +205,20 @@ func (b *Board) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
 	b.deleteCardResources(card)
 
 	b.broadcast()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (b *Board) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
+	card, ok := b.getCard(w, r)
+	if !ok {
+		return
+	}
+
+	if err := exec.Command("code", card.Worktree).Start(); err != nil {
+		writeError(w, fmt.Errorf("open vscode: %w", err))
+		return
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

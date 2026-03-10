@@ -46,12 +46,12 @@ async function api(path, opts = {}) {
 const API = {
   listCards: () => api("/cards"),
   createCard: (data) => api("/cards", { method: "POST", body: JSON.stringify(data) }),
-  nextCard: (id) => api(`/cards/${id}/next`, { method: "POST" }),
   jumpCard: (id) => api(`/cards/${id}/jump`, { method: "POST" }),
   deleteCard: (id) => api(`/cards/${id}`, { method: "DELETE" }),
   moveCard: (id, column) => api(`/cards/${id}/move`, { method: "POST", body: JSON.stringify({ column }) }),
   diffCard: (id) => api(`/cards/${id}/diff`),
   toggleAutoCard: (id) => api(`/cards/${id}/auto`, { method: "POST" }),
+  openVSCode: (id) => api(`/cards/${id}/vscode`, { method: "POST" }),
   listProjects: () => api("/projects"),
   createProject: (data) => api("/projects", { method: "POST", body: JSON.stringify(data) }),
   deleteProject: (id) => api(`/projects/${id}`, { method: "DELETE" }),
@@ -206,9 +206,6 @@ function renderCard(card, colId) {
   el.className = `card card-${card.status}`;
   el.dataset.cardId = card.id;
 
-  const isRunning = card.status === "running";
-  const isDone = colId === "done";
-  const canMove = !isRunning && !isDone;
   el.draggable = true;
 
   const isLastCol = columns.length > 0 && columns[columns.length - 1].id === colId;
@@ -223,9 +220,9 @@ function renderCard(card, colId) {
       </label>` : ""}
     </div>
     <div class="card-actions">
-      <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" data-session="${esc(card.session)}" title="Open terminal session">Terminal</button>
+      <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" data-session="${esc(card.session)}" title="Open agent session">Agent</button>
       <button class="btn btn-small btn-secondary" data-action="diff" data-id="${card.id}" title="View worktree diff">Diff</button>
-      ${canMove ? `<button class="btn btn-small btn-secondary" data-action="next" data-id="${card.id}" title="Move to next column">→ Next</button>` : ""}
+      <button class="btn btn-small btn-secondary" data-action="vscode" data-id="${card.id}" title="Open in VSCode">Code</button>
       <button class="btn btn-small btn-secondary btn-delete" data-action="delete" data-id="${card.id}" title="Delete task and worktree">✕</button>
     </div>
   `;
@@ -262,8 +259,8 @@ async function handleCardAction(e) {
     } else if (action === "diff") {
       const title = cards.find((c) => c.id === id)?.title || "Diff";
       openDiffDialog(id, title);
-    } else if (action === "next") {
-      await API.nextCard(id);
+    } else if (action === "vscode") {
+      await API.openVSCode(id);
     } else if (action === "delete") {
       if (confirm("Delete this card and its worktree?")) {
         await API.deleteCard(id);
