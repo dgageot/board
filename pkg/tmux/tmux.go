@@ -40,6 +40,16 @@ func NewSession(sessionName, workDir, agent, prompt string) error {
 		_ = cmd.Run()
 	}
 
+	// Set UTF-8 locale so TUI apps can render special characters.
+	for _, env := range []string{
+		"LANG=en_US.UTF-8",
+		"LC_ALL=en_US.UTF-8",
+	} {
+		k, v, _ := strings.Cut(env, "=")
+		cmd := exec.Command("tmux", "set-environment", "-t", sessionName, k, v)
+		_ = cmd.Run()
+	}
+
 	windows, err := session.ListWindows()
 	if err != nil {
 		return fmt.Errorf("list windows: %w", err)
