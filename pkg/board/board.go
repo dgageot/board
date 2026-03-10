@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 )
 
@@ -52,30 +53,21 @@ func (b *Board) broadcast() {
 // --- Column helpers ---
 
 func nextColumn(cols []Column, current string) string {
-	for i, col := range cols {
-		if col.ID == current && i+1 < len(cols) {
-			return cols[i+1].ID
-		}
+	if i := columnIndex(cols, current); i >= 0 && i+1 < len(cols) {
+		return cols[i+1].ID
 	}
 	return ""
 }
 
 func columnPrompt(cols []Column, colID string) string {
-	for _, col := range cols {
-		if col.ID == colID {
-			return col.Prompt
-		}
+	if i := columnIndex(cols, colID); i >= 0 {
+		return cols[i].Prompt
 	}
 	return ""
 }
 
 func columnIndex(cols []Column, colID string) int {
-	for i, col := range cols {
-		if col.ID == colID {
-			return i
-		}
-	}
-	return -1
+	return slices.IndexFunc(cols, func(c Column) bool { return c.ID == colID })
 }
 
 // --- SSE handler ---

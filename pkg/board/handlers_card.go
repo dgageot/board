@@ -2,11 +2,21 @@ package board
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/dgageot/board/pkg/git"
 )
+
+// getCard retrieves a card by path parameter or writes a 404 error.
+func (b *Board) getCard(w http.ResponseWriter, r *http.Request) (*Card, bool) {
+	id := r.PathValue("id")
+	card, err := b.store.GetCard(id)
+	if err != nil {
+		writeError(w, fmt.Errorf("%w: card %s", errNotFound, id))
+		return nil, false
+	}
+	return card, true
+}
 
 func (b *Board) handleListCards(w http.ResponseWriter, _ *http.Request) {
 	cards, err := b.store.ListCards()
@@ -82,11 +92,8 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Board) handleNextCard(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
-	card, err := b.store.GetCard(id)
-	if err != nil {
-		writeError(w, fmt.Errorf("%w: card %s", errNotFound, id))
+	card, ok := b.getCard(w, r)
+	if !ok {
 		return
 	}
 
@@ -121,8 +128,6 @@ func (b *Board) handleNextCard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
 	var req struct {
 		Column string `json:"column"`
 	}
@@ -138,9 +143,8 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	card, err := b.store.GetCard(id)
-	if err != nil {
-		writeError(w, fmt.Errorf("%w: card %s", errNotFound, id))
+	card, ok := b.getCard(w, r)
+	if !ok {
 		return
 	}
 
@@ -173,11 +177,8 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Board) handleJumpCard(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
-	card, err := b.store.GetCard(id)
-	if err != nil {
-		writeError(w, fmt.Errorf("%w: card %s", errNotFound, id))
+	card, ok := b.getCard(w, r)
+	if !ok {
 		return
 	}
 
@@ -188,35 +189,23 @@ func (b *Board) handleJumpCard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Board) handleDiffCard(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
-	card, err := b.store.GetCard(id)
-	if err != nil {
-		log.Printf("[diff] card %s: not found: %v", id, err)
-		writeError(w, fmt.Errorf("%w: card %s", errNotFound, id))
+	card, ok := b.getCard(w, r)
+	if !ok {
 		return
 	}
-
-	log.Printf("[diff] card %s (%s): worktree=%s", card.ID, card.Title, card.Worktree)
 
 	diff, err := git.Diff(card.Worktree)
 	if err != nil {
-		log.Printf("[diff] card %s: git diff error: %v", card.ID, err)
 		writeError(w, fmt.Errorf("git diff: %w", err))
 		return
 	}
-
-	log.Printf("[diff] card %s: diff length=%d", card.ID, len(diff))
 
 	writeJSON(w, map[string]string{"diff": diff})
 }
 
 func (b *Board) handleToggleAutoCard(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
-	card, err := b.store.GetCard(id)
-	if err != nil {
-		writeError(w, fmt.Errorf("%w: card %s", errNotFound, id))
+	card, ok := b.getCard(w, r)
+	if !ok {
 		return
 	}
 
@@ -230,24 +219,25 @@ func (b *Board) handleToggleAutoCard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, card)
 }
 
-func (b *Board) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+// deleteCardResources cleans up session and worktree for a card.
+func (b *Board) deleteCardResources(card *Card) {
+	b.poller.ResetCard(card.ID)
+	_ = b.sessions.KillSession(card.Session)
+	git.RemoveWorktree(card.RepoPath, card.Worktree, card.Branch)
+}
 
-	card, err := b.store.GetCard(id)
-	if err != nil {
-		writeError(w, fmt.Errorf("%w: card %s", errNotFound, id))
+func (b *Board) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
+	card, ok := b.getCard(w, r)
+	if !ok {
 		return
 	}
 
-	if err := b.store.DeleteCard(id); err != nil {
+	if err := b.store.DeleteCard(card.ID); err != nil {
 		writeError(w, fmt.Errorf("delete card: %w", err))
 		return
 	}
 
-	b.poller.ResetCard(id)
-
-	_ = b.sessions.KillSession(card.Session)
-	git.RemoveWorktree(card.RepoPath, card.Worktree, card.Branch)
+	b.deleteCardResources(card)
 
 	b.broadcast()
 	w.WriteHeader(http.StatusNoContent)
@@ -268,10 +258,7 @@ func (b *Board) handleClearColumn(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		b.poller.ResetCard(card.ID)
-
-		_ = b.sessions.KillSession(card.Session)
-		git.RemoveWorktree(card.RepoPath, card.Worktree, card.Branch)
+		b.deleteCardResources(card)
 	}
 
 	b.broadcast()

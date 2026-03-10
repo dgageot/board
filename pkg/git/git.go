@@ -37,9 +37,16 @@ func RemoveWorktree(repoPath, worktreePath, branch string) {
 	_ = cmd.Run()
 }
 
-// Diff returns the diff between the merge-base of HEAD and main, and the current worktree state.
+// Diff returns the full diff of all changes in the worktree relative to the
+// merge-base with main. This includes committed, staged, unstaged, and
+// untracked files.
 func Diff(worktree string) (string, error) {
-	baseCmd := exec.Command("git", "merge-base", "HEAD", "main")
+	// Mark untracked files as intent-to-add so they appear in the diff.
+	addCmd := exec.Command("git", "add", "--intent-to-add", ".")
+	addCmd.Dir = worktree
+	_ = addCmd.Run()
+
+	baseCmd := exec.Command("git", "merge-base", "HEAD", "origin/main")
 	baseCmd.Dir = worktree
 	baseOut, err := baseCmd.Output()
 	if err != nil {
