@@ -123,15 +123,16 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 
 	card.Column = req.Column
 	card.Status = StatusRunning
-	b.poller.ResetCard(card.ID)
 
-	if err := b.store.ReinsertCard(card); err != nil {
-		writeError(w, fmt.Errorf("reinsert card: %w", err))
-		return
-	}
+	if !movedForward {
+		b.poller.ResetCard(card.ID)
 
-	if movedForward {
-		if err := sendPromptToCard(b.store, b.sessions, card, columnPrompt(cols, req.Column)); err != nil {
+		if err := b.store.ReinsertCard(card); err != nil {
+			writeError(w, fmt.Errorf("reinsert card: %w", err))
+			return
+		}
+	} else {
+		if err := b.poller.MoveCardToColumn(card, req.Column, columnPrompt(cols, req.Column)); err != nil {
 			writeError(w, err)
 			return
 		}
@@ -214,8 +215,8 @@ func (b *Board) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := exec.Command("code", card.Worktree).Start(); err != nil {
-		writeError(w, fmt.Errorf("open vscode: %w", err))
+	if err := exec.Command(b.config.EditorCommand, card.Worktree).Start(); err != nil {
+		writeError(w, fmt.Errorf("open editor: %w", err))
 		return
 	}
 

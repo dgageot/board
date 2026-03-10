@@ -19,12 +19,6 @@ type Board struct {
 }
 
 func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionManager) *Board {
-	// Seed default columns if the table is empty.
-	cols, _ := store.ListColumns()
-	if len(cols) == 0 {
-		_ = store.SeedColumns(defaultColumns)
-	}
-
 	b := &Board{
 		config:   cfg,
 		store:    store,

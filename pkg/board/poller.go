@@ -121,17 +121,10 @@ func (p *Poller) poll() bool {
 	return changed
 }
 
-// autoAdvance moves a card to the next column and sends the column prompt.
-func (p *Poller) autoAdvance(card *Card) bool {
-	cols, _ := p.store.ListColumns()
-	nextCol := nextColumn(cols, card.Column)
-	if nextCol == "" {
-		return false
-	}
-
-	prompt := columnPrompt(cols, nextCol)
-
-	card.Column = nextCol
+// MoveCardToColumn moves a card to the given column, resets its poll state,
+// reinserts it (for ordering), and sends the column prompt.
+func (p *Poller) MoveCardToColumn(card *Card, column, prompt string) error {
+	card.Column = column
 	if prompt != "" {
 		card.Status = StatusRunning
 	} else {
@@ -141,14 +134,21 @@ func (p *Poller) autoAdvance(card *Card) bool {
 	p.ResetCard(card.ID)
 
 	if err := p.store.ReinsertCard(card); err != nil {
+		return fmt.Errorf("reinsert card: %w", err)
+	}
+
+	return p.SendPromptToCard(card, prompt)
+}
+
+// autoAdvance moves a card to the next column and sends the column prompt.
+func (p *Poller) autoAdvance(card *Card) bool {
+	cols, _ := p.store.ListColumns()
+	nextCol := nextColumn(cols, card.Column)
+	if nextCol == "" {
 		return false
 	}
 
-	if err := sendPromptToCard(p.store, p.sessions, card, prompt); err != nil {
-		return false
-	}
-
-	return true
+	return p.MoveCardToColumn(card, nextCol, columnPrompt(cols, nextCol)) == nil
 }
 
 // ResetCard clears the cached pane content for a card.
@@ -159,20 +159,20 @@ func (p *Poller) ResetCard(cardID string) {
 	p.mu.Unlock()
 }
 
-// sendPromptToCard sends a prompt to the card's tmux session.
+// SendPromptToCard sends a prompt to the card's tmux session.
 // If the session is dead, it creates a new one.
-func sendPromptToCard(store Store, sessions SessionManager, card *Card, prompt string) error {
+func (p *Poller) SendPromptToCard(card *Card, prompt string) error {
 	if prompt == "" {
 		return nil
 	}
 
-	if err := sessions.SendKeys(card.Session, prompt); err != nil {
+	if err := p.sessions.SendKeys(card.Session, prompt); err != nil {
 		sessionName := "board-" + newID()[:8]
-		if err := sessions.NewSession(sessionName, card.Worktree, card.Agent, prompt); err != nil {
+		if err := p.sessions.NewSession(sessionName, card.Worktree, card.Agent, prompt); err != nil {
 			return fmt.Errorf("tmux: %w", err)
 		}
 		card.Session = sessionName
-		_ = store.UpdateCard(card)
+		_ = p.store.UpdateCard(card)
 	}
 
 	return nil

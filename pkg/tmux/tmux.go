@@ -113,6 +113,25 @@ func KillSession(sessionName string) error {
 	return session.Kill()
 }
 
+// Sessions provides session management operations backed by tmux.
+type Sessions struct{}
+
+func (Sessions) NewSession(name, workDir, agent, prompt string) error {
+	return NewSession(name, workDir, agent, prompt)
+}
+
+func (Sessions) KillSession(name string) error {
+	return KillSession(name)
+}
+
+func (Sessions) SendKeys(name, message string) error {
+	return SendKeys(name, message)
+}
+
+func (Sessions) PaneContent(name string) (string, error) {
+	return PaneContent(name)
+}
+
 // PaneContent captures the current content of the first pane in a session.
 func PaneContent(sessionName string) (string, error) {
 	tmux, err := gotmux.DefaultTmux()

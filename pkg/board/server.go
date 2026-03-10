@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os/signal"
 	"syscall"
+
+	"github.com/dgageot/board/pkg/tmux"
 )
 
 //go:embed static
@@ -27,7 +29,13 @@ func Run() error {
 	}
 	defer func() { _ = store.Close() }()
 
-	board := newBoard(ctx, cfg, store, tmuxSessionManager{})
+	// Seed default columns if the table is empty.
+	cols, _ := store.ListColumns()
+	if len(cols) == 0 {
+		_ = store.SeedColumns(defaultColumns)
+	}
+
+	board := newBoard(ctx, cfg, store, tmux.Sessions{})
 
 	mux := http.NewServeMux()
 
