@@ -6,14 +6,9 @@ import (
 	"os/exec"
 	"strings"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/GianlucaP106/gotmux/gotmux"
 )
-
-// shellQuote wraps s in single quotes so that the shell passes it
-// through verbatim (no expansion of $, `, !, etc.).
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-}
 
 // NewSession creates a tmux session and runs docker agent in it.
 func NewSession(sessionName, workDir, agent, prompt string) error {
@@ -67,7 +62,7 @@ func NewSession(sessionName, workDir, agent, prompt string) error {
 		return errors.New("no panes in window")
 	}
 
-	cmd := fmt.Sprintf("docker agent run %s --yolo %s", agent, shellQuote(prompt))
+	cmd := fmt.Sprintf("docker agent run %s --yolo %s", agent, shellescape.Quote(prompt))
 	if err := panes[0].SendKeys(cmd); err != nil {
 		return fmt.Errorf("send keys: %w", err)
 	}
