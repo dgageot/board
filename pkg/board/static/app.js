@@ -700,6 +700,18 @@ function esc(s) {
   return el.innerHTML;
 }
 
+// --- Keyboard shortcuts ---
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "n" && e.key !== "N") return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.matches("input, textarea, select")) return;
+  if (document.querySelector("dialog[open]")) return;
+
+  e.preventDefault();
+  openNewTaskDialog();
+});
+
 // --- Init ---
 
 refresh();
