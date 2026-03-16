@@ -342,9 +342,10 @@ async function openTerminal(sessionName, title) {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${protocol}//${location.host}/api/terminal/${sessionName}?cols=${term.cols}&rows=${term.rows}`;
     const socket = new WebSocket(url);
+    socket.binaryType = "arraybuffer";
     activeSocket = socket;
 
-    socket.onmessage = (e) => term.write(e.data);
+    socket.onmessage = (e) => term.write(new Uint8Array(e.data));
     socket.onclose = () => term.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
     socket.onerror = () => term.write("\r\n\x1b[31m[connection error]\x1b[0m\r\n");
 

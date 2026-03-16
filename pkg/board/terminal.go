@@ -41,7 +41,7 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	rows, _ := strconv.Atoi(r.URL.Query().Get("rows"))
 
 	cmd := exec.Command("tmux", "-2", "attach", "-t", sessionName)
-	cmd.Env = append(cmd.Environ(), "TERM=xterm-256color")
+	cmd.Env = append(cmd.Environ(), "TERM=xterm-256color", "LANG=en_US.UTF-8")
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: uint16(cmp.Or(cols, 80)),
@@ -53,6 +53,14 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = ptmx.Close() }()
 
+	// Protect WebSocket writes from concurrent access.
+	var wsMu sync.Mutex
+	wsWrite := func(msgType int, data []byte) error {
+		wsMu.Lock()
+		defer wsMu.Unlock()
+		return conn.WriteMessage(msgType, data)
+	}
+
 	var wg sync.WaitGroup
 
 	// PTY → WebSocket
@@ -61,7 +69,7 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		for {
 			n, err := ptmx.Read(buf)
 			if n > 0 {
-				if writeErr := conn.WriteMessage(websocket.TextMessage, buf[:n]); writeErr != nil {
+				if writeErr := wsWrite(websocket.BinaryMessage, buf[:n]); writeErr != nil {
 					return
 				}
 			}
@@ -73,11 +81,11 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 
 	// WebSocket → PTY
 	wg.Go(func() {
-		defer func() { _ = conn.Close() }()
-
 		for {
 			_, data, err := conn.ReadMessage()
 			if err != nil {
+				// Close the PTY so the reader goroutine and cmd.Wait() unblock.
+				_ = ptmx.Close()
 				return
 			}
 
@@ -96,7 +104,10 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	})
 
 	_ = cmd.Wait()
-	_ = conn.WriteMessage(websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session ended"))
+	// Close the PTY to unblock the reader goroutine.
+	_ = ptmx.Close()
 	wg.Wait()
+
+	_ = wsWrite(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session ended"))
 }
