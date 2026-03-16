@@ -448,15 +448,32 @@ async function submitNewTask(e) {
     title = prompt.length > 60 ? prompt.substring(0, 60) + "…" : prompt;
   }
 
+  const dialog = document.getElementById("new-task-dialog");
+  const submitBtn = dialog.querySelector("button[type=submit]");
+  const originalText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.classList.add("btn-loading");
+  submitBtn.textContent = "Creating…";
+
   try {
     await API.createCard({ title, prompt, projectId });
-    document.getElementById("new-task-dialog").close();
+    dialog.close();
     document.getElementById("task-title").value = "";
     document.getElementById("task-prompt").value = "";
   } catch (err) {
     alert(err.message);
+    submitBtn.disabled = false;
+    submitBtn.classList.remove("btn-loading");
+    submitBtn.textContent = originalText;
   }
 }
+
+document.getElementById("new-task-dialog").addEventListener("close", () => {
+  const submitBtn = document.getElementById("new-task-dialog").querySelector("button[type=submit]");
+  submitBtn.disabled = false;
+  submitBtn.classList.remove("btn-loading");
+  submitBtn.textContent = "🤖 Create Task";
+});
 
 // Projects dialog
 document.getElementById("btn-projects").addEventListener("click", async () => {
