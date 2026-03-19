@@ -439,14 +439,10 @@ document.getElementById("new-task-dialog").addEventListener("keydown", (e) => {
 
 async function submitNewTask(e) {
   e.preventDefault();
-  let title = document.getElementById("task-title").value.trim();
   const prompt = document.getElementById("task-prompt").value.trim();
   const projectId = document.getElementById("task-project").value;
 
   if (!prompt) return;
-  if (!title) {
-    title = prompt.length > 90 ? prompt.substring(0, 90) + "…" : prompt;
-  }
 
   const dialog = document.getElementById("new-task-dialog");
   const submitBtn = dialog.querySelector("button[type=submit]");
@@ -456,9 +452,8 @@ async function submitNewTask(e) {
   submitBtn.textContent = "Creating…";
 
   try {
-    await API.createCard({ title, prompt, projectId });
+    await API.createCard({ prompt, projectId });
     dialog.close();
-    document.getElementById("task-title").value = "";
     document.getElementById("task-prompt").value = "";
   } catch (err) {
     alert(err.message);

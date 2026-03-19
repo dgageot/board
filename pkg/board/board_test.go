@@ -195,7 +195,7 @@ func TestHandleJumpCardNotFound(t *testing.T) {
 func TestHandleCreateCardMissingFields(t *testing.T) {
 	b, _ := newTestBoard(t)
 
-	body := `{"title":"","prompt":""}`
+	body := `{"prompt":""}`
 	req := httptest.NewRequest(http.MethodPost, "/api/cards", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	b.handleCreateCard(rec, req)

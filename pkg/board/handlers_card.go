@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"strings"
 
 	"github.com/dgageot/board/pkg/git"
 )
@@ -29,7 +30,6 @@ func (b *Board) handleListCards(w http.ResponseWriter, _ *http.Request) {
 }
 
 type createCardRequest struct {
-	Title     string `json:"title"`
 	Prompt    string `json:"prompt"`
 	ProjectID string `json:"projectId"`
 }
@@ -40,8 +40,8 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
 		return
 	}
-	if req.Title == "" || req.Prompt == "" {
-		writeError(w, fmt.Errorf("%w: title and prompt required", errBadInput))
+	if req.Prompt == "" {
+		writeError(w, fmt.Errorf("%w: prompt required", errBadInput))
 		return
 	}
 
@@ -54,7 +54,13 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 		repoPath = project.RepoPath
 	}
 
-	branch := sanitizeBranch(req.Title)
+	title, err := generateTitle(agent, req.Prompt)
+	if err != nil {
+		writeError(w, fmt.Errorf("generate title: %w", err))
+		return
+	}
+
+	branch := sanitizeBranch(title)
 	wtPath := git.WorktreePath(repoPath, branch)
 	sessionName := "board-" + newID()[:8]
 
@@ -65,7 +71,7 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 
 	card := &Card{
 		ID:       newID(),
-		Title:    req.Title,
+		Title:    title,
 		Column:   "dev",
 		Status:   StatusRunning,
 		Agent:    agent,
@@ -207,6 +213,16 @@ func (b *Board) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
 
 	b.broadcast()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// generateTitle uses docker agent to generate a short title from a prompt.
+func generateTitle(agent, prompt string) (string, error) {
+	cmd := exec.Command("docker", "agent", "debug", "title", agent, prompt)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("docker agent debug title: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (b *Board) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
