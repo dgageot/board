@@ -41,7 +41,7 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	rows, _ := strconv.Atoi(r.URL.Query().Get("rows"))
 
 	cmd := exec.Command("tmux", "-2", "attach", "-t", sessionName)
-	cmd.Env = append(cmd.Environ(), "TERM=xterm-256color", "LANG=en_US.UTF-8")
+	cmd.Env = append(cmd.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor", "LANG=en_US.UTF-8")
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: uint16(cmp.Or(cols, 80)),

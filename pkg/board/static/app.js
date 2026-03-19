@@ -445,7 +445,7 @@ async function submitNewTask(e) {
 
   if (!prompt) return;
   if (!title) {
-    title = prompt.length > 60 ? prompt.substring(0, 60) + "…" : prompt;
+    title = prompt.length > 90 ? prompt.substring(0, 90) + "…" : prompt;
   }
 
   const dialog = document.getElementById("new-task-dialog");
