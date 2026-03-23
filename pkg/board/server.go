@@ -57,6 +57,10 @@ func Run() error {
 	mux.HandleFunc("GET /api/events", board.handleSSE)
 	mux.HandleFunc("GET /api/terminal/{session}", board.handleTerminalWS)
 
+	// Schedule API
+	mux.HandleFunc("POST /api/schedule", board.handleScheduleCard)
+	mux.HandleFunc("GET /api/schedule", board.handleListSchedule)
+
 	// Static files
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
