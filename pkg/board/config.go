@@ -18,7 +18,7 @@ func DefaultConfig() Config {
 	return Config{
 		DefaultAgent:    cmp.Or(os.Getenv("BOARD_DEFAULT_AGENT"), "agent.yaml"),
 		DefaultRepoPath: cmp.Or(os.Getenv("BOARD_DEFAULT_REPO"), "."),
-		ListenAddr:      cmp.Or(os.Getenv("BOARD_ADDR"), ":8077"),
+		ListenAddr:      cmp.Or(os.Getenv("BOARD_ADDR"), "localhost:8077"),
 		EditorCommand:   cmp.Or(os.Getenv("BOARD_EDITOR"), "code"),
 	}
 }

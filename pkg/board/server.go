@@ -76,7 +76,7 @@ func Run() error {
 		_ = srv.Shutdown(context.Background())
 	}()
 
-	fmt.Printf("Board running at http://localhost%s\n", cfg.ListenAddr)
+	fmt.Printf("Board running at http://%s\n", cfg.ListenAddr)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		return err
