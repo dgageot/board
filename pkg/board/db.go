@@ -255,9 +255,9 @@ func (s *SQLiteStore) ListColumns() ([]Column, error) {
 
 func (s *SQLiteStore) SeedColumns(cols []Column) error {
 	for i, c := range cols {
-		_, err := s.db.NamedExec(
-			"INSERT OR IGNORE INTO columns (id, name, emoji, prompt, pos) VALUES (:id, :name, :emoji, :prompt, :pos)",
-			map[string]any{"id": c.ID, "name": c.Name, "emoji": c.Emoji, "prompt": c.Prompt, "pos": i},
+		_, err := s.db.Exec(
+			"INSERT OR IGNORE INTO columns (id, name, emoji, prompt, pos) VALUES (?, ?, ?, ?, ?)",
+			c.ID, c.Name, c.Emoji, c.Prompt, i,
 		)
 		if err != nil {
 			return err
