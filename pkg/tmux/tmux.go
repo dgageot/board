@@ -10,8 +10,11 @@ import (
 	"github.com/GianlucaP106/gotmux/gotmux"
 )
 
+// Sessions provides session management operations backed by tmux.
+type Sessions struct{}
+
 // NewSession creates a tmux session and runs docker agent in it.
-func NewSession(sessionName, workDir, agent, prompt string) error {
+func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
 	tmux, err := gotmux.DefaultTmux()
 	if err != nil {
 		return fmt.Errorf("tmux init: %w", err)
@@ -60,7 +63,7 @@ func NewSession(sessionName, workDir, agent, prompt string) error {
 // SendKeys sends a follow-up message to a running docker agent session.
 // It uses -l (literal) so the text is typed into the TUI as-is,
 // then sends Enter separately to submit it.
-func SendKeys(sessionName, message string) error {
+func (Sessions) SendKeys(sessionName, message string) error {
 	cmd := exec.Command("tmux", "send-keys", "-l", "-t", sessionName, message)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("send-keys -l: %s: %w", out, err)
@@ -75,7 +78,7 @@ func SendKeys(sessionName, message string) error {
 }
 
 // KillSession kills a tmux session.
-func KillSession(sessionName string) error {
+func (Sessions) KillSession(sessionName string) error {
 	tmux, err := gotmux.DefaultTmux()
 	if err != nil {
 		return err
@@ -89,27 +92,8 @@ func KillSession(sessionName string) error {
 	return session.Kill()
 }
 
-// Sessions provides session management operations backed by tmux.
-type Sessions struct{}
-
-func (Sessions) NewSession(name, workDir, agent, prompt string) error {
-	return NewSession(name, workDir, agent, prompt)
-}
-
-func (Sessions) KillSession(name string) error {
-	return KillSession(name)
-}
-
-func (Sessions) SendKeys(name, message string) error {
-	return SendKeys(name, message)
-}
-
-func (Sessions) PaneContent(name string) (string, error) {
-	return PaneContent(name)
-}
-
 // PaneContent captures the current content of the first pane in a session.
-func PaneContent(sessionName string) (string, error) {
+func (Sessions) PaneContent(sessionName string) (string, error) {
 	tmux, err := gotmux.DefaultTmux()
 	if err != nil {
 		return "", err
