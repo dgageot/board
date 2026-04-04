@@ -39,8 +39,14 @@ type createCardRequest struct {
 func (b *Board) createCard(prompt, projectID string) (*Card, error) {
 	project, _ := b.store.GetProject(projectID)
 
-	agent := cmp.Or(project.GetAgent(), b.config.DefaultAgent)
-	repoPath := cmp.Or(project.GetRepoPath(), b.config.DefaultRepoPath)
+	var projectAgent, projectRepoPath string
+	if project != nil {
+		projectAgent = project.Agent
+		projectRepoPath = project.RepoPath
+	}
+
+	agent := cmp.Or(projectAgent, b.config.DefaultAgent)
+	repoPath := cmp.Or(projectRepoPath, b.config.DefaultRepoPath)
 
 	title, err := generateTitle(agent, prompt)
 	if err != nil {
