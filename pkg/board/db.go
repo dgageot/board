@@ -146,9 +146,11 @@ func detectVersion(db *sqlx.DB) int {
 
 // --- Cards ---
 
+const cardColumns = "id, title, col, status, auto, agent, repo_path, branch, worktree, session"
+
 func (s *SQLiteStore) ListCards() ([]*Card, error) {
 	cards := []*Card{}
-	if err := s.db.Select(&cards, "SELECT id, title, col, status, auto, agent, repo_path, branch, worktree, session FROM cards ORDER BY rowid"); err != nil {
+	if err := s.db.Select(&cards, "SELECT "+cardColumns+" FROM cards ORDER BY rowid"); err != nil {
 		return nil, err
 	}
 	return cards, nil
@@ -156,7 +158,7 @@ func (s *SQLiteStore) ListCards() ([]*Card, error) {
 
 func (s *SQLiteStore) GetCard(id string) (*Card, error) {
 	var card Card
-	if err := s.db.Get(&card, "SELECT id, title, col, status, auto, agent, repo_path, branch, worktree, session FROM cards WHERE id = ?", id); err != nil {
+	if err := s.db.Get(&card, "SELECT "+cardColumns+" FROM cards WHERE id = ?", id); err != nil {
 		return nil, err
 	}
 	return &card, nil
@@ -185,7 +187,7 @@ func (s *SQLiteStore) DeleteCard(id string) error {
 
 func (s *SQLiteStore) ListCardsByColumn(column string) ([]*Card, error) {
 	cards := []*Card{}
-	if err := s.db.Select(&cards, "SELECT id, title, col, status, auto, agent, repo_path, branch, worktree, session FROM cards WHERE col = ?", column); err != nil {
+	if err := s.db.Select(&cards, "SELECT "+cardColumns+" FROM cards WHERE col = ?", column); err != nil {
 		return nil, err
 	}
 	return cards, nil
