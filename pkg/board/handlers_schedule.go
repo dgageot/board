@@ -30,13 +30,8 @@ func toScheduleCard(c *Card) scheduleCardResponse {
 }
 
 func (b *Board) handleScheduleCard(w http.ResponseWriter, r *http.Request) {
-	var req createCardRequest
-	if err := readJSON(r, &req); err != nil {
-		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
-		return
-	}
-	if req.Prompt == "" {
-		writeError(w, fmt.Errorf("%w: prompt required", errBadInput))
+	req, ok := readCreateCardRequest(w, r)
+	if !ok {
 		return
 	}
 

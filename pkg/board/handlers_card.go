@@ -89,14 +89,23 @@ func (b *Board) createCard(prompt, projectID string) (*Card, error) {
 	return card, nil
 }
 
-func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
+// readCreateCardRequest parses and validates a createCardRequest from an HTTP request.
+func readCreateCardRequest(w http.ResponseWriter, r *http.Request) (*createCardRequest, bool) {
 	var req createCardRequest
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
-		return
+		return nil, false
 	}
 	if req.Prompt == "" {
 		writeError(w, fmt.Errorf("%w: prompt required", errBadInput))
+		return nil, false
+	}
+	return &req, true
+}
+
+func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
+	req, ok := readCreateCardRequest(w, r)
+	if !ok {
 		return
 	}
 
