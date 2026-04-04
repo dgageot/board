@@ -6,8 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
@@ -57,10 +55,6 @@ func loadMigrations() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read migrations dir: %w", err)
 	}
-
-	slices.SortFunc(entries, func(a, b os.DirEntry) int {
-		return strings.Compare(a.Name(), b.Name())
-	})
 
 	var migrations []string
 	for _, e := range entries {
