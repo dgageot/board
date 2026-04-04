@@ -55,6 +55,22 @@ type Project struct {
 	Agent    string `json:"agent" db:"agent"`
 }
 
+// GetAgent returns the project's agent or empty string if p is nil.
+func (p *Project) GetAgent() string {
+	if p == nil {
+		return ""
+	}
+	return p.Agent
+}
+
+// GetRepoPath returns the project's repo path or empty string if p is nil.
+func (p *Project) GetRepoPath() string {
+	if p == nil {
+		return ""
+	}
+	return p.RepoPath
+}
+
 func newID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)

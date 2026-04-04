@@ -1,6 +1,7 @@
 package board
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -38,12 +39,8 @@ type createCardRequest struct {
 func (b *Board) createCard(prompt, projectID string) (*Card, error) {
 	project, _ := b.store.GetProject(projectID)
 
-	agent := b.config.DefaultAgent
-	repoPath := b.config.DefaultRepoPath
-	if project != nil {
-		agent = project.Agent
-		repoPath = project.RepoPath
-	}
+	agent := cmp.Or(project.GetAgent(), b.config.DefaultAgent)
+	repoPath := cmp.Or(project.GetRepoPath(), b.config.DefaultRepoPath)
 
 	title, err := generateTitle(agent, prompt)
 	if err != nil {
