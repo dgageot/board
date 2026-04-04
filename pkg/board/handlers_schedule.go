@@ -3,8 +3,6 @@ package board
 import (
 	"fmt"
 	"net/http"
-
-	"github.com/dgageot/board/pkg/git"
 )
 
 type scheduleRequest struct {
@@ -47,52 +45,9 @@ func (b *Board) handleScheduleCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	project, _ := b.store.GetProject(req.ProjectID)
-
-	agent := b.config.DefaultAgent
-	repoPath := b.config.DefaultRepoPath
-	if project != nil {
-		agent = project.Agent
-		repoPath = project.RepoPath
-	}
-
-	title, err := generateTitle(agent, req.Prompt)
+	card, err := b.createCard(req.Prompt, req.ProjectID)
 	if err != nil {
-		writeError(w, fmt.Errorf("generate title: %w", err))
-		return
-	}
-
-	branch := sanitizeBranch(title)
-	wtPath := git.WorktreePath(repoPath, branch)
-	sessionName := "board-" + newID()[:8]
-
-	if err := git.CreateWorktree(repoPath, branch, wtPath); err != nil {
-		writeError(w, fmt.Errorf("git worktree: %w", err))
-		return
-	}
-
-	card := &Card{
-		ID:       newID(),
-		Title:    title,
-		Column:   "dev",
-		Status:   StatusRunning,
-		Agent:    agent,
-		RepoPath: repoPath,
-		Branch:   branch,
-		Worktree: wtPath,
-		Session:  sessionName,
-	}
-
-	if err := b.sessions.NewSession(sessionName, wtPath, agent, req.Prompt); err != nil {
-		git.RemoveWorktree(repoPath, wtPath, branch)
-		writeError(w, fmt.Errorf("tmux session: %w", err))
-		return
-	}
-
-	if err := b.store.InsertCard(card); err != nil {
-		_ = b.sessions.KillSession(sessionName)
-		git.RemoveWorktree(repoPath, wtPath, branch)
-		writeError(w, fmt.Errorf("insert card: %w", err))
+		writeError(w, err)
 		return
 	}
 

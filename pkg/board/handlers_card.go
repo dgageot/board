@@ -34,18 +34,9 @@ type createCardRequest struct {
 	ProjectID string `json:"projectId"`
 }
 
-func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
-	var req createCardRequest
-	if err := readJSON(r, &req); err != nil {
-		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
-		return
-	}
-	if req.Prompt == "" {
-		writeError(w, fmt.Errorf("%w: prompt required", errBadInput))
-		return
-	}
-
-	project, _ := b.store.GetProject(req.ProjectID)
+// createCard creates a new card with a worktree and tmux session.
+func (b *Board) createCard(prompt, projectID string) (*Card, error) {
+	project, _ := b.store.GetProject(projectID)
 
 	agent := b.config.DefaultAgent
 	repoPath := b.config.DefaultRepoPath
@@ -54,10 +45,9 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 		repoPath = project.RepoPath
 	}
 
-	title, err := generateTitle(agent, req.Prompt)
+	title, err := generateTitle(agent, prompt)
 	if err != nil {
-		writeError(w, fmt.Errorf("generate title: %w", err))
-		return
+		return nil, fmt.Errorf("generate title: %w", err)
 	}
 
 	branch := sanitizeBranch(title)
@@ -65,8 +55,7 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 	sessionName := "board-" + newID()[:8]
 
 	if err := git.CreateWorktree(repoPath, branch, wtPath); err != nil {
-		writeError(w, fmt.Errorf("git worktree: %w", err))
-		return
+		return nil, fmt.Errorf("git worktree: %w", err)
 	}
 
 	card := &Card{
@@ -81,16 +70,34 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 		Session:  sessionName,
 	}
 
-	if err := b.sessions.NewSession(sessionName, wtPath, agent, req.Prompt); err != nil {
+	if err := b.sessions.NewSession(sessionName, wtPath, agent, prompt); err != nil {
 		git.RemoveWorktree(repoPath, wtPath, branch)
-		writeError(w, fmt.Errorf("tmux session: %w", err))
-		return
+		return nil, fmt.Errorf("tmux session: %w", err)
 	}
 
 	if err := b.store.InsertCard(card); err != nil {
 		_ = b.sessions.KillSession(sessionName)
 		git.RemoveWorktree(repoPath, wtPath, branch)
-		writeError(w, fmt.Errorf("insert card: %w", err))
+		return nil, fmt.Errorf("insert card: %w", err)
+	}
+
+	return card, nil
+}
+
+func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
+	var req createCardRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
+		return
+	}
+	if req.Prompt == "" {
+		writeError(w, fmt.Errorf("%w: prompt required", errBadInput))
+		return
+	}
+
+	card, err := b.createCard(req.Prompt, req.ProjectID)
+	if err != nil {
+		writeError(w, err)
 		return
 	}
 
