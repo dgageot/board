@@ -127,10 +127,6 @@ func PaneContent(sessionName string) (string, error) {
 		return "", err
 	}
 
-	if !tmux.HasSession(sessionName) {
-		return "", fmt.Errorf("session %s not found", sessionName)
-	}
-
 	session, err := tmux.GetSessionByName(sessionName)
 	if err != nil {
 		return "", err
