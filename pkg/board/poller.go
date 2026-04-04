@@ -67,7 +67,7 @@ func (p *Poller) poll() bool {
 	var transitions []cardTransition
 	p.mu.Lock()
 	for _, card := range cards {
-		if card.Status != StatusRunning && card.Status != StatusWaiting {
+		if card.Status == StatusDone {
 			continue
 		}
 
