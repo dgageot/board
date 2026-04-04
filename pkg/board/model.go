@@ -3,6 +3,7 @@ package board
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"regexp"
 	"strings"
 )
 
@@ -60,6 +61,8 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
+var multipleDashes = regexp.MustCompile(`-{2,}`)
+
 // sanitizeBranch creates a safe branch name from a title with a short UUID suffix to avoid conflicts.
 func sanitizeBranch(title string) string {
 	s := strings.ToLower(title)
@@ -70,9 +73,7 @@ func sanitizeBranch(title string) string {
 		return '-'
 	}, s)
 	// Collapse multiple dashes
-	for strings.Contains(s, "--") {
-		s = strings.ReplaceAll(s, "--", "-")
-	}
+	s = multipleDashes.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
 	if len(s) > 40 {
 		s = strings.TrimRight(s[:40], "-")
