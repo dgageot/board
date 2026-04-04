@@ -111,7 +111,9 @@ func currentVersion(db *sqlx.DB) int {
 }
 
 func setVersion(tx *sqlx.Tx, version int) error {
-	tx.MustExec(`DELETE FROM schema_version`)
+	if _, err := tx.Exec(`DELETE FROM schema_version`); err != nil {
+		return err
+	}
 	_, err := tx.Exec(`INSERT INTO schema_version (version) VALUES (?)`, version)
 	return err
 }
