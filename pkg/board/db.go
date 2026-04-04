@@ -50,30 +50,20 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
-// loadMigrations reads all .sql files from the embedded migrations directory, sorted by filename.
-func loadMigrations() ([]string, error) {
+// migrate applies pending migrations.
+func migrate(db *sqlx.DB) error {
 	entries, err := migrationFiles.ReadDir("migrations")
 	if err != nil {
-		return nil, fmt.Errorf("read migrations dir: %w", err)
+		return fmt.Errorf("read migrations dir: %w", err)
 	}
 
 	var migrations []string
 	for _, e := range entries {
 		data, err := migrationFiles.ReadFile("migrations/" + e.Name())
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", e.Name(), err)
+			return fmt.Errorf("read %s: %w", e.Name(), err)
 		}
 		migrations = append(migrations, string(data))
-	}
-
-	return migrations, nil
-}
-
-// migrate applies pending migrations.
-func migrate(db *sqlx.DB) error {
-	migrations, err := loadMigrations()
-	if err != nil {
-		return err
 	}
 
 	// Ensure the schema_version table exists.
