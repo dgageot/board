@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -82,11 +83,11 @@ func Run() error {
 
 	fmt.Printf("Board running at http://%s\n", cfg.ListenAddr)
 
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		return err
+	err = srv.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
 	}
-
-	return nil
+	return err
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
