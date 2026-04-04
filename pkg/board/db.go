@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
@@ -136,26 +137,9 @@ func tableExists(db *sqlx.DB, name string) bool {
 }
 
 func columnExists(db *sqlx.DB, table, column string) bool {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
-	if err != nil {
-		return false
-	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notnull int
-		var dfltValue *string
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
-			return false
-		}
-		if name == column {
-			return true
-		}
-	}
-	return false
+	var names []string
+	_ = db.Select(&names, fmt.Sprintf("SELECT name FROM pragma_table_info('%s')", table))
+	return slices.Contains(names, column)
 }
 
 // detectVersion figures out which migration an existing pre-migration
