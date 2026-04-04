@@ -143,12 +143,13 @@ func (p *Poller) MoveCardToColumn(card *Card, column, prompt string) error {
 // autoAdvance moves a card to the next column and sends the column prompt.
 func (p *Poller) autoAdvance(card *Card) bool {
 	cols, _ := p.store.ListColumns()
-	nextCol := nextColumn(cols, card.Column)
-	if nextCol == "" {
+	i := columnIndex(cols, card.Column)
+	if i < 0 || i+1 >= len(cols) {
 		return false
 	}
 
-	return p.MoveCardToColumn(card, nextCol, columnPrompt(cols, nextCol)) == nil
+	next := cols[i+1]
+	return p.MoveCardToColumn(card, next.ID, next.Prompt) == nil
 }
 
 // ResetCard clears the cached pane content for a card.
