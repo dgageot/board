@@ -3,7 +3,6 @@ package board
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"regexp"
 	"strings"
 )
 
@@ -77,22 +76,23 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-var multipleDashes = regexp.MustCompile(`-{2,}`)
-
 // sanitizeBranch creates a safe branch name from a title with a short UUID suffix to avoid conflicts.
 func sanitizeBranch(title string) string {
-	s := strings.ToLower(title)
-	s = strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
-			return r
+	var b strings.Builder
+	prevDash := true // start true to skip leading dashes
+	for _, r := range strings.ToLower(title) {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevDash = false
+		case !prevDash:
+			b.WriteByte('-')
+			prevDash = true
 		}
-		return '-'
-	}, s)
-	// Collapse multiple dashes
-	s = multipleDashes.ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	if len(s) > 40 {
-		s = strings.TrimRight(s[:40], "-")
+		if b.Len() >= 40 {
+			break
+		}
 	}
+	s := strings.TrimRight(b.String(), "-")
 	return "board/" + s + "-" + newID()[:8]
 }
