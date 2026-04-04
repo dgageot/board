@@ -38,15 +38,12 @@ type createCardRequest struct {
 // createCard creates a new card with a worktree and tmux session.
 func (b *Board) createCard(prompt, projectID string) (*Card, error) {
 	project, _ := b.store.GetProject(projectID)
-
-	var projectAgent, projectRepoPath string
-	if project != nil {
-		projectAgent = project.Agent
-		projectRepoPath = project.RepoPath
+	if project == nil {
+		project = &Project{}
 	}
 
-	agent := cmp.Or(projectAgent, b.config.DefaultAgent)
-	repoPath := cmp.Or(projectRepoPath, b.config.DefaultRepoPath)
+	agent := cmp.Or(project.Agent, b.config.DefaultAgent)
+	repoPath := cmp.Or(project.RepoPath, b.config.DefaultRepoPath)
 
 	title, err := generateTitle(agent, prompt)
 	if err != nil {
