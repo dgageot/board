@@ -89,13 +89,9 @@ func KillSession(sessionName string) error {
 		return err
 	}
 
-	if !tmux.HasSession(sessionName) {
-		return nil
-	}
-
 	session, err := tmux.GetSessionByName(sessionName)
 	if err != nil {
-		return err
+		return nil // session doesn't exist, nothing to kill
 	}
 
 	return session.Kill()
