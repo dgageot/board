@@ -178,7 +178,6 @@ func TestHandleJumpCard(t *testing.T) {
 	var resp map[string]string
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 	assert.Equal(t, "my-session", resp["session"])
-	assert.Contains(t, resp["command"], "my-session")
 }
 
 func TestHandleJumpCardNotFound(t *testing.T) {

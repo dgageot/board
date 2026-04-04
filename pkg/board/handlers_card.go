@@ -171,7 +171,6 @@ func (b *Board) handleJumpCard(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, map[string]string{
 		"session": card.Session,
-		"command": "tmux attach -t " + card.Session,
 	})
 }
 
