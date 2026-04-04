@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"strings"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/GianlucaP106/gotmux/gotmux"
@@ -29,15 +28,15 @@ func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
 	}
 
 	// Enable features for better TUI passthrough.
-	for _, opt := range []string{
-		"set -g allow-passthrough on",
-		"set -g mouse on",
-		"set -g default-terminal tmux-256color",
-		"set -ga terminal-features ',xterm-256color:clipboard:ccolour:cstyle:focus:title:mouse:RGB'",
-		"set-environment LANG en_US.UTF-8",
-		"set-environment LC_ALL en_US.UTF-8",
+	for _, args := range [][]string{
+		{"set", "-g", "allow-passthrough", "on"},
+		{"set", "-g", "mouse", "on"},
+		{"set", "-g", "default-terminal", "tmux-256color"},
+		{"set", "-ga", "terminal-features", ",xterm-256color:clipboard:ccolour:cstyle:focus:title:mouse:RGB"},
+		{"set-environment", "LANG", "en_US.UTF-8"},
+		{"set-environment", "LC_ALL", "en_US.UTF-8"},
 	} {
-		cmd := exec.Command("tmux", append([]string{"-t", sessionName}, strings.Fields(opt)...)...)
+		cmd := exec.Command("tmux", append([]string{"-t", sessionName}, args...)...)
 		_ = cmd.Run()
 	}
 
