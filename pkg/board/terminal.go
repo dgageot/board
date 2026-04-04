@@ -55,11 +55,6 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 
 	// Protect WebSocket writes from concurrent access.
 	var wsMu sync.Mutex
-	wsWrite := func(msgType int, data []byte) error {
-		wsMu.Lock()
-		defer wsMu.Unlock()
-		return conn.WriteMessage(msgType, data)
-	}
 
 	var wg sync.WaitGroup
 
@@ -69,7 +64,10 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		for {
 			n, err := ptmx.Read(buf)
 			if n > 0 {
-				if writeErr := wsWrite(websocket.BinaryMessage, buf[:n]); writeErr != nil {
+				wsMu.Lock()
+				writeErr := conn.WriteMessage(websocket.BinaryMessage, buf[:n])
+				wsMu.Unlock()
+				if writeErr != nil {
 					return
 				}
 			}
@@ -108,6 +106,8 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	_ = ptmx.Close()
 	wg.Wait()
 
-	_ = wsWrite(websocket.CloseMessage,
+	wsMu.Lock()
+	_ = conn.WriteMessage(websocket.CloseMessage,
 		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session ended"))
+	wsMu.Unlock()
 }
