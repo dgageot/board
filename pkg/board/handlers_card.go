@@ -132,7 +132,7 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	srcIdx := columnIndex(cols, card.Column)
-	movedForward := card.Column != req.Column && dstIdx > srcIdx
+	movedForward := dstIdx > srcIdx && card.Column != req.Column
 
 	if movedForward && card.Status == StatusRunning {
 		writeError(w, fmt.Errorf("%w: cannot move a running card forward", errBadInput))
@@ -142,16 +142,16 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 	card.Column = req.Column
 	card.Status = StatusRunning
 
-	if !movedForward {
+	if movedForward {
+		if err := b.poller.MoveCardToColumn(card, req.Column, columnPrompt(cols, req.Column)); err != nil {
+			writeError(w, err)
+			return
+		}
+	} else {
 		b.poller.ResetCard(card.ID)
 
 		if err := b.store.ReinsertCard(card); err != nil {
 			writeError(w, fmt.Errorf("reinsert card: %w", err))
-			return
-		}
-	} else {
-		if err := b.poller.MoveCardToColumn(card, req.Column, columnPrompt(cols, req.Column)); err != nil {
-			writeError(w, err)
 			return
 		}
 	}
