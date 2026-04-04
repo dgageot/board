@@ -20,6 +20,9 @@ type resizeMsg struct {
 	Rows uint16 `json:"rows"`
 }
 
+// wsUpgrader is a shared WebSocket upgrader that accepts all origins.
+var wsUpgrader = websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+
 // handleTerminalWS upgrades the request to a WebSocket and bridges it
 // to a tmux attach session using raw PTY I/O.
 func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
@@ -29,8 +32,7 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("websocket upgrade: %v", err)
 		return
