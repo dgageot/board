@@ -58,7 +58,9 @@ func migrate(db *sqlx.DB) error {
 	}
 
 	// Ensure the schema_version table exists.
-	db.MustExec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`)
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`); err != nil {
+		return fmt.Errorf("create schema_version: %w", err)
+	}
 
 	current := currentVersion(db)
 
@@ -67,7 +69,9 @@ func migrate(db *sqlx.DB) error {
 	if current == 0 && tableExists(db, "cards") {
 		current = detectVersion(db)
 		if current > 0 {
-			db.MustExec(`INSERT INTO schema_version (version) VALUES (?)`, current)
+			if _, err := db.Exec(`INSERT INTO schema_version (version) VALUES (?)`, current); err != nil {
+				return fmt.Errorf("bootstrap version: %w", err)
+			}
 		}
 	}
 
