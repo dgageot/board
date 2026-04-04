@@ -31,18 +31,10 @@ func NewSession(sessionName, workDir, agent, prompt string) error {
 		"set -g mouse on",
 		"set -g default-terminal tmux-256color",
 		"set -ga terminal-features ',xterm-256color:clipboard:ccolour:cstyle:focus:title:mouse:RGB'",
+		"set-environment LANG en_US.UTF-8",
+		"set-environment LC_ALL en_US.UTF-8",
 	} {
 		cmd := exec.Command("tmux", append([]string{"-t", sessionName}, strings.Fields(opt)...)...)
-		_ = cmd.Run()
-	}
-
-	// Set UTF-8 locale so TUI apps can render special characters.
-	for _, env := range []string{
-		"LANG=en_US.UTF-8",
-		"LC_ALL=en_US.UTF-8",
-	} {
-		k, v, _ := strings.Cut(env, "=")
-		cmd := exec.Command("tmux", "set-environment", "-t", sessionName, k, v)
 		_ = cmd.Run()
 	}
 
