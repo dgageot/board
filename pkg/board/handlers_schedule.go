@@ -59,9 +59,9 @@ func (b *Board) handleListSchedule(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	var result []scheduleCardResponse
-	for _, c := range cards {
-		result = append(result, toScheduleCard(c))
+	result := make([]scheduleCardResponse, len(cards))
+	for i, c := range cards {
+		result[i] = toScheduleCard(c)
 	}
 	writeJSON(w, result)
 }
