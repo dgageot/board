@@ -191,7 +191,7 @@ func (s *SQLiteStore) GetCard(id string) (*Card, error) {
 func (s *SQLiteStore) InsertCard(c *Card) error {
 	_, err := s.db.Exec(
 		"INSERT INTO cards (id, title, col, status, auto, agent, repo_path, branch, worktree, session) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		c.ID, c.Title, c.Column, string(c.Status), c.Auto, c.Agent, c.RepoPath, c.Branch, c.Worktree, c.Session,
+		c.ID, c.Title, c.Column, c.Status, c.Auto, c.Agent, c.RepoPath, c.Branch, c.Worktree, c.Session,
 	)
 	return err
 }
@@ -199,7 +199,7 @@ func (s *SQLiteStore) InsertCard(c *Card) error {
 func (s *SQLiteStore) UpdateCard(c *Card) error {
 	_, err := s.db.Exec(
 		"UPDATE cards SET title = ?, col = ?, status = ?, auto = ?, agent = ?, repo_path = ?, branch = ?, worktree = ?, session = ? WHERE id = ?",
-		c.Title, c.Column, string(c.Status), c.Auto, c.Agent, c.RepoPath, c.Branch, c.Worktree, c.Session, c.ID,
+		c.Title, c.Column, c.Status, c.Auto, c.Agent, c.RepoPath, c.Branch, c.Worktree, c.Session, c.ID,
 	)
 	return err
 }
@@ -230,7 +230,7 @@ func (s *SQLiteStore) ReinsertCard(c *Card) error {
 	}
 	if _, err := tx.Exec(
 		"INSERT INTO cards (id, title, col, status, auto, agent, repo_path, branch, worktree, session) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		c.ID, c.Title, c.Column, string(c.Status), c.Auto, c.Agent, c.RepoPath, c.Branch, c.Worktree, c.Session,
+		c.ID, c.Title, c.Column, c.Status, c.Auto, c.Agent, c.RepoPath, c.Branch, c.Worktree, c.Session,
 	); err != nil {
 		return err
 	}
