@@ -132,7 +132,7 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	srcIdx := columnIndex(cols, card.Column)
-	movedForward := dstIdx > srcIdx && card.Column != req.Column
+	movedForward := dstIdx > srcIdx
 
 	if movedForward && card.Status == StatusRunning {
 		writeError(w, fmt.Errorf("%w: cannot move a running card forward", errBadInput))
