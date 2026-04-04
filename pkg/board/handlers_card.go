@@ -32,7 +32,7 @@ func (b *Board) handleListCards(w http.ResponseWriter, _ *http.Request) {
 
 type createCardRequest struct {
 	Prompt    string `json:"prompt"`
-	ProjectID string `json:"projectId"`
+	ProjectID string `json:"projectId,omitempty"`
 }
 
 // createCard creates a new card with a worktree and tmux session.

@@ -5,11 +5,6 @@ import (
 	"net/http"
 )
 
-type scheduleRequest struct {
-	Prompt    string `json:"prompt"`
-	ProjectID string `json:"projectId,omitempty"`
-}
-
 type scheduleCardResponse struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
@@ -35,7 +30,7 @@ func toScheduleCard(c *Card) scheduleCardResponse {
 }
 
 func (b *Board) handleScheduleCard(w http.ResponseWriter, r *http.Request) {
-	var req scheduleRequest
+	var req createCardRequest
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
 		return
