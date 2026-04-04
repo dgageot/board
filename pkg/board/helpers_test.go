@@ -39,14 +39,8 @@ func newTestBoard(t *testing.T) (*Board, *SQLiteStore) {
 	t.Helper()
 
 	store := openTestStore(t)
-	sessions := noopSessionManager{}
-	b := &Board{
-		config:   Config{DefaultAgent: "test-agent", DefaultRepoPath: "/test/repo", ListenAddr: ":0"},
-		store:    store,
-		sessions: sessions,
-		poller:   newPoller(store, sessions, func() {}),
-		clients:  make(map[chan string]struct{}),
-	}
+	cfg := Config{DefaultAgent: "test-agent", DefaultRepoPath: "/test/repo", ListenAddr: ":0"}
+	b := newBoard(t.Context(), cfg, store, noopSessionManager{})
 
 	return b, store
 }
