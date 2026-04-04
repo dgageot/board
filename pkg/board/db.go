@@ -57,15 +57,6 @@ func migrate(db *sqlx.DB) error {
 		return fmt.Errorf("read migrations dir: %w", err)
 	}
 
-	var migrations []string
-	for _, e := range entries {
-		data, err := migrationFiles.ReadFile("migrations/" + e.Name())
-		if err != nil {
-			return fmt.Errorf("read %s: %w", e.Name(), err)
-		}
-		migrations = append(migrations, string(data))
-	}
-
 	// Ensure the schema_version table exists.
 	db.MustExec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`)
 
@@ -80,13 +71,18 @@ func migrate(db *sqlx.DB) error {
 		}
 	}
 
-	for i := current; i < len(migrations); i++ {
+	for i := current; i < len(entries); i++ {
+		data, err := migrationFiles.ReadFile("migrations/" + entries[i].Name())
+		if err != nil {
+			return fmt.Errorf("read %s: %w", entries[i].Name(), err)
+		}
+
 		tx, err := db.Beginx()
 		if err != nil {
 			return fmt.Errorf("migration %d: begin: %w", i+1, err)
 		}
 
-		if _, err := tx.Exec(migrations[i]); err != nil {
+		if _, err := tx.Exec(string(data)); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
 		}
