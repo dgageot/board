@@ -61,6 +61,14 @@ func (b *Board) createCard(prompt, projectID string) (*Card, error) {
 		return nil, fmt.Errorf("git worktree: %w", err)
 	}
 
+	var retErr error
+	defer func() {
+		if retErr != nil {
+			_ = b.sessions.KillSession(sessionName)
+			git.RemoveWorktree(repoPath, wtPath, branch)
+		}
+	}()
+
 	card := &Card{
 		ID:       newID(),
 		Title:    title,
@@ -73,15 +81,12 @@ func (b *Board) createCard(prompt, projectID string) (*Card, error) {
 		Session:  sessionName,
 	}
 
-	if err := b.sessions.NewSession(sessionName, wtPath, agent, prompt); err != nil {
-		git.RemoveWorktree(repoPath, wtPath, branch)
-		return nil, fmt.Errorf("tmux session: %w", err)
+	if retErr = b.sessions.NewSession(sessionName, wtPath, agent, prompt); retErr != nil {
+		return nil, fmt.Errorf("tmux session: %w", retErr)
 	}
 
-	if err := b.store.InsertCard(card); err != nil {
-		_ = b.sessions.KillSession(sessionName)
-		git.RemoveWorktree(repoPath, wtPath, branch)
-		return nil, fmt.Errorf("insert card: %w", err)
+	if retErr = b.store.InsertCard(card); retErr != nil {
+		return nil, fmt.Errorf("insert card: %w", retErr)
 	}
 
 	return card, nil
