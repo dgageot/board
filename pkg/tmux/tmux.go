@@ -38,20 +38,12 @@ func NewSession(sessionName, workDir, agent, prompt string) error {
 		_ = cmd.Run()
 	}
 
-	windows, err := session.ListWindows()
-	if err != nil {
-		return fmt.Errorf("list windows: %w", err)
-	}
-	if len(windows) == 0 {
-		return errors.New("no windows in session")
-	}
-
-	panes, err := windows[0].ListPanes()
+	panes, err := session.ListPanes()
 	if err != nil {
 		return fmt.Errorf("list panes: %w", err)
 	}
 	if len(panes) == 0 {
-		return errors.New("no panes in window")
+		return errors.New("no panes in session")
 	}
 
 	cmd := fmt.Sprintf("docker agent run %s --yolo %s", agent, shellescape.Quote(prompt))
