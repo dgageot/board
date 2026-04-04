@@ -1,6 +1,7 @@
 package board
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 )
@@ -22,12 +23,8 @@ func (b *Board) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.ID = newID()
-	if p.Agent == "" {
-		p.Agent = b.config.DefaultAgent
-	}
-	if p.RepoPath == "" {
-		p.RepoPath = b.config.DefaultRepoPath
-	}
+	p.Agent = cmp.Or(p.Agent, b.config.DefaultAgent)
+	p.RepoPath = cmp.Or(p.RepoPath, b.config.DefaultRepoPath)
 
 	if err := b.store.InsertProject(&p); err != nil {
 		writeError(w, fmt.Errorf("insert project: %w", err))
