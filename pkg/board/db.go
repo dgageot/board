@@ -256,16 +256,22 @@ func (s *SQLiteStore) ListColumns() ([]Column, error) {
 }
 
 func (s *SQLiteStore) SeedColumns(cols []Column) error {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // best-effort rollback on deferred path
+
 	for i, c := range cols {
-		_, err := s.db.Exec(
+		if _, err := tx.Exec(
 			"INSERT OR IGNORE INTO columns (id, name, emoji, prompt, pos) VALUES (?, ?, ?, ?, ?)",
 			c.ID, c.Name, c.Emoji, c.Prompt, i,
-		)
-		if err != nil {
+		); err != nil {
 			return err
 		}
 	}
-	return nil
+
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) UpdateColumnPrompt(id, prompt string) error {
