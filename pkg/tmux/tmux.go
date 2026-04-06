@@ -36,8 +36,7 @@ func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
 		{"set-environment", "LANG", "en_US.UTF-8"},
 		{"set-environment", "LC_ALL", "en_US.UTF-8"},
 	} {
-		cmd := exec.Command("tmux", append([]string{"-t", sessionName}, args...)...)
-		_ = cmd.Run()
+		_ = exec.Command("tmux", append([]string{"-t", sessionName}, args...)...).Run()
 	}
 
 	panes, err := session.ListPanes()
