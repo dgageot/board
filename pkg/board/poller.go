@@ -123,10 +123,9 @@ func (p *Poller) poll() bool {
 // reinserts it (for ordering), and sends the column prompt.
 func (p *Poller) MoveCardToColumn(card *Card, column, prompt string) error {
 	card.Column = column
+	card.Status = StatusWaiting
 	if prompt != "" {
 		card.Status = StatusRunning
-	} else {
-		card.Status = StatusWaiting
 	}
 
 	p.ResetCard(card.ID)
