@@ -111,10 +111,8 @@ func (p *Poller) poll() bool {
 		}
 		changed = true
 
-		if t.autoAdvance {
-			if p.autoAdvance(t.card) {
-				changed = true
-			}
+		if t.autoAdvance && p.autoAdvance(t.card) {
+			changed = true
 		}
 	}
 
