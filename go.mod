@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	al.essio.dev/pkg/shellescape v1.6.0
 	github.com/GianlucaP106/gotmux v0.5.0
-	github.com/creack/pty v1.1.11
+	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.4.2
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/stretchr/testify v1.11.1
