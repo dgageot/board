@@ -188,7 +188,7 @@ func (b *Board) handleDiffCard(w http.ResponseWriter, r *http.Request) {
 
 	diff, err := git.Diff(card.Worktree)
 	if err != nil {
-		writeError(w, fmt.Errorf("git diff: %w", err))
+		writeError(w, err)
 		return
 	}
 
