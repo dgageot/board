@@ -148,15 +148,15 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	card.Column = req.Column
-	card.Status = StatusRunning
-
 	if movedForward {
 		if err := b.poller.MoveCardToColumn(card, req.Column, columnPrompt(cols, req.Column)); err != nil {
 			writeError(w, err)
 			return
 		}
 	} else {
+		card.Column = req.Column
+		card.Status = StatusRunning
+
 		b.poller.ResetCard(card.ID)
 
 		if err := b.store.ReinsertCard(card); err != nil {
