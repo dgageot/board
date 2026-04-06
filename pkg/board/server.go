@@ -75,11 +75,10 @@ func Run() error {
 	}
 
 	// Graceful shutdown
-	go func() {
-		<-ctx.Done()
+	context.AfterFunc(ctx, func() {
 		fmt.Println("\nShutting down...")
 		_ = srv.Shutdown(context.Background())
-	}()
+	})
 
 	fmt.Printf("Board running at http://%s\n", cfg.ListenAddr)
 
