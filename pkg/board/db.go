@@ -32,7 +32,7 @@ func openStore() (*SQLiteStore, error) {
 	}
 
 	dbPath := filepath.Join(dbDir, "board.db")
-	db, err := sqlx.Open("sqlite", dbPath)
+	db, err := sqlx.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
