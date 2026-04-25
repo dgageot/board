@@ -195,22 +195,6 @@ func (b *Board) handleDiffCard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"diff": diff})
 }
 
-func (b *Board) handleToggleAutoCard(w http.ResponseWriter, r *http.Request) {
-	card, ok := b.getCard(w, r)
-	if !ok {
-		return
-	}
-
-	card.Auto = !card.Auto
-	if err := b.store.UpdateCard(card); err != nil {
-		writeError(w, fmt.Errorf("update card: %w", err))
-		return
-	}
-
-	b.broadcast()
-	writeJSON(w, card)
-}
-
 // deleteCardResources cleans up session and worktree for a card.
 func (b *Board) deleteCardResources(card *Card) {
 	b.poller.ResetCard(card.ID)

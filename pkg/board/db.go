@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
 
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
@@ -128,25 +127,15 @@ func tableExists(db *sqlx.DB, name string) bool {
 	return err == nil && count > 0
 }
 
-func columnExists(db *sqlx.DB, table, column string) bool {
-	var names []string
-	_ = db.Select(&names, fmt.Sprintf("SELECT name FROM pragma_table_info('%s')", table))
-	return slices.Contains(names, column)
-}
-
 // detectVersion figures out which migration an existing pre-migration
 // database corresponds to by inspecting the schema.
 func detectVersion(db *sqlx.DB) int {
-	version := 1 // tables exist → at least migration 1
-	if columnExists(db, "cards", "auto") {
-		version = 2
-	}
-	return version
+	return 1 // tables exist → at least migration 1
 }
 
 // --- Cards ---
 
-const cardColumns = "id, title, col, status, auto, agent, repo_path, branch, worktree, session"
+const cardColumns = "id, title, col, status, agent, repo_path, branch, worktree, session"
 
 func (s *SQLiteStore) ListCards() ([]*Card, error) {
 	cards := []*Card{}
@@ -166,7 +155,7 @@ func (s *SQLiteStore) GetCard(id string) (*Card, error) {
 
 func (s *SQLiteStore) InsertCard(c *Card) error {
 	_, err := s.db.NamedExec(
-		"INSERT INTO cards (id, title, col, status, auto, agent, repo_path, branch, worktree, session) VALUES (:id, :title, :col, :status, :auto, :agent, :repo_path, :branch, :worktree, :session)",
+		"INSERT INTO cards (id, title, col, status, agent, repo_path, branch, worktree, session) VALUES (:id, :title, :col, :status, :agent, :repo_path, :branch, :worktree, :session)",
 		c,
 	)
 	return err
@@ -174,7 +163,7 @@ func (s *SQLiteStore) InsertCard(c *Card) error {
 
 func (s *SQLiteStore) UpdateCard(c *Card) error {
 	_, err := s.db.NamedExec(
-		"UPDATE cards SET title = :title, col = :col, status = :status, auto = :auto, agent = :agent, repo_path = :repo_path, branch = :branch, worktree = :worktree, session = :session WHERE id = :id",
+		"UPDATE cards SET title = :title, col = :col, status = :status, agent = :agent, repo_path = :repo_path, branch = :branch, worktree = :worktree, session = :session WHERE id = :id",
 		c,
 	)
 	return err
@@ -205,7 +194,7 @@ func (s *SQLiteStore) ReinsertCard(c *Card) error {
 		return err
 	}
 	if _, err := tx.NamedExec(
-		"INSERT INTO cards (id, title, col, status, auto, agent, repo_path, branch, worktree, session) VALUES (:id, :title, :col, :status, :auto, :agent, :repo_path, :branch, :worktree, :session)",
+		"INSERT INTO cards (id, title, col, status, agent, repo_path, branch, worktree, session) VALUES (:id, :title, :col, :status, :agent, :repo_path, :branch, :worktree, :session)",
 		c,
 	); err != nil {
 		return err

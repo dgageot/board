@@ -51,7 +51,6 @@ func Run() error {
 	mux.HandleFunc("POST /api/cards/{id}/move", board.handleMoveCard)
 	mux.HandleFunc("POST /api/cards/{id}/jump", board.handleJumpCard)
 	mux.HandleFunc("GET /api/cards/{id}/diff", board.handleDiffCard)
-	mux.HandleFunc("POST /api/cards/{id}/auto", board.handleToggleAutoCard)
 	mux.HandleFunc("DELETE /api/cards/{id}", board.handleDeleteCard)
 	mux.HandleFunc("POST /api/cards/{id}/vscode", board.handleOpenVSCode)
 	mux.HandleFunc("POST /api/columns/{column}/clear", board.handleClearColumn)

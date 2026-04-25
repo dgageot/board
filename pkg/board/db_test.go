@@ -14,7 +14,6 @@ func TestMigrate(t *testing.T) {
 	assert.True(t, tableExists(db, "projects"))
 	assert.True(t, tableExists(db, "columns"))
 	assert.True(t, tableExists(db, "schema_version"))
-	assert.True(t, columnExists(db, "cards", "auto"))
 }
 
 func TestMigrateIsIdempotent(t *testing.T) {
@@ -23,13 +22,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	require.NoError(t, migrate(db))
 	require.NoError(t, migrate(db))
 
-	assert.Equal(t, 2, currentVersion(db))
-}
-
-func TestDetectVersionWithAutoColumn(t *testing.T) {
-	db := openTestDB(t)
-
-	assert.Equal(t, 2, detectVersion(db))
+	assert.Equal(t, 1, currentVersion(db))
 }
 
 // --- Card CRUD ---
@@ -99,14 +92,12 @@ func TestUpdateCard(t *testing.T) {
 
 	card.Title = "New"
 	card.Status = StatusWaiting
-	card.Auto = true
 	require.NoError(t, store.UpdateCard(card))
 
 	got, err := store.GetCard("card-1")
 	require.NoError(t, err)
 	assert.Equal(t, "New", got.Title)
 	assert.Equal(t, StatusWaiting, got.Status)
-	assert.True(t, got.Auto)
 }
 
 func TestDeleteCard(t *testing.T) {

@@ -36,7 +36,7 @@ func TestHandleListScheduleWithCards(t *testing.T) {
 		Agent: "ag", RepoPath: "/repo", Branch: "br2", Worktree: "/wt2", Session: "s2",
 	}))
 	require.NoError(t, store.InsertCard(&Card{
-		ID: "c3", Title: "Done task", Column: "done", Status: StatusDone, Auto: true,
+		ID: "c3", Title: "Done task", Column: "done", Status: StatusDone,
 		Agent: "ag", RepoPath: "/repo", Branch: "br3", Worktree: "/wt3", Session: "s3",
 	}))
 
@@ -60,7 +60,6 @@ func TestHandleListScheduleWithCards(t *testing.T) {
 	assert.Equal(t, "Done task", cards[2].Title)
 	assert.Equal(t, "done", cards[2].Column)
 	assert.False(t, cards[2].Running)
-	assert.True(t, cards[2].Auto)
 }
 
 func TestHandleScheduleCardMissingPrompt(t *testing.T) {

@@ -13,7 +13,6 @@ type scheduleCardResponse struct {
 	Branch   string `json:"branch"`
 	Worktree string `json:"worktree"`
 	RepoPath string `json:"repoPath"`
-	Auto     bool   `json:"auto"`
 }
 
 func toScheduleCard(c *Card) scheduleCardResponse {
@@ -25,7 +24,6 @@ func toScheduleCard(c *Card) scheduleCardResponse {
 		Branch:   c.Branch,
 		Worktree: c.Worktree,
 		RepoPath: c.RepoPath,
-		Auto:     c.Auto,
 	}
 }
 

@@ -50,7 +50,6 @@ const API = {
   deleteCard: (id) => api(`/cards/${id}`, { method: "DELETE" }),
   moveCard: (id, column) => api(`/cards/${id}/move`, { method: "POST", body: JSON.stringify({ column }) }),
   diffCard: (id) => api(`/cards/${id}/diff`),
-  toggleAutoCard: (id) => api(`/cards/${id}/auto`, { method: "POST" }),
   openVSCode: (id) => api(`/cards/${id}/vscode`, { method: "POST" }),
   listProjects: () => api("/projects"),
   createProject: (data) => api("/projects", { method: "POST", body: JSON.stringify(data) }),
@@ -214,10 +213,6 @@ function renderCard(card, colId) {
     <div class="card-title">${esc(card.title)}</div>
     <div class="card-meta">
       <span class="status-badge ${card.status}">${statusLabel(card.status, colId)}</span>
-      ${!isLastCol ? `<label class="auto-toggle" title="Auto-advance to next column when ready">
-        <input type="checkbox" data-action="toggle-auto" data-id="${card.id}" ${card.auto ? "checked" : ""}>
-        Auto
-      </label>` : ""}
     </div>
     <div class="card-actions">
       <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" data-session="${esc(card.session)}" title="Open agent session">Agent</button>
@@ -251,9 +246,7 @@ async function handleCardAction(e) {
   const { action, id } = btn.dataset;
 
   try {
-    if (action === "toggle-auto") {
-      await API.toggleAutoCard(id);
-    } else if (action === "jump") {
+    if (action === "jump") {
       const info = await API.jumpCard(id);
       openTerminal(info.session, cards.find((c) => c.id === id)?.title || "Terminal");
     } else if (action === "diff") {

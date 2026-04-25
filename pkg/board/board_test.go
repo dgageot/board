@@ -120,46 +120,6 @@ func TestHandleListCardsEmpty(t *testing.T) {
 	assert.Empty(t, cards)
 }
 
-func TestHandleToggleAutoCard(t *testing.T) {
-	b, store := newTestBoard(t)
-
-	require.NoError(t, store.InsertCard(&Card{
-		ID: "c1", Title: "T", Column: "dev", Status: StatusRunning,
-		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s1",
-	}))
-
-	req := httptest.NewRequest(http.MethodPost, "/api/cards/c1/auto", http.NoBody)
-	req.SetPathValue("id", "c1")
-	rec := httptest.NewRecorder()
-	b.handleToggleAutoCard(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-
-	var card Card
-	require.NoError(t, json.NewDecoder(rec.Body).Decode(&card))
-	assert.True(t, card.Auto)
-
-	// Toggle back
-	req = httptest.NewRequest(http.MethodPost, "/api/cards/c1/auto", http.NoBody)
-	req.SetPathValue("id", "c1")
-	rec = httptest.NewRecorder()
-	b.handleToggleAutoCard(rec, req)
-
-	require.NoError(t, json.NewDecoder(rec.Body).Decode(&card))
-	assert.False(t, card.Auto)
-}
-
-func TestHandleToggleAutoCardNotFound(t *testing.T) {
-	b, _ := newTestBoard(t)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/cards/nonexistent/auto", http.NoBody)
-	req.SetPathValue("id", "nonexistent")
-	rec := httptest.NewRecorder()
-	b.handleToggleAutoCard(rec, req)
-
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-}
-
 func TestHandleJumpCard(t *testing.T) {
 	b, store := newTestBoard(t)
 

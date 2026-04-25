@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Poller monitors tmux panes for activity and auto-advances cards.
+// Poller monitors tmux panes for activity changes.
 type Poller struct {
 	store       Store
 	sessions    SessionManager
@@ -52,9 +52,8 @@ func (p *Poller) Run(ctx context.Context) {
 
 // cardTransition describes a status change detected during polling.
 type cardTransition struct {
-	card        *Card
-	newStatus   CardStatus
-	autoAdvance bool
+	card      *Card
+	newStatus CardStatus
 }
 
 func (p *Poller) poll() bool {
@@ -84,9 +83,8 @@ func (p *Poller) poll() bool {
 
 			if card.Status == StatusRunning && p.stableCount[card.ID] >= stableThreshold {
 				transitions = append(transitions, cardTransition{
-					card:        card,
-					newStatus:   StatusWaiting,
-					autoAdvance: card.Auto,
+					card:      card,
+					newStatus: StatusWaiting,
 				})
 			}
 		} else {
@@ -110,10 +108,6 @@ func (p *Poller) poll() bool {
 			continue
 		}
 		changed = true
-
-		if t.autoAdvance && p.autoAdvance(t.card) {
-			changed = true
-		}
 	}
 
 	return changed
@@ -135,17 +129,6 @@ func (p *Poller) MoveCardToColumn(card *Card, column, prompt string) error {
 	}
 
 	return p.SendPromptToCard(card, prompt)
-}
-
-// autoAdvance moves a card to the next column and sends the column prompt.
-func (p *Poller) autoAdvance(card *Card) bool {
-	cols, _ := p.store.ListColumns()
-	next := nextColumn(cols, card.Column)
-	if next == "" {
-		return false
-	}
-
-	return p.MoveCardToColumn(card, next, columnPrompt(cols, next)) == nil
 }
 
 // ResetCard clears the cached pane content for a card.
