@@ -50,7 +50,7 @@ func (b *Board) createCard(prompt, projectID string) (*Card, error) {
 		return nil, fmt.Errorf("generate title: %w", err)
 	}
 
-	branch := sanitizeBranch(title)
+	branch := newBranchName()
 	wtPath := git.WorktreePath(repoPath, branch)
 	sessionName := "board-" + newID()[:8]
 

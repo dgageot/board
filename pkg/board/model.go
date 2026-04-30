@@ -3,7 +3,6 @@ package board
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"strings"
 )
 
 // Column represents a kanban column with a pre-defined prompt.
@@ -59,23 +58,9 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-// sanitizeBranch creates a safe branch name from a title with a short UUID suffix to avoid conflicts.
-func sanitizeBranch(title string) string {
-	var b strings.Builder
-	prevDash := true // start true to skip leading dashes
-	for _, r := range strings.ToLower(title) {
-		switch {
-		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
-			b.WriteRune(r)
-			prevDash = false
-		case !prevDash:
-			b.WriteByte('-')
-			prevDash = true
-		}
-		if b.Len() >= 40 {
-			break
-		}
-	}
-	s := strings.TrimRight(b.String(), "-")
-	return "board/" + s + "-" + newID()[:8]
+// newBranchName returns a unique branch name for a local card. The name
+// is random rather than derived from the card's title, so the worktree
+// directory does not depend on the (slower) title generation.
+func newBranchName() string {
+	return "board/" + newID()
 }
