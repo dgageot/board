@@ -75,6 +75,9 @@ func (Sessions) SendKeys(sessionName, message string) error {
 	return nil
 }
 
+// errSessionNotFound indicates the requested tmux session does not exist.
+var errSessionNotFound = errors.New("tmux session not found")
+
 // KillSession kills a tmux session.
 func (Sessions) KillSession(sessionName string) error {
 	tmux, err := gotmux.DefaultTmux()
@@ -83,7 +86,7 @@ func (Sessions) KillSession(sessionName string) error {
 	}
 
 	session, err := tmux.GetSessionByName(sessionName)
-	if err != nil {
+	if err != nil || session == nil {
 		return nil // session doesn't exist, nothing to kill
 	}
 
@@ -100,6 +103,9 @@ func (Sessions) PaneContent(sessionName string) (string, error) {
 	session, err := tmux.GetSessionByName(sessionName)
 	if err != nil {
 		return "", err
+	}
+	if session == nil {
+		return "", errSessionNotFound
 	}
 
 	panes, err := session.ListPanes()

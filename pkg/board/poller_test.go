@@ -152,3 +152,66 @@ func TestPollerIgnoresNonActiveCards(t *testing.T) {
 	card, _ := store.GetCard("c1")
 	assert.Equal(t, StatusDone, card.Status)
 }
+
+// raceStore wraps a Store and rewrites c1's column on the first ListCards
+// call, mimicking a move-card handler that lands between the poller's read
+// (phase 1) and write (phase 2) phases.
+type raceStore struct {
+	Store
+	newColumn string
+	done      bool
+}
+
+func (r *raceStore) ListCards() ([]*Card, error) {
+	cards, err := r.Store.ListCards()
+	if err != nil || r.done {
+		return cards, err
+	}
+	for _, c := range cards {
+		if c.ID != "c1" {
+			continue
+		}
+		moved := *c
+		moved.Column = r.newColumn
+		if err := r.UpdateCard(&moved); err != nil {
+			return nil, err
+		}
+		r.done = true
+		break
+	}
+	return cards, nil
+}
+
+// TestPollerTransitionDoesNotRevertConcurrentColumnChange is a regression
+// test for a race between [Poller.poll] and the move-card handler. The
+// poller used to write its phase-1 snapshot back via [Store.UpdateCard],
+// which rewrote every column of the row and silently reverted concurrent
+// edits — most visibly the card's destination column.
+func TestPollerTransitionDoesNotRevertConcurrentColumnChange(t *testing.T) {
+	inner := openTestStore(t)
+	sessions := newFakeSessionManager()
+
+	require.NoError(t, inner.InsertCard(&Card{
+		ID: "c1", Title: "Task", Column: "dev", Status: StatusRunning,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s1",
+	}))
+
+	racy := &raceStore{Store: inner, newColumn: "review"}
+	poller := newPoller(racy, sessions, func() {})
+
+	// Drive the stable-count to threshold-1 so the next poll triggers the
+	// Running->Waiting transition.
+	sessions.setPaneContent("idle")
+	for range stableThreshold {
+		poller.poll()
+	}
+
+	// The next poll fires the transition. The wrapper has moved the card's
+	// column on the way in; the transition write must not revert it.
+	poller.poll()
+
+	got, err := inner.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, "review", got.Column, "poller must not revert a concurrent column change")
+	assert.Equal(t, StatusWaiting, got.Status)
+}

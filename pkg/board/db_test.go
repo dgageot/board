@@ -100,6 +100,24 @@ func TestUpdateCard(t *testing.T) {
 	assert.Equal(t, StatusWaiting, got.Status)
 }
 
+func TestUpdateCardStatusPreservesOtherFields(t *testing.T) {
+	store := openTestStore(t)
+
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "card-1", Title: "Old", Column: "dev", Status: StatusRunning,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s1",
+	}))
+
+	require.NoError(t, store.UpdateCardStatus("card-1", StatusWaiting))
+
+	got, err := store.GetCard("card-1")
+	require.NoError(t, err)
+	assert.Equal(t, StatusWaiting, got.Status)
+	assert.Equal(t, "Old", got.Title)
+	assert.Equal(t, "dev", got.Column)
+	assert.Equal(t, "s1", got.Session)
+}
+
 func TestDeleteCard(t *testing.T) {
 	store := openTestStore(t)
 

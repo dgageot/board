@@ -169,6 +169,15 @@ func (s *SQLiteStore) UpdateCard(c *Card) error {
 	return err
 }
 
+// UpdateCardStatus updates only the status column of a card. It is meant for
+// background goroutines that hold a stale snapshot of the row (the poller
+// and the remote-session watcher); a full [UpdateCard] would silently revert
+// concurrent edits made by, e.g., the move-card handler.
+func (s *SQLiteStore) UpdateCardStatus(id string, status CardStatus) error {
+	_, err := s.db.Exec("UPDATE cards SET status = ? WHERE id = ?", status, id)
+	return err
+}
+
 func (s *SQLiteStore) DeleteCard(id string) error {
 	_, err := s.db.Exec("DELETE FROM cards WHERE id = ?", id)
 	return err

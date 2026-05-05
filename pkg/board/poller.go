@@ -52,7 +52,7 @@ func (p *Poller) Run(ctx context.Context) {
 
 // cardTransition describes a status change detected during polling.
 type cardTransition struct {
-	card      *Card
+	cardID    string
 	newStatus CardStatus
 }
 
@@ -83,7 +83,7 @@ func (p *Poller) poll() bool {
 
 			if card.Status == StatusRunning && p.stableCount[card.ID] >= stableThreshold {
 				transitions = append(transitions, cardTransition{
-					card:      card,
+					cardID:    card.ID,
 					newStatus: StatusWaiting,
 				})
 			}
@@ -92,7 +92,7 @@ func (p *Poller) poll() bool {
 
 			if card.Status == StatusWaiting {
 				transitions = append(transitions, cardTransition{
-					card:      card,
+					cardID:    card.ID,
 					newStatus: StatusRunning,
 				})
 			}
@@ -100,11 +100,12 @@ func (p *Poller) poll() bool {
 	}
 	p.mu.Unlock()
 
-	// Phase 2: Apply transitions without holding the lock.
+	// Phase 2: Apply transitions without holding the lock. We update only the
+	// status column so a concurrent move-card handler that just changed the
+	// row's column is not silently reverted by our stale snapshot.
 	changed := false
 	for _, t := range transitions {
-		t.card.Status = t.newStatus
-		if err := p.store.UpdateCard(t.card); err != nil {
+		if err := p.store.UpdateCardStatus(t.cardID, t.newStatus); err != nil {
 			continue
 		}
 		changed = true
