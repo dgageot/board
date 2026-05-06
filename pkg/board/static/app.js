@@ -379,27 +379,30 @@ function closeTerminal() {
 }
 
 document.getElementById("close-terminal").addEventListener("click", () => {
-  closeTerminal();
   document.getElementById("terminal-dialog").close();
 });
 
-document.getElementById("terminal-dialog").addEventListener("cancel", () => {
-  closeTerminal();
-});
-
+// The terminal dialog hosts a live TUI: ESC must reach the agent (so menus,
+// modes, etc. behave normally) but neither dismiss the <dialog> nor flow
+// through ghostty-web's keydown handler, which encodes ESC using the Kitty
+// keyboard protocol (e.g. `\x1b[27u`) and shows up as garbage in bubbletea
+// TUIs. We send a plain `\x1b` byte ourselves and stop the event there.
 document.getElementById("terminal-dialog").addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    closeTerminal();
-    document.getElementById("terminal-dialog").close();
+  if (e.key !== "Escape") return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
+    activeSocket.send("\x1b");
   }
+}, true);
+
+// Belt and suspenders: if the browser still tries to dismiss the dialog on
+// ESC (e.g. before our keydown listener runs), keep it open.
+document.getElementById("terminal-dialog").addEventListener("cancel", (e) => {
+  e.preventDefault();
 });
 
-document.getElementById("terminal-dialog").addEventListener("click", (e) => {
-  if (e.target === e.currentTarget) {
-    closeTerminal();
-    document.getElementById("terminal-dialog").close();
-  }
-});
+document.getElementById("terminal-dialog").addEventListener("close", closeTerminal);
 
 // Generic close button for all dialogs
 document.querySelectorAll(".dialog-close[data-close]").forEach((btn) => {

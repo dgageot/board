@@ -59,10 +59,16 @@ func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
 }
 
 // SendKeys sends a follow-up message to a running docker agent session.
-// It uses -l (literal) so the text is typed into the TUI as-is,
-// then sends Enter separately to submit it.
+// A leading Escape dismisses any modal, menu or scroll mode so focus is
+// restored to the prompt editor before typing. The message is then sent
+// with -l (literal) so it lands in the editor as-is, and Enter submits it.
 func (Sessions) SendKeys(sessionName, message string) error {
-	cmd := exec.Command("tmux", "send-keys", "-l", "-t", sessionName, message)
+	cmd := exec.Command("tmux", "send-keys", "-t", sessionName, "Escape")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("send-keys Escape: %s: %w", out, err)
+	}
+
+	cmd = exec.Command("tmux", "send-keys", "-l", "-t", sessionName, message)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("send-keys -l: %s: %w", out, err)
 	}
