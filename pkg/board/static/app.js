@@ -119,7 +119,7 @@ function renderBoard() {
     colEl.style.setProperty("--col-accent", color);
     colEl.innerHTML = `
       <div class="column-header">
-        <span>${col.emoji} ${esc(col.name)}</span>
+        <span class="column-title">${col.emoji} ${esc(col.name)}</span>
         <div class="column-header-actions">
           ${headerExtra}
           ${clearExtra}
@@ -192,14 +192,6 @@ function renderBoard() {
   }
 }
 
-function statusLabel(status, colId) {
-  if (colId === "done" && status === "waiting") return "Done";
-  if (status === "waiting") return "Ready for input";
-  if (status === "running") return "In progress";
-  if (status === "done") return "Done";
-  return status;
-}
-
 function renderCard(card, colId) {
   const el = document.createElement("div");
   el.className = `card card-${card.status}`;
@@ -211,9 +203,6 @@ function renderCard(card, colId) {
 
   el.innerHTML = `
     <div class="card-title">${esc(card.title)}</div>
-    <div class="card-meta">
-      <span class="status-badge ${card.status}">${statusLabel(card.status, colId)}</span>
-    </div>
     <div class="card-actions">
       <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" data-session="${esc(card.session)}" title="Open agent session">Agent</button>
       <button class="btn btn-small btn-secondary" data-action="diff" data-id="${card.id}" title="View worktree diff">Diff</button>
