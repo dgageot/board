@@ -50,20 +50,14 @@ func (p *Poller) Run(ctx context.Context) {
 	}
 }
 
-// cardTransition describes a status change detected during polling.
-type cardTransition struct {
-	cardID    string
-	newStatus CardStatus
-}
-
 func (p *Poller) poll() bool {
 	cards, err := p.store.ListCards()
 	if err != nil {
 		return false
 	}
 
-	// Phase 1: Read pane content and determine transitions under lock.
-	var transitions []cardTransition
+	// Phase 1: read pane content under lock and collect status transitions.
+	transitions := map[string]CardStatus{}
 	p.mu.Lock()
 	for _, card := range cards {
 		if card.Status == StatusDone {
@@ -78,34 +72,27 @@ func (p *Poller) poll() bool {
 		prev := p.lastContent[card.ID]
 		p.lastContent[card.ID] = content
 
-		if prev != "" && prev == content {
+		switch {
+		case prev != "" && prev == content:
 			p.stableCount[card.ID]++
-
 			if card.Status == StatusRunning && p.stableCount[card.ID] >= stableThreshold {
-				transitions = append(transitions, cardTransition{
-					cardID:    card.ID,
-					newStatus: StatusWaiting,
-				})
+				transitions[card.ID] = StatusWaiting
 			}
-		} else {
+		default:
 			p.stableCount[card.ID] = 0
-
 			if card.Status == StatusWaiting {
-				transitions = append(transitions, cardTransition{
-					cardID:    card.ID,
-					newStatus: StatusRunning,
-				})
+				transitions[card.ID] = StatusRunning
 			}
 		}
 	}
 	p.mu.Unlock()
 
-	// Phase 2: Apply transitions without holding the lock. We update only the
-	// status column so a concurrent move-card handler that just changed the
-	// row's column is not silently reverted by our stale snapshot.
+	// Phase 2: apply transitions without the lock. We update only the status
+	// column so a concurrent move-card handler that just changed the row's
+	// column is not silently reverted by our stale snapshot.
 	changed := false
-	for _, t := range transitions {
-		if err := p.store.UpdateCardStatus(t.cardID, t.newStatus); err != nil {
+	for id, status := range transitions {
+		if err := p.store.UpdateCardStatus(id, status); err != nil {
 			continue
 		}
 		changed = true
