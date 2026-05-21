@@ -13,6 +13,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Default terminal dimensions when the client does not advertise its size.
+const (
+	defaultCols = 80
+	defaultRows = 24
+)
+
 // resizeMsg is the JSON message sent by the terminal client on resize.
 type resizeMsg struct {
 	Type string `json:"type"`
@@ -50,8 +56,8 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	)
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Cols: uint16(cmp.Or(cols, 80)),
-		Rows: uint16(cmp.Or(rows, 24)),
+		Cols: uint16(cmp.Or(cols, defaultCols)),
+		Rows: uint16(cmp.Or(rows, defaultRows)),
 	})
 	if err != nil {
 		log.Printf("terminal session %s: %v", sessionName, err)
