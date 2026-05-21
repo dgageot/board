@@ -175,7 +175,7 @@ func TestHandleCreateCardInvalidJSON(t *testing.T) {
 func TestBroadcastToClients(t *testing.T) {
 	b, _ := newTestBoard(t)
 
-	ch := make(chan string, 4)
+	ch := make(chan struct{}, 4)
 	b.mu.Lock()
 	b.clients[ch] = struct{}{}
 	b.mu.Unlock()
@@ -183,8 +183,7 @@ func TestBroadcastToClients(t *testing.T) {
 	b.broadcast()
 
 	select {
-	case msg := <-ch:
-		assert.Equal(t, "refresh", msg)
+	case <-ch:
 	default:
 		t.Fatal("expected broadcast message")
 	}
@@ -193,7 +192,7 @@ func TestBroadcastToClients(t *testing.T) {
 func TestBroadcastSkipsFullChannels(t *testing.T) {
 	b, _ := newTestBoard(t)
 
-	ch := make(chan string) // unbuffered, will be full
+	ch := make(chan struct{}) // unbuffered, will be full
 	b.mu.Lock()
 	b.clients[ch] = struct{}{}
 	b.mu.Unlock()

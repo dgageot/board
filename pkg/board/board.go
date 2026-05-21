@@ -2,7 +2,6 @@ package board
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -16,7 +15,7 @@ type Board struct {
 	sessions SessionManager
 	poller   *Poller
 	mu       sync.RWMutex
-	clients  map[chan string]struct{}
+	clients  map[chan struct{}]struct{}
 }
 
 func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionManager) *Board {
@@ -24,7 +23,7 @@ func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionMana
 		config:   cfg,
 		store:    store,
 		sessions: sessions,
-		clients:  make(map[chan string]struct{}),
+		clients:  make(map[chan struct{}]struct{}),
 	}
 
 	b.poller = newPoller(store, sessions, b.broadcast)
@@ -33,13 +32,13 @@ func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionMana
 	return b
 }
 
-// broadcast sends an SSE refresh event to all connected clients.
+// broadcast wakes all connected SSE clients so they emit a refresh frame.
 func (b *Board) broadcast() {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for ch := range b.clients {
 		select {
-		case ch <- "refresh":
+		case ch <- struct{}{}:
 		default:
 		}
 	}
@@ -78,7 +77,7 @@ func (b *Board) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	ch := make(chan string, 16)
+	ch := make(chan struct{}, 16)
 	b.mu.Lock()
 	b.clients[ch] = struct{}{}
 	b.mu.Unlock()
@@ -95,8 +94,8 @@ func (b *Board) handleSSE(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		select {
-		case msg := <-ch:
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", msg)
+		case <-ch:
+			_, _ = io.WriteString(w, "data: refresh\n\n")
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
