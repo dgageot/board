@@ -32,16 +32,22 @@ func newPoller(store Store, sessions SessionManager, onChanged func()) *Poller {
 // required before a card transitions from running to waiting.
 const stableThreshold = 3
 
+// pollInterval is the base delay between two polls. Each poll adds a
+// random jitter up to pollJitter to avoid aliasing with spinners that
+// cycle at exact intervals.
+const (
+	pollInterval = 800 * time.Millisecond
+	pollJitter   = 400 * time.Millisecond
+)
+
 // Run periodically checks tmux panes for activity changes.
-// It polls every ~1s with a small random jitter to avoid
-// aliasing with spinners that cycle at exact intervals.
 func (p *Poller) Run(ctx context.Context) {
 	for {
-		jitter := time.Duration(rand.IntN(400)) * time.Millisecond
+		jitter := time.Duration(rand.Int64N(int64(pollJitter)))
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(800*time.Millisecond + jitter):
+		case <-time.After(pollInterval + jitter):
 		}
 
 		if p.poll() {
