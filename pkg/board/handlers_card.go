@@ -52,7 +52,7 @@ func (b *Board) createCard(prompt, projectID string) (*Card, error) {
 
 	branch := newBranchName()
 	wtPath := git.WorktreePath(repoPath, branch)
-	sessionName := "board-" + newID()[:8]
+	sessionName := newSessionName()
 
 	if err := git.CreateWorktree(repoPath, branch, wtPath); err != nil {
 		return nil, fmt.Errorf("git worktree: %w", err)

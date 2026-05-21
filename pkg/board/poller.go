@@ -148,7 +148,7 @@ func (p *Poller) SendPromptToCard(card *Card, prompt string) error {
 	}
 
 	if err := p.sessions.SendKeys(card.Session, prompt); err != nil {
-		sessionName := "board-" + newID()[:8]
+		sessionName := newSessionName()
 		if err := p.sessions.NewSession(sessionName, card.Worktree, card.Agent, prompt); err != nil {
 			return fmt.Errorf("tmux: %w", err)
 		}

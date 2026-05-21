@@ -52,6 +52,12 @@ type Project struct {
 	Agent    string `json:"agent" db:"agent"`
 }
 
+// branchPrefix is used for all worktree branches created by the board.
+const branchPrefix = "board/"
+
+// sessionPrefix is used for all tmux sessions created by the board.
+const sessionPrefix = "board-"
+
 func newID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
@@ -62,5 +68,10 @@ func newID() string {
 // is random rather than derived from the card's title, so the worktree
 // directory does not depend on the (slower) title generation.
 func newBranchName() string {
-	return "board/" + newID()
+	return branchPrefix + newID()
+}
+
+// newSessionName returns a unique tmux session name for a card.
+func newSessionName() string {
+	return sessionPrefix + newID()[:8]
 }
