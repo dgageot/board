@@ -63,15 +63,13 @@ func migrate(db *sqlx.DB) error {
 
 	current := currentVersion(db)
 
-	// Bootstrap: detect pre-migration databases that already have
-	// the full schema but no version tracking yet.
+	// Bootstrap: a pre-migration database already has the full schema
+	// of migration 1; record that without re-applying it.
 	if current == 0 && tableExists(db, "cards") {
-		current = detectVersion(db)
-		if current > 0 {
-			if _, err := db.Exec(`INSERT INTO schema_version (version) VALUES (?)`, current); err != nil {
-				return fmt.Errorf("bootstrap version: %w", err)
-			}
+		if _, err := db.Exec(`INSERT INTO schema_version (version) VALUES (?)`, 1); err != nil {
+			return fmt.Errorf("bootstrap version: %w", err)
 		}
+		current = 1
 	}
 
 	for i := current; i < len(entries); i++ {
@@ -125,12 +123,6 @@ func tableExists(db *sqlx.DB, name string) bool {
 	var count int
 	err := db.Get(&count, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, name)
 	return err == nil && count > 0
-}
-
-// detectVersion figures out which migration an existing pre-migration
-// database corresponds to by inspecting the schema.
-func detectVersion(db *sqlx.DB) int {
-	return 1 // tables exist → at least migration 1
 }
 
 // --- Cards ---
