@@ -3,6 +3,7 @@ package board
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -251,15 +252,20 @@ func (b *Board) handleClearColumn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var errs []error
 	for _, card := range cards {
 		if err := b.store.DeleteCard(card.ID); err != nil {
-			writeError(w, fmt.Errorf("delete card %s: %w", card.ID, err))
-			return
+			errs = append(errs, fmt.Errorf("delete card %s: %w", card.ID, err))
+			continue
 		}
-
 		b.deleteCardResources(card)
 	}
 
 	b.broadcast()
+
+	if err := errors.Join(errs...); err != nil {
+		writeError(w, err)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
