@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sync"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/GianlucaP106/gotmux/gotmux"
@@ -12,9 +13,15 @@ import (
 // Sessions provides session management operations backed by tmux.
 type Sessions struct{}
 
+// defaultTmux returns a process-wide [gotmux.Tmux] handle. The handle is
+// stateless aside from the socket path it remembers, so it can be safely
+// reused across goroutines and we avoid spawning a fresh helper for every
+// call.
+var defaultTmux = sync.OnceValues(gotmux.DefaultTmux)
+
 // NewSession creates a tmux session and runs docker agent in it.
 func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
-	tmux, err := gotmux.DefaultTmux()
+	tmux, err := defaultTmux()
 	if err != nil {
 		return fmt.Errorf("tmux init: %w", err)
 	}
@@ -86,7 +93,7 @@ var errSessionNotFound = errors.New("tmux session not found")
 
 // KillSession kills a tmux session.
 func (Sessions) KillSession(sessionName string) error {
-	tmux, err := gotmux.DefaultTmux()
+	tmux, err := defaultTmux()
 	if err != nil {
 		return err
 	}
@@ -101,7 +108,7 @@ func (Sessions) KillSession(sessionName string) error {
 
 // PaneContent captures the current content of the first pane in a session.
 func (Sessions) PaneContent(sessionName string) (string, error) {
-	tmux, err := gotmux.DefaultTmux()
+	tmux, err := defaultTmux()
 	if err != nil {
 		return "", err
 	}
