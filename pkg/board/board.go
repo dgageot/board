@@ -3,6 +3,7 @@ package board
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"sync"
@@ -89,7 +90,7 @@ func (b *Board) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Send initial event
-	_, _ = fmt.Fprintf(w, "data: refresh\n\n")
+	_, _ = io.WriteString(w, "data: refresh\n\n")
 	flusher.Flush()
 
 	for {
