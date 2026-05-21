@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -31,9 +32,14 @@ func Run() error {
 	defer func() { _ = store.Close() }()
 
 	// Seed default columns if the table is empty.
-	cols, _ := store.ListColumns()
+	cols, err := store.ListColumns()
+	if err != nil {
+		return fmt.Errorf("list columns: %w", err)
+	}
 	if len(cols) == 0 {
-		_ = store.SeedColumns(defaultColumns)
+		if err := store.SeedColumns(defaultColumns); err != nil {
+			log.Printf("seed columns: %v", err)
+		}
 	}
 
 	board := newBoard(ctx, cfg, store, tmux.Sessions{})
