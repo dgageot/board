@@ -19,6 +19,24 @@ type Sessions struct{}
 // call.
 var defaultTmux = sync.OnceValues(gotmux.DefaultTmux)
 
+// sessionDefaults are tmux options applied to every session for better TUI
+// passthrough.
+var sessionDefaults = [][]string{
+	{"set", "-g", "allow-passthrough", "on"},
+	{"set", "-g", "mouse", "on"},
+	{"set", "-g", "default-terminal", "tmux-256color"},
+	{"set", "-ga", "terminal-features", ",xterm-256color:clipboard:ccolour:cstyle:focus:title:mouse:RGB"},
+	{"set-environment", "LANG", "en_US.UTF-8"},
+	{"set-environment", "LC_ALL", "en_US.UTF-8"},
+}
+
+// applySessionDefaults applies [sessionDefaults] to the given session.
+func applySessionDefaults(sessionName string) {
+	for _, args := range sessionDefaults {
+		_ = tmuxRun(append([]string{"-t", sessionName}, args...)...)
+	}
+}
+
 // NewSession creates a tmux session and runs docker agent in it.
 func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
 	tmux, err := defaultTmux()
@@ -34,17 +52,7 @@ func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
 		return fmt.Errorf("create session: %w", err)
 	}
 
-	// Enable features for better TUI passthrough.
-	for _, args := range [][]string{
-		{"set", "-g", "allow-passthrough", "on"},
-		{"set", "-g", "mouse", "on"},
-		{"set", "-g", "default-terminal", "tmux-256color"},
-		{"set", "-ga", "terminal-features", ",xterm-256color:clipboard:ccolour:cstyle:focus:title:mouse:RGB"},
-		{"set-environment", "LANG", "en_US.UTF-8"},
-		{"set-environment", "LC_ALL", "en_US.UTF-8"},
-	} {
-		_ = tmuxRun(append([]string{"-t", sessionName}, args...)...)
-	}
+	applySessionDefaults(sessionName)
 
 	panes, err := session.ListPanes()
 	if err != nil {
