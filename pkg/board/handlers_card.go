@@ -3,6 +3,7 @@ package board
 import (
 	"cmp"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,12 +13,17 @@ import (
 	"github.com/dgageot/board/pkg/git"
 )
 
-// getCard retrieves a card by path parameter or writes a 404 error.
+// getCard retrieves a card by path parameter. It writes a 404 when the card
+// is missing and a 500 for any other store error.
 func (b *Board) getCard(w http.ResponseWriter, r *http.Request) (*Card, bool) {
 	id := r.PathValue("id")
 	card, err := b.store.GetCard(id)
-	if err != nil {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
 		writeError(w, fmt.Errorf("%w: card %s", errNotFound, id))
+		return nil, false
+	case err != nil:
+		writeError(w, fmt.Errorf("get card %s: %w", id, err))
 		return nil, false
 	}
 	return card, true
