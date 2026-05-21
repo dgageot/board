@@ -86,6 +86,7 @@ func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card 
 		return nil, fmt.Errorf("insert card: %w", err)
 	}
 
+	b.broadcast()
 	return card, nil
 }
 
@@ -115,7 +116,6 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	b.broadcast()
 	writeJSON(w, card)
 }
 
