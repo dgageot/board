@@ -17,8 +17,7 @@ func (b *Board) handleListProjects(w http.ResponseWriter, _ *http.Request) {
 
 func (b *Board) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	var p Project
-	if err := readJSON(r, &p); err != nil {
-		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
+	if !decodeJSON(w, r, &p) {
 		return
 	}
 

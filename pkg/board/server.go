@@ -93,6 +93,12 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func readJSON(r *http.Request, v any) error {
-	return json.NewDecoder(r.Body).Decode(v)
+// decodeJSON parses the request body and writes a 400 on failure.
+// Returns true on success, false if the caller should abort.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
+		return false
+	}
+	return true
 }

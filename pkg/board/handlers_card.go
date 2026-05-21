@@ -93,8 +93,7 @@ func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card 
 // readCreateCardRequest parses and validates a createCardRequest from an HTTP request.
 func readCreateCardRequest(w http.ResponseWriter, r *http.Request) (*createCardRequest, bool) {
 	var req createCardRequest
-	if err := readJSON(r, &req); err != nil {
-		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
+	if !decodeJSON(w, r, &req) {
 		return nil, false
 	}
 	if req.Prompt == "" {
@@ -123,8 +122,7 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Column string `json:"column"`
 	}
-	if err := readJSON(r, &req); err != nil {
-		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

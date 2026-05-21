@@ -16,8 +16,7 @@ func (b *Board) handleListColumns(w http.ResponseWriter, _ *http.Request) {
 
 func (b *Board) handleUpdateColumns(w http.ResponseWriter, r *http.Request) {
 	var updates []Column
-	if err := readJSON(r, &updates); err != nil {
-		writeError(w, fmt.Errorf("%w: invalid json", errBadInput))
+	if !decodeJSON(w, r, &updates) {
 		return
 	}
 
