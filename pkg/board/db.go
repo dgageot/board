@@ -127,7 +127,11 @@ func tableExists(db *sqlx.DB, name string) bool {
 
 // --- Cards ---
 
-const cardColumns = "id, title, col, status, agent, repo_path, branch, worktree, session"
+const (
+	cardColumns     = "id, title, col, status, agent, repo_path, branch, worktree, session"
+	cardNamedValues = ":id, :title, :col, :status, :agent, :repo_path, :branch, :worktree, :session"
+	insertCardSQL   = "INSERT INTO cards (" + cardColumns + ") VALUES (" + cardNamedValues + ")"
+)
 
 func (s *SQLiteStore) ListCards() ([]*Card, error) {
 	cards := []*Card{}
@@ -146,10 +150,7 @@ func (s *SQLiteStore) GetCard(id string) (*Card, error) {
 }
 
 func (s *SQLiteStore) InsertCard(c *Card) error {
-	_, err := s.db.NamedExec(
-		"INSERT INTO cards (id, title, col, status, agent, repo_path, branch, worktree, session) VALUES (:id, :title, :col, :status, :agent, :repo_path, :branch, :worktree, :session)",
-		c,
-	)
+	_, err := s.db.NamedExec(insertCardSQL, c)
 	return err
 }
 
@@ -194,10 +195,7 @@ func (s *SQLiteStore) ReinsertCard(c *Card) error {
 	if _, err := tx.Exec("DELETE FROM cards WHERE id = ?", c.ID); err != nil {
 		return err
 	}
-	if _, err := tx.NamedExec(
-		"INSERT INTO cards (id, title, col, status, agent, repo_path, branch, worktree, session) VALUES (:id, :title, :col, :status, :agent, :repo_path, :branch, :worktree, :session)",
-		c,
-	); err != nil {
+	if _, err := tx.NamedExec(insertCardSQL, c); err != nil {
 		return err
 	}
 
