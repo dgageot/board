@@ -154,7 +154,7 @@ func (p *Poller) SendPromptToCard(card *Card, prompt string) error {
 			return fmt.Errorf("tmux: %w", err)
 		}
 		card.Session = sessionName
-		_ = p.store.UpdateCard(card)
+		_ = p.store.UpdateCardSession(card.ID, sessionName)
 	}
 
 	return nil

@@ -12,6 +12,10 @@ type Store interface {
 	// stale snapshot of the row cannot silently revert concurrent edits made
 	// by the move-card handler.
 	UpdateCardStatus(id string, status CardStatus) error
+	// UpdateCardSession persists only the session field of a card. Same
+	// rationale as [UpdateCardStatus]: callers holding a stale snapshot must
+	// not revert concurrent column or status updates.
+	UpdateCardSession(id, session string) error
 	DeleteCard(id string) error
 	ListCardsByColumn(column string) ([]*Card, error)
 	ReinsertCard(c *Card) error

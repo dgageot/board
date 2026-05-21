@@ -177,6 +177,13 @@ func (s *SQLiteStore) UpdateCardStatus(id string, status CardStatus) error {
 	return err
 }
 
+// UpdateCardSession updates only the session column of a card. Same rationale
+// as [SQLiteStore.UpdateCardStatus].
+func (s *SQLiteStore) UpdateCardSession(id, session string) error {
+	_, err := s.db.Exec("UPDATE cards SET session = ? WHERE id = ?", session, id)
+	return err
+}
+
 func (s *SQLiteStore) DeleteCard(id string) error {
 	_, err := s.db.Exec("DELETE FROM cards WHERE id = ?", id)
 	return err
