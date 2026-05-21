@@ -57,6 +57,9 @@ func columnIndex(cols []Column, colID string) int {
 	return slices.IndexFunc(cols, func(c Column) bool { return c.ID == colID })
 }
 
+// sseRefreshFrame is the payload sent on every SSE update.
+const sseRefreshFrame = "data: refresh\n\n"
+
 // --- SSE handler ---
 
 func (b *Board) handleSSE(w http.ResponseWriter, r *http.Request) {
@@ -81,15 +84,24 @@ func (b *Board) handleSSE(w http.ResponseWriter, r *http.Request) {
 		b.mu.Unlock()
 	}()
 
-	// Send initial event
-	_, _ = io.WriteString(w, "data: refresh\n\n")
-	flusher.Flush()
+	writeRefresh := func() bool {
+		if _, err := io.WriteString(w, sseRefreshFrame); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+
+	if !writeRefresh() {
+		return
+	}
 
 	for {
 		select {
 		case <-ch:
-			_, _ = io.WriteString(w, "data: refresh\n\n")
-			flusher.Flush()
+			if !writeRefresh() {
+				return
+			}
 		case <-r.Context().Done():
 			return
 		}
