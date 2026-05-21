@@ -43,15 +43,19 @@ type createCardRequest struct {
 	ProjectID string `json:"projectId,omitempty"`
 }
 
+// resolveProject returns the agent and repo path for the given project ID,
+// falling back to the board's defaults when the project is missing or empty.
+func (b *Board) resolveProject(projectID string) (agent, repoPath string) {
+	var project Project
+	if p, err := b.store.GetProject(projectID); err == nil && p != nil {
+		project = *p
+	}
+	return cmp.Or(project.Agent, b.config.DefaultAgent), cmp.Or(project.RepoPath, b.config.DefaultRepoPath)
+}
+
 // createCard creates a new card with a worktree and tmux session.
 func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card *Card, err error) {
-	project, _ := b.store.GetProject(projectID)
-	if project == nil {
-		project = &Project{}
-	}
-
-	agent := cmp.Or(project.Agent, b.config.DefaultAgent)
-	repoPath := cmp.Or(project.RepoPath, b.config.DefaultRepoPath)
+	agent, repoPath := b.resolveProject(projectID)
 
 	title, err := generateTitle(ctx, agent, prompt)
 	if err != nil {
