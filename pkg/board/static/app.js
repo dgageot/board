@@ -538,6 +538,17 @@ function renderColumnsEditor() {
 
 // --- Diff Dialog ---
 
+// Files larger than this stay collapsed by default to avoid huge initial layouts.
+const DIFF_AUTO_COLLAPSE_LINES = 500;
+// Hard cap on rendered rows per file. Browsers struggle with millions of <tr>s
+// (e.g. checked-in lockfiles); a truncation notice is appended when this hits.
+const DIFF_MAX_LINES_PER_FILE = 5000;
+// Number of files rendered per animation frame, so the UI stays responsive on
+// huge diffs.
+const DIFF_FILES_PER_FRAME = 5;
+
+let diffRenderToken = 0;
+
 async function openDiffDialog(cardId, title) {
   const dialog = document.getElementById("diff-dialog");
   const container = document.getElementById("diff-container");
@@ -545,53 +556,99 @@ async function openDiffDialog(cardId, title) {
   container.innerHTML = `<div class="diff-loading">Loading diff…</div>`;
   dialog.showModal();
 
+  const token = ++diffRenderToken;
+
   try {
     const data = await API.diffCard(cardId);
+    if (token !== diffRenderToken) return;
     const diff = data.diff || "";
     if (!diff.trim()) {
       container.innerHTML = `<div class="diff-empty">No changes</div>`;
       return;
     }
-    container.innerHTML = renderDiff(diff);
+    renderDiffInto(container, diff, token);
   } catch (err) {
+    if (token !== diffRenderToken) return;
     container.innerHTML = `<div class="diff-empty">Error: ${esc(err.message)}</div>`;
   }
 }
 
-function renderDiff(rawDiff) {
+function renderDiffInto(container, rawDiff, token) {
   const files = parseDiffFiles(rawDiff);
-  if (files.length === 0) return `<div class="diff-empty">No changes</div>`;
+  if (files.length === 0) {
+    container.innerHTML = `<div class="diff-empty">No changes</div>`;
+    return;
+  }
 
-  const statsHtml = renderDiffStats(files);
+  container.innerHTML = renderDiffStats(files);
 
-  const filesHtml = files.map((file, idx) => {
-    const linesHtml = file.hunks.map((hunk) => {
-      const headerHtml = `<tr class="diff-hunk-header"><td colspan="3">${esc(hunk.header)}</td></tr>`;
-      const rowsHtml = hunk.lines.map((line) => {
-        const cls = line.type === "+" ? "diff-add" : line.type === "-" ? "diff-del" : "diff-ctx";
-        const oldNum = line.oldNum ?? "";
-        const newNum = line.newNum ?? "";
-        return `<tr class="${cls}"><td class="diff-ln">${oldNum}</td><td class="diff-ln">${newNum}</td><td class="diff-code">${esc(line.text)}</td></tr>`;
-      }).join("");
-      return headerHtml + rowsHtml;
-    }).join("");
+  // Render files incrementally in batches so the main thread stays free.
+  let i = 0;
+  const renderBatch = () => {
+    if (token !== diffRenderToken) return;
+    const end = Math.min(i + DIFF_FILES_PER_FRAME, files.length);
+    let html = "";
+    for (; i < end; i++) {
+      html += renderDiffFile(files[i]);
+    }
+    container.insertAdjacentHTML("beforeend", html);
+    if (i < files.length) {
+      requestAnimationFrame(renderBatch);
+    }
+  };
+  requestAnimationFrame(renderBatch);
+}
 
-    const added = file.hunks.flatMap((h) => h.lines).filter((l) => l.type === "+").length;
-    const removed = file.hunks.flatMap((h) => h.lines).filter((l) => l.type === "-").length;
-    const badge = `<span class="diff-file-adds">+${added}</span> <span class="diff-file-dels">-${removed}</span>`;
+function renderDiffFile(file) {
+  let added = 0;
+  let removed = 0;
+  let lineCount = 0;
+  for (const hunk of file.hunks) {
+    for (const line of hunk.lines) {
+      lineCount++;
+      if (line.type === "+") added++;
+      else if (line.type === "-") removed++;
+    }
+  }
 
-    return `
-      <details class="diff-file" open>
-        <summary class="diff-file-header">
-          <span class="diff-file-name">${esc(file.name)}</span>
-          <span class="diff-file-stats">${badge}</span>
-        </summary>
-        <table class="diff-table">${linesHtml}</table>
-      </details>
-    `;
-  }).join("");
+  let rendered = 0;
+  let truncated = false;
+  let linesHtml = "";
+  for (const hunk of file.hunks) {
+    if (rendered >= DIFF_MAX_LINES_PER_FILE) {
+      truncated = true;
+      break;
+    }
+    linesHtml += `<tr class="diff-hunk-header"><td colspan="3">${esc(hunk.header)}</td></tr>`;
+    for (const line of hunk.lines) {
+      if (rendered >= DIFF_MAX_LINES_PER_FILE) {
+        truncated = true;
+        break;
+      }
+      const cls = line.type === "+" ? "diff-add" : line.type === "-" ? "diff-del" : "diff-ctx";
+      const oldNum = line.oldNum ?? "";
+      const newNum = line.newNum ?? "";
+      linesHtml += `<tr class="${cls}"><td class="diff-ln">${oldNum}</td><td class="diff-ln">${newNum}</td><td class="diff-code">${esc(line.text)}</td></tr>`;
+      rendered++;
+    }
+  }
+  if (truncated) {
+    const remaining = lineCount - rendered;
+    linesHtml += `<tr class="diff-hunk-header"><td colspan="3">… ${remaining} more line${remaining !== 1 ? "s" : ""} not shown</td></tr>`;
+  }
 
-  return statsHtml + filesHtml;
+  const badge = `<span class="diff-file-adds">+${added}</span> <span class="diff-file-dels">-${removed}</span>`;
+  const openAttr = lineCount > DIFF_AUTO_COLLAPSE_LINES ? "" : " open";
+
+  return `
+    <details class="diff-file"${openAttr}>
+      <summary class="diff-file-header">
+        <span class="diff-file-name">${esc(file.name)}</span>
+        <span class="diff-file-stats">${badge}</span>
+      </summary>
+      <table class="diff-table">${linesHtml}</table>
+    </details>
+  `;
 }
 
 function renderDiffStats(files) {
@@ -658,6 +715,11 @@ function parseDiffFiles(raw) {
 
 document.getElementById("close-diff").addEventListener("click", () => {
   document.getElementById("diff-dialog").close();
+});
+
+document.getElementById("diff-dialog").addEventListener("close", () => {
+  diffRenderToken++;
+  document.getElementById("diff-container").innerHTML = "";
 });
 
 document.getElementById("diff-dialog").addEventListener("keydown", (e) => {

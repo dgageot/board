@@ -776,6 +776,9 @@ dialog.dialog-terminal[open] {
   margin-bottom: 12px;
   overflow: hidden;
   background: color-mix(in srgb, var(--bg-elevated) 62%, transparent);
+  /* Skip layout/paint for off-screen files; huge performance win on large diffs. */
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 400px;
 }
 
 .diff-file-header {
