@@ -36,7 +36,7 @@ type createCardRequest struct {
 }
 
 // createCard creates a new card with a worktree and tmux session.
-func (b *Board) createCard(prompt, projectID string) (*Card, error) {
+func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 	project, _ := b.store.GetProject(projectID)
 	if project == nil {
 		project = &Project{}
@@ -57,16 +57,18 @@ func (b *Board) createCard(prompt, projectID string) (*Card, error) {
 	if err := git.CreateWorktree(repoPath, branch, wtPath); err != nil {
 		return nil, fmt.Errorf("git worktree: %w", err)
 	}
-
-	var retErr error
 	defer func() {
-		if retErr != nil {
+		if err != nil {
 			_ = b.sessions.KillSession(sessionName)
 			git.RemoveWorktree(repoPath, wtPath, branch)
 		}
 	}()
 
-	card := &Card{
+	if err := b.sessions.NewSession(sessionName, wtPath, agent, prompt); err != nil {
+		return nil, fmt.Errorf("tmux session: %w", err)
+	}
+
+	card = &Card{
 		ID:       newID(),
 		Title:    title,
 		Column:   "dev",
@@ -78,12 +80,8 @@ func (b *Board) createCard(prompt, projectID string) (*Card, error) {
 		Session:  sessionName,
 	}
 
-	if retErr = b.sessions.NewSession(sessionName, wtPath, agent, prompt); retErr != nil {
-		return nil, fmt.Errorf("tmux session: %w", retErr)
-	}
-
-	if retErr = b.store.InsertCard(card); retErr != nil {
-		return nil, fmt.Errorf("insert card: %w", retErr)
+	if err := b.store.InsertCard(card); err != nil {
+		return nil, fmt.Errorf("insert card: %w", err)
 	}
 
 	return card, nil
