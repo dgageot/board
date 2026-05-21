@@ -212,7 +212,7 @@ const (
 
 func (s *SQLiteStore) ListProjects() ([]*Project, error) {
 	projects := []*Project{}
-	if err := s.db.Select(&projects, "SELECT "+projectColumns+" FROM projects"); err != nil {
+	if err := s.db.Select(&projects, "SELECT "+projectColumns+" FROM projects ORDER BY rowid"); err != nil {
 		return nil, err
 	}
 	return projects, nil
