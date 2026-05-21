@@ -57,7 +57,8 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		log.Printf("terminal session %s: %v", sessionName, err)
 		return
 	}
-	defer func() { _ = ptmx.Close() }()
+	closePTY := sync.OnceFunc(func() { _ = ptmx.Close() })
+	defer closePTY()
 
 	// Protect WebSocket writes from concurrent access.
 	var wsMu sync.Mutex
@@ -89,7 +90,7 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 			_, data, err := conn.ReadMessage()
 			if err != nil {
 				// Close the PTY so the reader goroutine and cmd.Wait() unblock.
-				_ = ptmx.Close()
+				closePTY()
 				return
 			}
 
@@ -109,7 +110,7 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 
 	_ = cmd.Wait()
 	// Close the PTY to unblock the reader goroutine.
-	_ = ptmx.Close()
+	closePTY()
 	wg.Wait()
 
 	wsMu.Lock()
