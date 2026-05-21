@@ -70,21 +70,24 @@ func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
 // restored to the prompt editor before typing. The message is then sent
 // with -l (literal) so it lands in the editor as-is, and Enter submits it.
 func (Sessions) SendKeys(sessionName, message string) error {
-	cmd := exec.Command("tmux", "send-keys", "-t", sessionName, "Escape")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("send-keys Escape: %s: %w", out, err)
+	if err := tmuxRun("send-keys", "-t", sessionName, "Escape"); err != nil {
+		return fmt.Errorf("send-keys Escape: %w", err)
 	}
-
-	cmd = exec.Command("tmux", "send-keys", "-l", "-t", sessionName, message)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("send-keys -l: %s: %w", out, err)
+	if err := tmuxRun("send-keys", "-l", "-t", sessionName, message); err != nil {
+		return fmt.Errorf("send-keys -l: %w", err)
 	}
-
-	cmd = exec.Command("tmux", "send-keys", "-t", sessionName, "Enter")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("send-keys Enter: %s: %w", out, err)
+	if err := tmuxRun("send-keys", "-t", sessionName, "Enter"); err != nil {
+		return fmt.Errorf("send-keys Enter: %w", err)
 	}
+	return nil
+}
 
+// tmuxRun runs `tmux <args...>` and returns combined output as part of any error.
+func tmuxRun(args ...string) error {
+	out, err := exec.Command("tmux", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %w", out, err)
+	}
 	return nil
 }
 
