@@ -87,17 +87,17 @@ func (p *Poller) poll() bool {
 		prev := state.lastContent
 		state.lastContent = content
 
-		switch {
-		case prev != "" && prev == content:
+		if prev != "" && prev == content {
 			state.stableCount++
 			if card.Status == StatusRunning && state.stableCount >= stableThreshold {
 				transitions[card.ID] = StatusWaiting
 			}
-		default:
-			state.stableCount = 0
-			if card.Status == StatusWaiting {
-				transitions[card.ID] = StatusRunning
-			}
+			continue
+		}
+
+		state.stableCount = 0
+		if card.Status == StatusWaiting {
+			transitions[card.ID] = StatusRunning
 		}
 	}
 	p.mu.Unlock()
