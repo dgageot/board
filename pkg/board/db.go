@@ -131,6 +131,10 @@ const (
 	cardColumns     = "id, title, col, status, agent, repo_path, branch, worktree, session"
 	cardNamedValues = ":id, :title, :col, :status, :agent, :repo_path, :branch, :worktree, :session"
 	insertCardSQL   = "INSERT INTO cards (" + cardColumns + ") VALUES (" + cardNamedValues + ")"
+	updateCardSQL   = `UPDATE cards SET
+		title = :title, col = :col, status = :status, agent = :agent,
+		repo_path = :repo_path, branch = :branch, worktree = :worktree, session = :session
+		WHERE id = :id`
 )
 
 func (s *SQLiteStore) ListCards() ([]*Card, error) {
@@ -155,10 +159,7 @@ func (s *SQLiteStore) InsertCard(c *Card) error {
 }
 
 func (s *SQLiteStore) UpdateCard(c *Card) error {
-	_, err := s.db.NamedExec(
-		"UPDATE cards SET title = :title, col = :col, status = :status, agent = :agent, repo_path = :repo_path, branch = :branch, worktree = :worktree, session = :session WHERE id = :id",
-		c,
-	)
+	_, err := s.db.NamedExec(updateCardSQL, c)
 	return err
 }
 
