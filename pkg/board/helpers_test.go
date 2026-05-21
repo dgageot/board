@@ -5,7 +5,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
 )
 
 func openTestDB(t *testing.T) *sqlx.DB {
