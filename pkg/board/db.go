@@ -205,9 +205,14 @@ func (s *SQLiteStore) ReinsertCard(c *Card) error {
 
 // --- Projects ---
 
+const (
+	projectColumns   = "id, name, repo_path, agent"
+	insertProjectSQL = "INSERT INTO projects (" + projectColumns + ") VALUES (:id, :name, :repo_path, :agent)"
+)
+
 func (s *SQLiteStore) ListProjects() ([]*Project, error) {
 	projects := []*Project{}
-	if err := s.db.Select(&projects, "SELECT id, name, repo_path, agent FROM projects"); err != nil {
+	if err := s.db.Select(&projects, "SELECT "+projectColumns+" FROM projects"); err != nil {
 		return nil, err
 	}
 	return projects, nil
@@ -215,17 +220,14 @@ func (s *SQLiteStore) ListProjects() ([]*Project, error) {
 
 func (s *SQLiteStore) GetProject(id string) (*Project, error) {
 	var project Project
-	if err := s.db.Get(&project, "SELECT id, name, repo_path, agent FROM projects WHERE id = ?", id); err != nil {
+	if err := s.db.Get(&project, "SELECT "+projectColumns+" FROM projects WHERE id = ?", id); err != nil {
 		return nil, err
 	}
 	return &project, nil
 }
 
 func (s *SQLiteStore) InsertProject(p *Project) error {
-	_, err := s.db.NamedExec(
-		"INSERT INTO projects (id, name, repo_path, agent) VALUES (:id, :name, :repo_path, :agent)",
-		p,
-	)
+	_, err := s.db.NamedExec(insertProjectSQL, p)
 	return err
 }
 
