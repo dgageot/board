@@ -176,9 +176,8 @@ func TestBroadcastToClients(t *testing.T) {
 	b, _ := newTestBoard(t)
 
 	ch := make(chan struct{}, 4)
-	b.mu.Lock()
-	b.clients[ch] = struct{}{}
-	b.mu.Unlock()
+	b.addClient(ch)
+	defer b.removeClient(ch)
 
 	b.broadcast()
 
@@ -193,9 +192,8 @@ func TestBroadcastSkipsFullChannels(t *testing.T) {
 	b, _ := newTestBoard(t)
 
 	ch := make(chan struct{}) // unbuffered, will be full
-	b.mu.Lock()
-	b.clients[ch] = struct{}{}
-	b.mu.Unlock()
+	b.addClient(ch)
+	defer b.removeClient(ch)
 
 	// Should not block
 	b.broadcast()

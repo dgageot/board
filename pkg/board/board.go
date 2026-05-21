@@ -57,6 +57,20 @@ func columnIndex(cols []Column, colID string) int {
 	return slices.IndexFunc(cols, func(c Column) bool { return c.ID == colID })
 }
 
+// addClient registers a new SSE client.
+func (b *Board) addClient(ch chan struct{}) {
+	b.mu.Lock()
+	b.clients[ch] = struct{}{}
+	b.mu.Unlock()
+}
+
+// removeClient unregisters an SSE client.
+func (b *Board) removeClient(ch chan struct{}) {
+	b.mu.Lock()
+	delete(b.clients, ch)
+	b.mu.Unlock()
+}
+
 // sseRefreshFrame is the payload sent on every SSE update.
 const sseRefreshFrame = "data: refresh\n\n"
 
@@ -74,15 +88,8 @@ func (b *Board) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 
 	ch := make(chan struct{}, 16)
-	b.mu.Lock()
-	b.clients[ch] = struct{}{}
-	b.mu.Unlock()
-
-	defer func() {
-		b.mu.Lock()
-		delete(b.clients, ch)
-		b.mu.Unlock()
-	}()
+	b.addClient(ch)
+	defer b.removeClient(ch)
 
 	writeRefresh := func() bool {
 		if _, err := io.WriteString(w, sseRefreshFrame); err != nil {
