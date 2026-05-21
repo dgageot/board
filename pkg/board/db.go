@@ -78,29 +78,34 @@ func migrate(db *sqlx.DB) error {
 			return fmt.Errorf("read %s: %w", entries[i].Name(), err)
 		}
 
-		tx, err := db.Beginx()
+		err = runInTx(db, func(tx *sqlx.Tx) error {
+			if _, err := tx.Exec(string(data)); err != nil {
+				return err
+			}
+			return setVersion(tx, i+1)
+		})
 		if err != nil {
-			return fmt.Errorf("migration %d: begin: %w", i+1, err)
-		}
-
-		if _, err := tx.Exec(string(data)); err != nil {
-			_ = tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
-		}
-
-		if err := setVersion(tx, i+1); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("migration %d: set version: %w", i+1, err)
-		}
-
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("migration %d: commit: %w", i+1, err)
 		}
 
 		log.Printf("applied migration %d", i+1)
 	}
 
 	return nil
+}
+
+// runInTx runs fn inside a transaction, committing on success and rolling
+// back on error.
+func runInTx(db *sqlx.DB, fn func(*sqlx.Tx) error) error {
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 func currentVersion(db *sqlx.DB) int {
@@ -187,20 +192,13 @@ func (s *SQLiteStore) ListCardsByColumn(column string) ([]*Card, error) {
 
 // ReinsertCard deletes and re-inserts a card so it gets the highest rowid.
 func (s *SQLiteStore) ReinsertCard(c *Card) error {
-	tx, err := s.db.Beginx()
-	if err != nil {
+	return runInTx(s.db, func(tx *sqlx.Tx) error {
+		if _, err := tx.Exec("DELETE FROM cards WHERE id = ?", c.ID); err != nil {
+			return err
+		}
+		_, err := tx.NamedExec(insertCardSQL, c)
 		return err
-	}
-	defer tx.Rollback() //nolint:errcheck // best-effort rollback on deferred path
-
-	if _, err := tx.Exec("DELETE FROM cards WHERE id = ?", c.ID); err != nil {
-		return err
-	}
-	if _, err := tx.NamedExec(insertCardSQL, c); err != nil {
-		return err
-	}
-
-	return tx.Commit()
+	})
 }
 
 // --- Projects ---
@@ -249,22 +247,17 @@ func (s *SQLiteStore) ListColumns() ([]Column, error) {
 }
 
 func (s *SQLiteStore) SeedColumns(cols []Column) error {
-	tx, err := s.db.Beginx()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback() //nolint:errcheck // best-effort rollback on deferred path
-
-	for i, c := range cols {
-		if _, err := tx.Exec(
-			"INSERT OR IGNORE INTO columns (id, name, emoji, prompt, pos) VALUES (?, ?, ?, ?, ?)",
-			c.ID, c.Name, c.Emoji, c.Prompt, i,
-		); err != nil {
-			return err
+	return runInTx(s.db, func(tx *sqlx.Tx) error {
+		for i, c := range cols {
+			if _, err := tx.Exec(
+				"INSERT OR IGNORE INTO columns (id, name, emoji, prompt, pos) VALUES (?, ?, ?, ?, ?)",
+				c.ID, c.Name, c.Emoji, c.Prompt, i,
+			); err != nil {
+				return err
+			}
 		}
-	}
-
-	return tx.Commit()
+		return nil
+	})
 }
 
 func (s *SQLiteStore) UpdateColumnPrompt(id, prompt string) error {
