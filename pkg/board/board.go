@@ -46,13 +46,6 @@ func (b *Board) broadcast() {
 
 // --- Column helpers ---
 
-func nextColumn(cols []Column, current string) string {
-	if i := columnIndex(cols, current); i >= 0 && i+1 < len(cols) {
-		return cols[i+1].ID
-	}
-	return ""
-}
-
 func columnPrompt(cols []Column, colID string) string {
 	if i := columnIndex(cols, colID); i >= 0 {
 		return cols[i].Prompt

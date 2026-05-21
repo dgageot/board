@@ -30,21 +30,6 @@ func TestNewBranchNameUniqueness(t *testing.T) {
 	assert.NotEqual(t, b1, b2)
 }
 
-func TestNextColumn(t *testing.T) {
-	cols := []Column{
-		{ID: "dev"}, {ID: "review"}, {ID: "done"},
-	}
-
-	assert.Equal(t, "review", nextColumn(cols, "dev"))
-	assert.Equal(t, "done", nextColumn(cols, "review"))
-	assert.Empty(t, nextColumn(cols, "done"))
-	assert.Empty(t, nextColumn(cols, "nonexistent"))
-}
-
-func TestNextColumnEmpty(t *testing.T) {
-	assert.Empty(t, nextColumn(nil, "dev"))
-}
-
 func TestColumnPrompt(t *testing.T) {
 	cols := []Column{
 		{ID: "dev", Prompt: ""},
