@@ -11,9 +11,13 @@ import (
 	"net/http"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/dgageot/board/pkg/tmux"
 )
+
+// shutdownTimeout bounds how long an HTTP shutdown may take after a signal.
+const shutdownTimeout = 10 * time.Second
 
 //go:embed static
 var staticFiles embed.FS
@@ -82,7 +86,9 @@ func Run() error {
 	// Graceful shutdown
 	context.AfterFunc(ctx, func() {
 		fmt.Println("\nShutting down...")
-		_ = srv.Shutdown(context.Background())
+		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancelShutdown()
+		_ = srv.Shutdown(shutdownCtx)
 	})
 
 	fmt.Printf("Board running at http://%s\n", cfg.ListenAddr)
