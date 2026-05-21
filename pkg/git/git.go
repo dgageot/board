@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// branchPrefix is the prefix the board uses for all worktree branches.
-const branchPrefix = "board/"
+// BranchPrefix is the prefix the board uses for all worktree branches.
+const BranchPrefix = "board/"
 
 // CreateWorktree creates a new git worktree with a new branch based on origin/main.
 // It fetches origin first to ensure the branch starts from the latest remote state.
@@ -70,6 +70,6 @@ func Diff(worktree string) (string, error) {
 // WorktreePath computes the worktree directory path.
 func WorktreePath(repoPath, branch string) string {
 	parentDir := filepath.Dir(repoPath)
-	name := strings.TrimPrefix(branch, branchPrefix)
+	name := strings.TrimPrefix(branch, BranchPrefix)
 	return filepath.Join(parentDir, name)
 }

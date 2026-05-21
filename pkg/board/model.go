@@ -3,6 +3,8 @@ package board
 import (
 	"crypto/rand"
 	"encoding/hex"
+
+	"github.com/dgageot/board/pkg/git"
 )
 
 // Column represents a kanban column with a pre-defined prompt.
@@ -52,9 +54,6 @@ type Project struct {
 	Agent    string `json:"agent" db:"agent"`
 }
 
-// branchPrefix is used for all worktree branches created by the board.
-const branchPrefix = "board/"
-
 // sessionPrefix is used for all tmux sessions created by the board.
 const sessionPrefix = "board-"
 
@@ -68,7 +67,7 @@ func newID() string {
 // is random rather than derived from the card's title, so the worktree
 // directory does not depend on the (slower) title generation.
 func newBranchName() string {
-	return branchPrefix + newID()
+	return git.BranchPrefix + newID()
 }
 
 // newSessionName returns a unique tmux session name for a card.
