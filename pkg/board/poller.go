@@ -8,23 +8,27 @@ import (
 	"time"
 )
 
+// pollState tracks the per-card sampling state used to detect activity.
+type pollState struct {
+	lastContent string // last captured pane content
+	stableCount int    // consecutive unchanged polls
+}
+
 // Poller monitors tmux panes for activity changes.
 type Poller struct {
-	store       Store
-	sessions    SessionManager
-	onChanged   func()
-	mu          sync.Mutex
-	lastContent map[string]string // card ID -> last captured pane content
-	stableCount map[string]int    // card ID -> consecutive unchanged polls
+	store     Store
+	sessions  SessionManager
+	onChanged func()
+	mu        sync.Mutex
+	states    map[string]*pollState // card ID -> sampling state
 }
 
 func newPoller(store Store, sessions SessionManager, onChanged func()) *Poller {
 	return &Poller{
-		store:       store,
-		sessions:    sessions,
-		onChanged:   onChanged,
-		lastContent: make(map[string]string),
-		stableCount: make(map[string]int),
+		store:     store,
+		sessions:  sessions,
+		onChanged: onChanged,
+		states:    make(map[string]*pollState),
 	}
 }
 
@@ -75,17 +79,22 @@ func (p *Poller) poll() bool {
 			continue
 		}
 
-		prev := p.lastContent[card.ID]
-		p.lastContent[card.ID] = content
+		state, ok := p.states[card.ID]
+		if !ok {
+			state = &pollState{}
+			p.states[card.ID] = state
+		}
+		prev := state.lastContent
+		state.lastContent = content
 
 		switch {
 		case prev != "" && prev == content:
-			p.stableCount[card.ID]++
-			if card.Status == StatusRunning && p.stableCount[card.ID] >= stableThreshold {
+			state.stableCount++
+			if card.Status == StatusRunning && state.stableCount >= stableThreshold {
 				transitions[card.ID] = StatusWaiting
 			}
 		default:
-			p.stableCount[card.ID] = 0
+			state.stableCount = 0
 			if card.Status == StatusWaiting {
 				transitions[card.ID] = StatusRunning
 			}
@@ -125,11 +134,10 @@ func (p *Poller) MoveCardToColumn(card *Card, column, prompt string) error {
 	return p.SendPromptToCard(card, prompt)
 }
 
-// ResetCard clears the cached pane content for a card.
+// ResetCard clears the cached sampling state for a card.
 func (p *Poller) ResetCard(cardID string) {
 	p.mu.Lock()
-	delete(p.lastContent, cardID)
-	delete(p.stableCount, cardID)
+	delete(p.states, cardID)
 	p.mu.Unlock()
 }
 
