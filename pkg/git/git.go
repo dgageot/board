@@ -2,6 +2,7 @@
 package git
 
 import (
+	"bytes"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -49,20 +50,24 @@ func Diff(worktree string) (string, error) {
 	addCmd.Dir = worktree
 	_ = addCmd.Run()
 
-	baseCmd := exec.Command("git", "merge-base", "HEAD", "origin/main")
-	baseCmd.Dir = worktree
-	baseOut, err := baseCmd.Output()
+	base, err := runGit(worktree, "merge-base", "HEAD", "origin/main")
 	if err != nil {
-		return "", fmt.Errorf("git merge-base: %w", err)
+		return "", err
 	}
 
-	base := strings.TrimSpace(string(baseOut))
+	return runGit(worktree, "diff", strings.TrimSpace(base))
+}
 
-	cmd := exec.Command("git", "diff", base)
-	cmd.Dir = worktree
+// runGit runs `git <args...>` in dir and returns stdout, including stderr in
+// any returned error.
+func runGit(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("git diff: %w", err)
+		return "", fmt.Errorf("git %s: %s: %w", args[0], strings.TrimSpace(stderr.String()), err)
 	}
 	return string(out), nil
 }
