@@ -445,8 +445,9 @@ main#board::-webkit-scrollbar-thumb,
       box-shadow: none;
     }
 
-    & .btn:hover {
+    & .btn:hover:not(:disabled) {
       background: color-mix(in srgb, var(--col-accent, var(--accent)) 15%, var(--surface-hover));
+      transform: none;
     }
 
     & .btn-delete {
