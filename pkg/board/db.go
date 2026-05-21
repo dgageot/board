@@ -238,9 +238,11 @@ func (s *SQLiteStore) DeleteProject(id string) error {
 
 // --- Columns ---
 
+const columnColumns = "id, name, emoji, prompt"
+
 func (s *SQLiteStore) ListColumns() ([]Column, error) {
 	cols := []Column{}
-	if err := s.db.Select(&cols, "SELECT id, name, emoji, prompt FROM columns ORDER BY pos"); err != nil {
+	if err := s.db.Select(&cols, "SELECT "+columnColumns+" FROM columns ORDER BY pos"); err != nil {
 		return nil, err
 	}
 	return cols, nil
