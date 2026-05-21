@@ -48,6 +48,35 @@ func Run() error {
 
 	board := newBoard(ctx, cfg, store, tmux.Sessions{})
 
+	mux, err := buildMux(board)
+	if err != nil {
+		return err
+	}
+
+	srv := &http.Server{
+		Addr:    cfg.ListenAddr,
+		Handler: mux,
+	}
+
+	// Graceful shutdown
+	context.AfterFunc(ctx, func() {
+		fmt.Println("\nShutting down...")
+		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancelShutdown()
+		_ = srv.Shutdown(shutdownCtx)
+	})
+
+	fmt.Printf("Board running at http://%s\n", cfg.ListenAddr)
+
+	err = srv.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
+
+// buildMux registers all routes for the board.
+func buildMux(board *Board) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
 	// API routes
@@ -74,30 +103,11 @@ func Run() error {
 	// Static files
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
-		return fmt.Errorf("static files: %w", err)
+		return nil, fmt.Errorf("static files: %w", err)
 	}
 	mux.Handle("GET /", http.FileServer(http.FS(staticFS)))
 
-	srv := &http.Server{
-		Addr:    cfg.ListenAddr,
-		Handler: mux,
-	}
-
-	// Graceful shutdown
-	context.AfterFunc(ctx, func() {
-		fmt.Println("\nShutting down...")
-		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancelShutdown()
-		_ = srv.Shutdown(shutdownCtx)
-	})
-
-	fmt.Printf("Board running at http://%s\n", cfg.ListenAddr)
-
-	err = srv.ListenAndServe()
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
-	return err
+	return mux, nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
