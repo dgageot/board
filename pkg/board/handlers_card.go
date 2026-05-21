@@ -126,7 +126,12 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cols, _ := b.store.ListColumns()
+	cols, err := b.store.ListColumns()
+	if err != nil {
+		writeError(w, fmt.Errorf("list columns: %w", err))
+		return
+	}
+
 	dstIdx := columnIndex(cols, req.Column)
 	if dstIdx < 0 {
 		writeError(w, fmt.Errorf("%w: invalid column %s", errBadInput, req.Column))
