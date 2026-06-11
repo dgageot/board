@@ -31,9 +31,10 @@ var sessionDefaults = [][]string{
 }
 
 // applySessionDefaults applies [sessionDefaults] to the given session.
+// The -t flag must follow the subcommand; tmux rejects it as a global flag.
 func applySessionDefaults(sessionName string) {
 	for _, args := range sessionDefaults {
-		_ = tmuxRun(append([]string{"-t", sessionName}, args...)...)
+		_ = tmuxRun(append([]string{args[0], "-t", sessionName}, args[1:]...)...)
 	}
 }
 
