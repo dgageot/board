@@ -68,11 +68,13 @@ func (p *Poller) poll() bool {
 
 	// Phase 1: read pane content under lock and collect status transitions.
 	transitions := map[string]CardStatus{}
+	active := map[string]bool{}
 	p.mu.Lock()
 	for _, card := range cards {
 		if card.Status == StatusDone {
 			continue
 		}
+		active[card.ID] = true
 
 		content, err := p.sessions.PaneContent(card.Session)
 		if err != nil {
@@ -98,6 +100,14 @@ func (p *Poller) poll() bool {
 		state.stableCount = 0
 		if card.Status == StatusWaiting {
 			transitions[card.ID] = StatusRunning
+		}
+	}
+
+	// Prune state for cards that are gone or done, so the map does not
+	// grow forever.
+	for id := range p.states {
+		if !active[id] {
+			delete(p.states, id)
 		}
 	}
 	p.mu.Unlock()

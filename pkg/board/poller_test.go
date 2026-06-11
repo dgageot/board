@@ -134,6 +134,25 @@ func TestPollerResetCardClearsState(t *testing.T) {
 	assert.Equal(t, StatusRunning, card.Status)
 }
 
+func TestPollerPrunesStateForRemovedCards(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	poller := newPoller(store, sessions, func() {})
+
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "c1", Title: "Task", Column: "dev", Status: StatusRunning,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s1",
+	}))
+
+	sessions.setPaneContent("output")
+	poller.poll()
+	assert.Contains(t, poller.states, "c1")
+
+	require.NoError(t, store.DeleteCard("c1"))
+	poller.poll()
+	assert.Empty(t, poller.states)
+}
+
 func TestPollerIgnoresNonActiveCards(t *testing.T) {
 	store := openTestStore(t)
 	sessions := newFakeSessionManager()
