@@ -72,9 +72,13 @@ func runGit(dir string, args ...string) (string, error) {
 	return string(out), nil
 }
 
-// WorktreePath computes the worktree directory path.
+// WorktreePath computes the worktree directory path, a sibling of the repo.
 func WorktreePath(repoPath, branch string) string {
-	parentDir := filepath.Dir(repoPath)
+	// Resolve relative paths (e.g. ".") so the worktree lands next to the
+	// repo instead of inside it.
+	if abs, err := filepath.Abs(repoPath); err == nil {
+		repoPath = abs
+	}
 	name := strings.TrimPrefix(branch, BranchPrefix)
-	return filepath.Join(parentDir, name)
+	return filepath.Join(filepath.Dir(repoPath), name)
 }
