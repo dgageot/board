@@ -209,7 +209,7 @@ function renderCard(card, colId) {
   el.innerHTML = `
     <div class="card-title">${esc(card.title)}</div>
     <div class="card-actions">
-      <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" data-session="${esc(card.session)}" title="Open agent session">Agent</button>
+      <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" title="Open agent session">Agent</button>
       <button class="btn btn-small btn-secondary" data-action="diff" data-id="${card.id}" title="View worktree diff">Diff</button>
       <button class="btn btn-small btn-secondary" data-action="vscode" data-id="${card.id}" title="Open in VSCode">Code</button>
       <button class="btn btn-small btn-secondary btn-delete" data-action="delete" data-id="${card.id}" title="Delete task and worktree">✕</button>
@@ -741,10 +741,12 @@ document.getElementById("diff-dialog").addEventListener("click", (e) => {
 
 // --- Utils ---
 
+// esc escapes a string for safe interpolation in HTML, including
+// attribute values (quotes must be escaped there).
+const ESC_CHARS = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
 function esc(s) {
-  const el = document.createElement("span");
-  el.textContent = s || "";
-  return el.innerHTML;
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ESC_CHARS[c]);
 }
 
 // --- Keyboard shortcuts ---
