@@ -80,7 +80,12 @@ async function refresh() {
 function connectSSE() {
   const src = new EventSource("/api/events");
   src.onmessage = () => refresh();
-  src.onerror = () => setTimeout(connectSSE, 2000);
+  src.onerror = () => {
+    // Close the failed source before reconnecting, otherwise its built-in
+    // retry piles up connections alongside the new one.
+    src.close();
+    setTimeout(connectSSE, 2000);
+  };
 }
 
 // --- Render ---
