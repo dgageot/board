@@ -965,8 +965,34 @@ dialog.dialog-terminal[open] {
 }
 
 @media (min-width: 641px) and (max-width: 1180px) {
+  .app-header {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  main#board {
+    padding-left: 10px;
+    padding-right: 10px;
+    gap: 8px;
+  }
+
   .column {
-    min-width: 190px;
+    min-width: 170px;
+
+    & .column-header {
+      padding-left: 8px;
+      padding-right: 8px;
+    }
+
+    & .column-body {
+      padding-left: 6px;
+      padding-right: 6px;
+    }
+  }
+
+  .card {
+    padding-left: 8px;
+    padding-right: 8px;
   }
 
   .card .card-actions {
