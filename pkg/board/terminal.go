@@ -1,9 +1,9 @@
 package board
 
 import (
-	"cmp"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"os/exec"
 	"strconv"
@@ -29,6 +29,16 @@ type resizeMsg struct {
 // wsUpgrader is a shared WebSocket upgrader that accepts all origins.
 var wsUpgrader = websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 
+// terminalDim parses a terminal dimension query parameter, falling back to
+// def when missing or out of the uint16 range.
+func terminalDim(s string, def uint16) uint16 {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 || n > math.MaxUint16 {
+		return def
+	}
+	return uint16(n)
+}
+
 // handleTerminalWS upgrades the request to a WebSocket and bridges it
 // to a tmux attach session using raw PTY I/O.
 func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
@@ -45,8 +55,8 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	cols, _ := strconv.Atoi(r.URL.Query().Get("cols"))
-	rows, _ := strconv.Atoi(r.URL.Query().Get("rows"))
+	cols := terminalDim(r.URL.Query().Get("cols"), defaultCols)
+	rows := terminalDim(r.URL.Query().Get("rows"), defaultRows)
 
 	cmd := exec.Command("tmux", "-2", "attach", "-t", sessionName)
 	cmd.Env = append(cmd.Environ(),
@@ -55,10 +65,7 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		"LANG=en_US.UTF-8",
 	)
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Cols: uint16(cmp.Or(cols, defaultCols)),
-		Rows: uint16(cmp.Or(rows, defaultRows)),
-	})
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})
 	if err != nil {
 		log.Printf("terminal session %s: %v", sessionName, err)
 		return
