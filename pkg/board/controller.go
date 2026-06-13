@@ -2,6 +2,8 @@ package board
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -20,6 +22,9 @@ type sessionClient interface {
 const (
 	// retryDelay paces reconnect and relaunch attempts.
 	retryDelay = 500 * time.Millisecond
+	// snapshotTimeout bounds a single snapshot request so a wedged server
+	// cannot block a watcher forever.
+	snapshotTimeout = 10 * time.Second
 	// followupTimeout bounds a single follow-up delivery.
 	followupTimeout = 10 * time.Second
 )
@@ -40,7 +45,13 @@ type Controller struct {
 	clientFor func(socket, session string) sessionClient
 
 	mu       sync.Mutex
-	watchers map[string]context.CancelFunc
+	watchers map[string]*watcher
+}
+
+// watcher tracks a running watch goroutine so it can be cancelled and waited on.
+type watcher struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 func newController(ctx context.Context, store Store, sessions SessionManager, onChanged func()) *Controller {
@@ -50,7 +61,7 @@ func newController(ctx context.Context, store Store, sessions SessionManager, on
 		sessions:  sessions,
 		onChanged: onChanged,
 		clientFor: func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
-		watchers:  make(map[string]context.CancelFunc),
+		watchers:  make(map[string]*watcher),
 	}
 }
 
@@ -74,17 +85,26 @@ func (c *Controller) Start(card *Card) {
 		return
 	}
 	ctx, cancel := context.WithCancel(c.ctx)
-	c.watchers[card.ID] = cancel
-	go c.watch(ctx, card.ID)
+	w := &watcher{cancel: cancel, done: make(chan struct{})}
+	c.watchers[card.ID] = w
+	go func() {
+		defer close(w.done)
+		c.watch(ctx, card.ID)
+	}()
 }
 
-// Stop cancels the card's watcher, if any.
+// Stop cancels the card's watcher and waits for it to exit. Waiting matters:
+// it guarantees the watcher cannot relaunch the session after the caller goes
+// on to tear it down (kill the tmux session, remove the worktree), which would
+// otherwise leave an orphaned session.
 func (c *Controller) Stop(cardID string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if cancel, ok := c.watchers[cardID]; ok {
-		cancel()
-		delete(c.watchers, cardID)
+	w, ok := c.watchers[cardID]
+	delete(c.watchers, cardID)
+	c.mu.Unlock()
+	if ok {
+		w.cancel()
+		<-w.done
 	}
 }
 
@@ -93,12 +113,22 @@ func (c *Controller) Stop(cardID string) {
 func (c *Controller) watch(ctx context.Context, cardID string) {
 	for ctx.Err() == nil {
 		card, err := c.store.GetCard(cardID)
-		if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return // card deleted
+		}
+		if err != nil {
+			// Transient store error: back off and retry rather than abandoning
+			// the card until the next board restart.
+			if sleep(ctx, retryDelay) {
+				return
+			}
+			continue
 		}
 		client := c.clientFor(socketPath(card.AgentSession), card.AgentSession)
 
-		snap, err := client.Snapshot(ctx)
+		sctx, scancel := context.WithTimeout(ctx, snapshotTimeout)
+		snap, err := client.Snapshot(sctx)
+		scancel()
 		if err != nil {
 			// The control plane is unreachable. If the agent's tmux pane is
 			// gone, relaunch to resume; otherwise it is still starting, so just
@@ -132,7 +162,7 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 			return true
 		})
 
-		if exited {
+		if exited && ctx.Err() == nil {
 			// The agent process ended; resume it so the card stays usable.
 			_ = c.relaunch(card, "")
 		}
@@ -196,10 +226,11 @@ func (c *Controller) MoveCardToColumn(card *Card, column, prompt string) error {
 }
 
 // SendPrompt delivers a prompt to the card's agent through the control plane.
-// The follow-up carries a fresh idempotency key so a retry can never
-// double-send. If the control plane is unreachable (the agent or its tmux
-// session died), the session is relaunched with the prompt as its next
-// message.
+// The follow-up carries an idempotency key so the control plane can dedupe a
+// retried delivery. If the follow-up fails only because the agent (or its tmux
+// session) is gone, the session is relaunched with the prompt as its next
+// message; any other failure (busy, queue full, timeout) is surfaced rather
+// than destroying a live session.
 func (c *Controller) SendPrompt(card *Card, prompt string) error {
 	if prompt == "" {
 		return nil
@@ -210,6 +241,8 @@ func (c *Controller) SendPrompt(card *Card, prompt string) error {
 	defer cancel()
 	if _, err := client.Followup(ctx, newID(), prompt); err == nil {
 		return nil
+	} else if alive, aerr := c.sessions.Alive(card.Session); aerr != nil || alive {
+		return fmt.Errorf("deliver prompt: %w", err)
 	}
 
 	return c.relaunch(card, prompt)

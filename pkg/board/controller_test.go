@@ -194,9 +194,10 @@ func TestSendPromptUsesFollowup(t *testing.T) {
 	assert.Empty(t, sessions.calls(), "a reachable session is not relaunched")
 }
 
-func TestSendPromptRelaunchesWhenControlPlaneUnreachable(t *testing.T) {
+func TestSendPromptRelaunchesWhenAgentIsGone(t *testing.T) {
 	store := openTestStore(t)
 	sessions := newFakeSessionManager()
+	sessions.alive = false // the agent's tmux pane is gone
 	client := &fakeClient{followErr: errors.New("connection refused")}
 	c := newTestController(t, store, sessions, client)
 
@@ -207,6 +208,18 @@ func TestSendPromptRelaunchesWhenControlPlaneUnreachable(t *testing.T) {
 	assert.Equal(t, "s1", call.name)
 	assert.Equal(t, "hello", call.prompt, "the prompt is delivered as the resumed session's next message")
 	assert.Empty(t, call.worktreeName)
+}
+
+func TestSendPromptSurfacesErrorWhenAgentAlive(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	sessions.alive = true // agent is up; the follow-up failed for another reason
+	client := &fakeClient{followErr: errors.New("429 queue full")}
+	c := newTestController(t, store, sessions, client)
+
+	err := c.SendPrompt(devCard(), "hello")
+	require.Error(t, err)
+	assert.Empty(t, sessions.calls(), "a live agent must never be relaunched on a transient follow-up error")
 }
 
 func TestSendPromptEmptyIsNoop(t *testing.T) {
