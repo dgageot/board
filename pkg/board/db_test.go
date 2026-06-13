@@ -22,7 +22,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	require.NoError(t, migrate(db))
 	require.NoError(t, migrate(db))
 
-	assert.Equal(t, 2, currentVersion(db))
+	assert.Equal(t, 3, currentVersion(db))
 }
 
 // --- Card CRUD ---

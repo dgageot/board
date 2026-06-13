@@ -133,12 +133,13 @@ func tableExists(db *sqlx.DB, name string) bool {
 // --- Cards ---
 
 const (
-	cardColumns     = "id, title, col, status, agent, repo_path, branch, worktree, session"
-	cardNamedValues = ":id, :title, :col, :status, :agent, :repo_path, :branch, :worktree, :session"
+	cardColumns     = "id, title, col, status, agent, repo_path, branch, worktree, session, agent_session"
+	cardNamedValues = ":id, :title, :col, :status, :agent, :repo_path, :branch, :worktree, :session, :agent_session"
 	insertCardSQL   = "INSERT INTO cards (" + cardColumns + ") VALUES (" + cardNamedValues + ")"
 	updateCardSQL   = `UPDATE cards SET
 		title = :title, col = :col, status = :status, agent = :agent,
-		repo_path = :repo_path, branch = :branch, worktree = :worktree, session = :session
+		repo_path = :repo_path, branch = :branch, worktree = :worktree, session = :session,
+		agent_session = :agent_session
 		WHERE id = :id`
 )
 

@@ -44,6 +44,11 @@ type Card struct {
 	Branch   string     `json:"branch" db:"branch"`
 	Worktree string     `json:"worktree" db:"worktree"`
 	Session  string     `json:"session" db:"session"`
+	// AgentSession is the docker-agent conversation ID the card owns. It is
+	// passed to `docker agent run --session` on every launch, so a session
+	// recreated after the agent (or tmux) dies resumes the same conversation
+	// instead of starting over.
+	AgentSession string `json:"agentSession" db:"agent_session"`
 }
 
 // Project represents a saved project config.
@@ -74,4 +79,9 @@ func newBranchName() string {
 // newSessionName returns a unique tmux session name for a card.
 func newSessionName() string {
 	return sessionPrefix + newID()[:8]
+}
+
+// newAgentSessionID returns a unique docker-agent session ID for a card.
+func newAgentSessionID() string {
+	return newID()
 }

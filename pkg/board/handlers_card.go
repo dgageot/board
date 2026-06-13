@@ -65,6 +65,7 @@ func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card 
 	branch := newBranchName()
 	wtPath := git.WorktreePath(repoPath, branch)
 	sessionName := newSessionName()
+	agentSession := newAgentSessionID()
 
 	if err := git.CreateWorktree(repoPath, branch, wtPath); err != nil {
 		return nil, fmt.Errorf("git worktree: %w", err)
@@ -76,20 +77,21 @@ func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card 
 		}
 	}()
 
-	if err := b.sessions.NewSession(sessionName, wtPath, agent, prompt); err != nil {
+	if err := b.sessions.NewSession(sessionName, wtPath, agent, agentSession, prompt); err != nil {
 		return nil, fmt.Errorf("tmux session: %w", err)
 	}
 
 	card = &Card{
-		ID:       newID(),
-		Title:    title,
-		Column:   "dev",
-		Status:   StatusRunning,
-		Agent:    agent,
-		RepoPath: repoPath,
-		Branch:   branch,
-		Worktree: wtPath,
-		Session:  sessionName,
+		ID:           newID(),
+		Title:        title,
+		Column:       "dev",
+		Status:       StatusRunning,
+		Agent:        agent,
+		RepoPath:     repoPath,
+		Branch:       branch,
+		Worktree:     wtPath,
+		Session:      sessionName,
+		AgentSession: agentSession,
 	}
 
 	if err := b.store.InsertCard(card); err != nil {

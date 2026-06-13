@@ -1,6 +1,7 @@
 package board
 
 import (
+	"errors"
 	"sync"
 	"testing"
 
@@ -12,21 +13,33 @@ import (
 type fakeSessionManager struct {
 	mu          sync.Mutex
 	paneContent map[string]string
-	created     []string
+	paneDead    map[string]bool
+	paneErr     map[string]error
+	created     []newSessionCall
 	killed      []string
 	sentKeys    []string
+	sendErr     error
+}
+
+// newSessionCall records the arguments of a NewSession call.
+type newSessionCall struct {
+	name      string
+	sessionID string
+	prompt    string
 }
 
 func newFakeSessionManager() *fakeSessionManager {
 	return &fakeSessionManager{
 		paneContent: make(map[string]string),
+		paneDead:    make(map[string]bool),
+		paneErr:     make(map[string]error),
 	}
 }
 
-func (f *fakeSessionManager) NewSession(name, _, _, _ string) error {
+func (f *fakeSessionManager) NewSession(name, _, _, sessionID, prompt string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.created = append(f.created, name)
+	f.created = append(f.created, newSessionCall{name: name, sessionID: sessionID, prompt: prompt})
 	return nil
 }
 
@@ -40,14 +53,20 @@ func (f *fakeSessionManager) KillSession(name string) error {
 func (f *fakeSessionManager) SendKeys(name, msg string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.sendErr != nil {
+		return f.sendErr
+	}
 	f.sentKeys = append(f.sentKeys, name+":"+msg)
 	return nil
 }
 
-func (f *fakeSessionManager) PaneContent(name string) (string, error) {
+func (f *fakeSessionManager) PaneContent(name string) (string, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.paneContent[name], nil
+	if err := f.paneErr[name]; err != nil {
+		return "", false, err
+	}
+	return f.paneContent[name], f.paneDead[name], nil
 }
 
 func (f *fakeSessionManager) setPaneContent(content string) {
@@ -233,4 +252,94 @@ func TestPollerTransitionDoesNotRevertConcurrentColumnChange(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "review", got.Column, "poller must not revert a concurrent column change")
 	assert.Equal(t, StatusWaiting, got.Status)
+}
+
+func TestPollerReconnectsDeadSession(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	poller := newPoller(store, sessions, func() {})
+
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "c1", Title: "Task", Column: "dev", Status: StatusRunning,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt",
+		Session: "s1", AgentSession: "sess-1",
+	}))
+
+	// The tmux session is gone (agent exited or host rebooted).
+	sessions.paneErr["s1"] = errors.New("session not found")
+	poller.poll()
+
+	require.Equal(t, []string{"s1"}, sessions.killed)
+	require.Len(t, sessions.created, 1)
+	assert.Equal(t, "s1", sessions.created[0].name, "reconnect reuses the tmux session name")
+	assert.Equal(t, "sess-1", sessions.created[0].sessionID, "reconnect resumes the same docker-agent session")
+	assert.Empty(t, sessions.created[0].prompt, "reconnect resumes without a new prompt")
+}
+
+func TestPollerReconnectsDeadPane(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	poller := newPoller(store, sessions, func() {})
+
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "c1", Title: "Task", Column: "dev", Status: StatusRunning,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt",
+		Session: "s1", AgentSession: "sess-1",
+	}))
+
+	// The session is still around but the agent pane has died (agent exited).
+	sessions.paneDead["s1"] = true
+	poller.poll()
+
+	require.Equal(t, []string{"s1"}, sessions.killed)
+	require.Len(t, sessions.created, 1)
+	assert.Equal(t, "s1", sessions.created[0].name)
+	assert.Equal(t, "sess-1", sessions.created[0].sessionID)
+	assert.Empty(t, sessions.created[0].prompt)
+}
+
+func TestSendPromptToCardSendsKeysWhenAlive(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	poller := newPoller(store, sessions, func() {})
+
+	card := &Card{ID: "c1", Session: "s1", Agent: "ag", Worktree: "wt", AgentSession: "sess-1"}
+	require.NoError(t, poller.SendPromptToCard(card, "hello"))
+
+	assert.Equal(t, []string{"s1:hello"}, sessions.sentKeys)
+	assert.Empty(t, sessions.created, "a live session is not recreated")
+}
+
+func TestSendPromptToCardRecreatesWhenDead(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	poller := newPoller(store, sessions, func() {})
+
+	card := &Card{ID: "c1", Session: "s1", Agent: "ag", Worktree: "wt", AgentSession: "sess-1"}
+	// The agent pane has died: the prompt must not be typed into it (a dead
+	// pane swallows send-keys); the session is recreated with the prompt.
+	sessions.paneDead["s1"] = true
+	require.NoError(t, poller.SendPromptToCard(card, "hello"))
+
+	assert.Empty(t, sessions.sentKeys, "a dead pane must not receive send-keys")
+	require.Equal(t, []string{"s1"}, sessions.killed)
+	require.Len(t, sessions.created, 1)
+	assert.Equal(t, "s1", sessions.created[0].name)
+	assert.Equal(t, "sess-1", sessions.created[0].sessionID)
+	assert.Equal(t, "hello", sessions.created[0].prompt, "the prompt is delivered as the resumed session's next message")
+}
+
+func TestSendPromptToCardRecreatesWhenSendKeysFails(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	// The pane looks alive but send-keys fails (it died in between): fall back
+	// to recreating the session with the prompt.
+	sessions.sendErr = errors.New("lost pane")
+	poller := newPoller(store, sessions, func() {})
+
+	card := &Card{ID: "c1", Session: "s1", Agent: "ag", Worktree: "wt", AgentSession: "sess-1"}
+	require.NoError(t, poller.SendPromptToCard(card, "hello"))
+
+	require.Len(t, sessions.created, 1)
+	assert.Equal(t, "hello", sessions.created[0].prompt)
 }

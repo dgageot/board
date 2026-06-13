@@ -1,0 +1,1 @@
+ALTER TABLE cards ADD COLUMN agent_session TEXT NOT NULL DEFAULT '';

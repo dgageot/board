@@ -64,8 +64,24 @@ func applySessionDefaults(sessionName string) {
 	}
 }
 
-// NewSession creates a tmux session and runs docker agent in it.
-func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
+// agentCommand builds the docker agent invocation for a session. The board
+// owns sessionID and passes it via --session: the first run creates that
+// session, later runs resume it. A non-empty prompt is appended as the first
+// message.
+func agentCommand(agent, sessionID, prompt string) string {
+	cmd := fmt.Sprintf("docker agent run %s --yolo --session %s", agent, shellescape.Quote(sessionID))
+	if prompt != "" {
+		cmd += " " + shellescape.Quote(prompt)
+	}
+	return cmd
+}
+
+// NewSession creates a tmux session and runs docker agent in it. The agent is
+// exec'd into the pane (replacing the shell) so that, when it exits, the pane
+// becomes a dead pane instead of dropping back to a shell. Combined with
+// remain-on-exit, the tmux session outlives a dead agent: the user can still
+// read its final output and the poller can detect the dead pane and reconnect.
+func (Sessions) NewSession(sessionName, workDir, agent, sessionID, prompt string) error {
 	tmux, err := defaultTmux()
 	if err != nil {
 		return fmt.Errorf("tmux init: %w", err)
@@ -81,6 +97,12 @@ func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
 
 	applySessionDefaults(sessionName)
 
+	// Keep the pane (and thus the session) alive after the agent exits. Set
+	// while the shell is still running so there is no race where the agent
+	// could exit before the option takes effect. Scoped to this session so we
+	// do not change the behaviour of the user's other tmux panes.
+	_ = tmuxRun("set-option", "-t", sessionName, "remain-on-exit", "on")
+
 	panes, err := session.ListPanes()
 	if err != nil {
 		return fmt.Errorf("list panes: %w", err)
@@ -89,8 +111,9 @@ func (Sessions) NewSession(sessionName, workDir, agent, prompt string) error {
 		return errors.New("no panes in session")
 	}
 
-	cmd := fmt.Sprintf("docker agent run %s --yolo %s", agent, shellescape.Quote(prompt))
-	if err := panes[0].SendKeys(cmd); err != nil {
+	// exec replaces the shell with the agent so the agent becomes the pane's
+	// process: when it exits the pane goes dead (see remain-on-exit above).
+	if err := panes[0].SendKeys("exec " + agentCommand(agent, sessionID, prompt)); err != nil {
 		return fmt.Errorf("send keys: %w", err)
 	}
 	if err := panes[0].SendKeys("Enter"); err != nil {
@@ -144,28 +167,32 @@ func (Sessions) KillSession(sessionName string) error {
 	return session.Kill()
 }
 
-// PaneContent captures the current content of the first pane in a session.
-func (Sessions) PaneContent(sessionName string) (string, error) {
+// PaneContent captures the current content of the first pane in a session. It
+// also reports whether that pane is dead, i.e. its agent has exited while
+// remain-on-exit keeps the session around. A missing session returns
+// [errSessionNotFound].
+func (Sessions) PaneContent(sessionName string) (content string, dead bool, err error) {
 	tmux, err := defaultTmux()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	session, err := tmux.GetSessionByName(sessionName)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if session == nil {
-		return "", errSessionNotFound
+		return "", false, errSessionNotFound
 	}
 
 	panes, err := session.ListPanes()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if len(panes) == 0 {
-		return "", errors.New("no panes in session")
+		return "", false, errors.New("no panes in session")
 	}
 
-	return panes[0].CapturePane(nil)
+	content, err = panes[0].CapturePane(nil)
+	return content, panes[0].Dead, err
 }

@@ -69,6 +69,7 @@ func (p *Poller) poll() bool {
 	// Phase 1: read pane content under lock and collect status transitions.
 	transitions := map[string]CardStatus{}
 	active := map[string]bool{}
+	var deadCards []*Card
 	p.mu.Lock()
 	for _, card := range cards {
 		if card.Status == StatusDone {
@@ -76,8 +77,12 @@ func (p *Poller) poll() bool {
 		}
 		active[card.ID] = true
 
-		content, err := p.sessions.PaneContent(card.Session)
-		if err != nil {
+		content, dead, err := p.sessions.PaneContent(card.Session)
+		if err != nil || dead {
+			// The session is gone (host rebooted) or the agent pane has died
+			// (agent exited). Revive it after releasing the lock, so spawning a
+			// subprocess does not block concurrent ResetCard calls.
+			deadCards = append(deadCards, card)
 			continue
 		}
 
@@ -112,9 +117,13 @@ func (p *Poller) poll() bool {
 	}
 	p.mu.Unlock()
 
-	// Phase 2: apply transitions without the lock. We update only the status
-	// column so a concurrent move-card handler that just changed the row's
-	// column is not silently reverted by our stale snapshot.
+	// Phase 2: revive dead sessions and apply transitions without the lock. We
+	// update only the status column so a concurrent move-card handler that just
+	// changed the row's column is not silently reverted by our stale snapshot.
+	for _, card := range deadCards {
+		p.reconnect(card)
+	}
+
 	changed := false
 	for id, status := range transitions {
 		if err := p.store.UpdateCardStatus(id, status); err != nil {
@@ -151,21 +160,37 @@ func (p *Poller) ResetCard(cardID string) {
 	p.mu.Unlock()
 }
 
-// SendPromptToCard sends a prompt to the card's tmux session.
-// If the session is dead, it creates a new one.
+// SendPromptToCard delivers a prompt to the card's agent. If the agent is
+// alive the prompt is typed into its TUI. If the session is gone or its pane
+// has died, the session is recreated under the same name, resuming the
+// docker-agent session with the prompt as the next message (a dead pane
+// silently swallows send-keys, so we must not type into one).
 func (p *Poller) SendPromptToCard(card *Card, prompt string) error {
 	if prompt == "" {
 		return nil
 	}
 
-	if err := p.sessions.SendKeys(card.Session, prompt); err != nil {
-		sessionName := newSessionName()
-		if err := p.sessions.NewSession(sessionName, card.Worktree, card.Agent, prompt); err != nil {
-			return fmt.Errorf("tmux: %w", err)
+	if _, dead, err := p.sessions.PaneContent(card.Session); err == nil && !dead {
+		if err := p.sessions.SendKeys(card.Session, prompt); err == nil {
+			return nil
 		}
-		card.Session = sessionName
-		_ = p.store.UpdateCardSession(card.ID, sessionName)
+	}
+
+	_ = p.sessions.KillSession(card.Session)
+	if err := p.sessions.NewSession(card.Session, card.Worktree, card.Agent, card.AgentSession, prompt); err != nil {
+		return fmt.Errorf("tmux: %w", err)
 	}
 
 	return nil
+}
+
+// reconnect recreates a card's tmux session under the same name, resuming its
+// docker-agent session. Used when the session has died while the card is still
+// active, so the conversation continues instead of starting over.
+func (p *Poller) reconnect(card *Card) {
+	_ = p.sessions.KillSession(card.Session)
+	if err := p.sessions.NewSession(card.Session, card.Worktree, card.Agent, card.AgentSession, ""); err != nil {
+		return
+	}
+	p.ResetCard(card.ID)
 }
