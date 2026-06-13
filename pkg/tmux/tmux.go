@@ -19,16 +19,41 @@ type Sessions struct{}
 // call.
 var defaultTmux = sync.OnceValues(gotmux.DefaultTmux)
 
-// sessionDefaults are tmux options applied to every session for better TUI
-// passthrough.
+// sessionDefaults are tmux options applied to every session so the embedded
+// session feels like a native terminal: no tmux chrome, keys passed straight
+// through, full terminal fidelity, and client-driven sizing.
 var sessionDefaults = [][]string{
-	{"set", "-g", "allow-passthrough", "on"},
-	{"set", "-g", "mouse", "on"},
+	// Visual chrome: hide every bit of tmux UI.
 	{"set", "-g", "status", "off"},
+	{"set", "-g", "visual-bell", "off"},
+	{"set", "-g", "visual-activity", "off"},
+	{"set", "-g", "visual-silence", "off"},
+	{"set", "-g", "bell-action", "none"},
+	{"set", "-g", "monitor-activity", "off"},
+	{"set", "-g", "monitor-bell", "off"},
+	{"set", "-g", "display-time", "1"},
+	{"set", "-g", "pane-border-status", "off"},
+	{"set", "-g", "pane-border-lines", "simple"},
+
+	// Input behavior: every keystroke reaches the agent, ESC is instant.
+	{"set", "-g", "prefix", "none"},
+	{"set", "-g", "prefix2", "none"},
+	{"unbind", "C-b"},
+	{"set", "-g", "escape-time", "0"},
+	{"set", "-g", "mouse", "on"},
+
+	// Terminal fidelity: truecolor, clipboard, focus events.
+	{"set", "-g", "allow-passthrough", "on"},
+	{"set", "-g", "focus-events", "on"},
+	{"set", "-g", "set-clipboard", "on"},
 	{"set", "-g", "default-terminal", "tmux-256color"},
 	{"set", "-ga", "terminal-features", ",xterm-256color:clipboard:ccolour:cstyle:focus:title:mouse:RGB"},
 	{"set-environment", "LANG", "en_US.UTF-8"},
 	{"set-environment", "LC_ALL", "en_US.UTF-8"},
+
+	// Sizing: follow the attached client, not the smallest one.
+	{"set", "-g", "aggressive-resize", "on"},
+	{"set", "-g", "window-size", "latest"},
 }
 
 // applySessionDefaults applies [sessionDefaults] to the given session.
