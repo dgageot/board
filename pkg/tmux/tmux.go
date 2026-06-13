@@ -92,9 +92,10 @@ func agentCommand(agent, sessionID, worktreeName, prompt string) string {
 // remain-on-exit, the tmux session outlives a dead agent: the user can still
 // read its final output and the poller can detect the dead pane and reconnect.
 //
-// workDir is the repository directory: on the first run --worktree branches a
-// new worktree from it; on resume docker agent switches to the session's
-// worktree itself. A non-empty worktreeName marks the first run.
+// A non-empty worktreeName marks the first run: workDir is then the repository
+// and --worktree branches a new worktree from it. On resume worktreeName is
+// empty and workDir is the existing worktree directory, so the agent stays
+// isolated there.
 func (Sessions) NewSession(sessionName, workDir, agent, sessionID, worktreeName, prompt string) error {
 	tmux, err := defaultTmux()
 	if err != nil {

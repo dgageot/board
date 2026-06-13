@@ -177,7 +177,7 @@ func (p *Poller) SendPromptToCard(card *Card, prompt string) error {
 	}
 
 	_ = p.sessions.KillSession(card.Session)
-	if err := p.sessions.NewSession(card.Session, card.RepoPath, card.Agent, card.AgentSession, "", prompt); err != nil {
+	if err := p.sessions.NewSession(card.Session, card.Worktree, card.Agent, card.AgentSession, "", prompt); err != nil {
 		return fmt.Errorf("tmux: %w", err)
 	}
 
@@ -186,12 +186,16 @@ func (p *Poller) SendPromptToCard(card *Card, prompt string) error {
 
 // reconnect recreates a card's tmux session under the same name, resuming its
 // docker-agent session. Used when the session has died while the card is still
-// active, so the conversation continues instead of starting over. docker agent
-// reattaches the resumed session to its original worktree, so the session is
-// relaunched from the repository with no --worktree.
+// active, so the conversation continues instead of starting over.
+//
+// The session resumes from the worktree directory, not the repository: docker
+// agent normally reattaches a resumed session to its worktree on its own, but
+// launching from the worktree keeps the agent isolated even if that
+// reattachment does not happen (e.g. the docker-agent session record is
+// missing), instead of letting it run in the user's checkout.
 func (p *Poller) reconnect(card *Card) {
 	_ = p.sessions.KillSession(card.Session)
-	if err := p.sessions.NewSession(card.Session, card.RepoPath, card.Agent, card.AgentSession, "", ""); err != nil {
+	if err := p.sessions.NewSession(card.Session, card.Worktree, card.Agent, card.AgentSession, "", ""); err != nil {
 		return
 	}
 	p.ResetCard(card.ID)

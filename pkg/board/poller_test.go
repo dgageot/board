@@ -282,7 +282,7 @@ func TestPollerReconnectsDeadSession(t *testing.T) {
 	assert.Equal(t, "s1", sessions.created[0].name, "reconnect reuses the tmux session name")
 	assert.Equal(t, "sess-1", sessions.created[0].sessionID, "reconnect resumes the same docker-agent session")
 	assert.Empty(t, sessions.created[0].worktreeName, "reconnect omits --worktree so the session reattaches to its worktree")
-	assert.Equal(t, "rp", sessions.created[0].workDir, "reconnect launches from the repository")
+	assert.Equal(t, "wt", sessions.created[0].workDir, "reconnect resumes from the worktree so the agent stays isolated")
 	assert.Empty(t, sessions.created[0].prompt, "reconnect resumes without a new prompt")
 }
 
@@ -338,7 +338,7 @@ func TestSendPromptToCardRecreatesWhenDead(t *testing.T) {
 	assert.Equal(t, "s1", sessions.created[0].name)
 	assert.Equal(t, "sess-1", sessions.created[0].sessionID)
 	assert.Empty(t, sessions.created[0].worktreeName, "a resumed session omits --worktree")
-	assert.Equal(t, "rp", sessions.created[0].workDir, "the session relaunches from the repository")
+	assert.Equal(t, "wt", sessions.created[0].workDir, "the session resumes from the worktree so the agent stays isolated")
 	assert.Equal(t, "hello", sessions.created[0].prompt, "the prompt is delivered as the resumed session's next message")
 }
 
