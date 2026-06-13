@@ -532,6 +532,16 @@ dialog {
     transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
   }
 
+  & select {
+    appearance: none;
+    resize: none;
+    cursor: pointer;
+    padding-right: 34px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+
   & input:focus,
   & textarea:focus,
   & select:focus {
@@ -604,6 +614,33 @@ dialog.dialog-large {
   width: min(92vw, 680px);
 }
 
+/* Projects dialog: cap height and scroll only the project list so the
+   header and the Add Project form stay visible. */
+#projects-dialog {
+  max-height: min(86vh, 760px);
+  display: flex;
+  flex-direction: column;
+
+  & .dialog-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  & #projects-list {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    margin: 0 -6px;
+    padding: 0 6px;
+  }
+
+  & .project-form {
+    flex-shrink: 0;
+  }
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -639,27 +676,185 @@ dialog.dialog-large {
 /* Project list in dialog */
 .project-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 14px;
-  padding: 12px;
+  gap: 10px;
+  padding: 8px 12px;
   background: color-mix(in srgb, var(--bg-elevated) 76%, transparent);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  margin-bottom: 8px;
+  border-radius: 12px;
+  margin-bottom: 6px;
   font-size: 13px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, transform 0.16s ease;
+
+  &:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
+  }
+
+  &.dragging {
+    opacity: 0.6;
+    border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+    box-shadow: var(--shadow-glow);
+  }
+
+  & .project-drag {
+    color: var(--text-subtle);
+    cursor: grab;
+    font-size: 14px;
+    line-height: 1;
+    user-select: none;
+    flex-shrink: 0;
+
+    &:active {
+      cursor: grabbing;
+    }
+  }
+
+  & .project-info {
+    flex: 1;
+    min-width: 0;
+  }
 
   & .project-name {
-    font-weight: 750;
+    font-weight: 700;
+    font-size: 13px;
+  }
+
+  & .project-paths {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-top: 2px;
   }
 
   & .project-path {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
     font-size: 11px;
     color: var(--text-muted);
+    font-family: var(--font-mono);
     overflow-wrap: break-word;
     word-break: break-all;
-    margin-top: 3px;
   }
+
+  & .project-path-label {
+    flex-shrink: 0;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: color-mix(in srgb, var(--accent) 88%, var(--text));
+    font-family: var(--font);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+}
+
+.project-form {
+  margin-top: 18px;
+  padding: 18px;
+  background: color-mix(in srgb, var(--bg-elevated) 50%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+
+  & h3 {
+    margin: 0 0 14px;
+  }
+
+  & label {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  & label:last-of-type {
+    margin-bottom: 0;
+  }
+
+  & label input,
+  & label select {
+    margin-top: 0;
+  }
+}
+
+/* Input paired with an inline button (e.g. folder browse) */
+.input-with-button {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 0;
+
+  & input {
+    flex: 1;
+    margin-top: 0;
+  }
+
+  & .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+    border-radius: 12px;
+  }
+}
+
+/* Icon-only browse button: square, matching the text input height */
+.btn-browse {
+  width: 40px;
+  min-height: 0;
+  align-self: stretch;
+  padding: 0;
+  font-size: 15px;
+}
+
+/* Folder picker */
+.folder-current {
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+  word-break: break-all;
+}
+
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+}
+
+.folder-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease;
+
+  &:hover {
+    background: var(--surface-hover);
+    border-color: var(--border);
+  }
+}
+
+.folder-up {
+  color: var(--text-muted);
 }
 
 /* Empty state */

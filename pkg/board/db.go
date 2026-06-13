@@ -211,13 +211,13 @@ func (s *SQLiteStore) ReinsertCard(c *Card) error {
 // --- Projects ---
 
 const (
-	projectColumns   = "id, name, repo_path, agent"
-	insertProjectSQL = "INSERT INTO projects (" + projectColumns + ") VALUES (:id, :name, :repo_path, :agent)"
+	projectColumns   = "id, name, repo_path, agent, pos"
+	insertProjectSQL = "INSERT INTO projects (" + projectColumns + ") VALUES (:id, :name, :repo_path, :agent, :pos)"
 )
 
 func (s *SQLiteStore) ListProjects() ([]*Project, error) {
 	projects := []*Project{}
-	if err := s.db.Select(&projects, "SELECT "+projectColumns+" FROM projects ORDER BY rowid"); err != nil {
+	if err := s.db.Select(&projects, "SELECT "+projectColumns+" FROM projects ORDER BY pos"); err != nil {
 		return nil, err
 	}
 	return projects, nil
@@ -231,7 +231,11 @@ func (s *SQLiteStore) GetProject(id string) (*Project, error) {
 	return &project, nil
 }
 
+// InsertProject appends a project at the end of the ordered list.
 func (s *SQLiteStore) InsertProject(p *Project) error {
+	if err := s.db.Get(&p.Pos, "SELECT COALESCE(MAX(pos), -1) + 1 FROM projects"); err != nil {
+		return err
+	}
 	_, err := s.db.NamedExec(insertProjectSQL, p)
 	return err
 }
@@ -239,6 +243,19 @@ func (s *SQLiteStore) InsertProject(p *Project) error {
 func (s *SQLiteStore) DeleteProject(id string) error {
 	_, err := s.db.Exec("DELETE FROM projects WHERE id = ?", id)
 	return err
+}
+
+// ReorderProjects persists the given project order by assigning each id its
+// index as the position. Unknown ids are ignored.
+func (s *SQLiteStore) ReorderProjects(ids []string) error {
+	return runInTx(s.db, func(tx *sqlx.Tx) error {
+		for i, id := range ids {
+			if _, err := tx.Exec("UPDATE projects SET pos = ? WHERE id = ?", i, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // --- Columns ---

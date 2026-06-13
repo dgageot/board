@@ -25,6 +25,7 @@ type Store interface {
 	GetProject(id string) (*Project, error)
 	InsertProject(p *Project) error
 	DeleteProject(id string) error
+	ReorderProjects(ids []string) error
 
 	// Columns
 	ListColumns() ([]Column, error)

@@ -82,7 +82,10 @@ func buildMux(board *Board) (*http.ServeMux, error) {
 	// API routes
 	mux.HandleFunc("GET /api/projects", board.handleListProjects)
 	mux.HandleFunc("POST /api/projects", board.handleCreateProject)
+	mux.HandleFunc("PUT /api/projects/order", board.handleReorderProjects)
 	mux.HandleFunc("DELETE /api/projects/{id}", board.handleDeleteProject)
+	mux.HandleFunc("GET /api/agents", board.handleListAgents)
+	mux.HandleFunc("GET /api/browse", board.handleBrowse)
 	mux.HandleFunc("GET /api/columns", board.handleListColumns)
 	mux.HandleFunc("PUT /api/columns", board.handleUpdateColumns)
 	mux.HandleFunc("GET /api/cards", board.handleListCards)

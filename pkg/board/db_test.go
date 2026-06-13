@@ -22,7 +22,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	require.NoError(t, migrate(db))
 	require.NoError(t, migrate(db))
 
-	assert.Equal(t, 1, currentVersion(db))
+	assert.Equal(t, 2, currentVersion(db))
 }
 
 // --- Card CRUD ---
@@ -246,6 +246,23 @@ func TestDeleteProject(t *testing.T) {
 
 	_, err := store.GetProject("p1")
 	assert.Error(t, err)
+}
+
+func TestReorderProjects(t *testing.T) {
+	store := openTestStore(t)
+
+	for _, id := range []string{"a", "b", "c"} {
+		require.NoError(t, store.InsertProject(&Project{ID: id, Name: id, RepoPath: "/r", Agent: "/a"}))
+	}
+
+	require.NoError(t, store.ReorderProjects([]string{"c", "a", "b"}))
+
+	projects, err := store.ListProjects()
+	require.NoError(t, err)
+	require.Len(t, projects, 3)
+	assert.Equal(t, "c", projects[0].ID)
+	assert.Equal(t, "a", projects[1].ID)
+	assert.Equal(t, "b", projects[2].ID)
 }
 
 // --- Column CRUD ---

@@ -45,27 +45,33 @@
     </form>
   </dialog>
 
-  <dialog id="projects-dialog">
+  <dialog id="projects-dialog" class="dialog-large">
     <div class="dialog-header">
       <span>📁 Projects</span>
       <button class="dialog-close" data-close title="Close">✕</button>
     </div>
-    <form method="dialog" autocomplete="off" class="dialog-body">
+    <div class="dialog-body">
+      <p class="dialog-subtitle">Manage your projects. Drag to reorder how they appear in the new task selector.</p>
       <div id="projects-list"></div>
-      <h3>Add Project</h3>
-      <label>Name
-        <input id="proj-name" type="text" placeholder="My Project" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-      </label>
-      <label>Repo Path
-        <input id="proj-repo" type="text" placeholder="/path/to/repo" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-      </label>
-      <label>Agent Config
-        <input id="proj-agent" type="text" placeholder="/path/to/agent.yaml" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-      </label>
-      <div class="dialog-actions">
-        <button type="submit" class="btn btn-primary">Add</button>
-      </div>
-    </form>
+      <form method="dialog" autocomplete="off" class="project-form">
+        <h3>Add Project</h3>
+        <label>Name
+          <input id="proj-name" type="text" placeholder="My Project" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        </label>
+        <label>Repo Path
+          <div class="input-with-button">
+            <input id="proj-repo" type="text" placeholder="/path/to/repo" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+            <button type="button" id="proj-repo-browse" class="btn btn-secondary btn-browse" title="Browse folders">📂</button>
+          </div>
+        </label>
+        <label>Agent
+          <select id="proj-agent"></select>
+        </label>
+        <div class="dialog-actions">
+          <button type="submit" class="btn btn-primary">Add Project</button>
+        </div>
+      </form>
+    </div>
   </dialog>
 
   <dialog id="terminal-dialog" class="dialog-terminal">
@@ -96,6 +102,20 @@
       <button class="dialog-close" id="close-diff" title="Close">✕</button>
     </div>
     <div id="diff-container"></div>
+  </dialog>
+
+  <dialog id="folder-dialog">
+    <div class="dialog-header">
+      <span>📂 Select Folder</span>
+      <button class="dialog-close" data-close title="Close">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div id="folder-current" class="folder-current"></div>
+      <div id="folder-list" class="folder-list"></div>
+      <div class="dialog-actions">
+        <button type="button" id="folder-select" class="btn btn-primary">Select This Folder</button>
+      </div>
+    </div>
   </dialog>
 
   <script src="app.js" type="module"></script>

@@ -1,0 +1,3 @@
+ALTER TABLE projects ADD COLUMN pos INTEGER NOT NULL DEFAULT 0;
+
+UPDATE projects SET pos = rowid;

@@ -45,3 +45,18 @@ func (b *Board) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	b.broadcast()
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (b *Board) handleReorderProjects(w http.ResponseWriter, r *http.Request) {
+	var ids []string
+	if !decodeJSON(w, r, &ids) {
+		return
+	}
+
+	if err := b.store.ReorderProjects(ids); err != nil {
+		writeError(w, fmt.Errorf("reorder projects: %w", err))
+		return
+	}
+
+	b.broadcast()
+	w.WriteHeader(http.StatusNoContent)
+}

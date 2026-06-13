@@ -54,6 +54,9 @@ const API = {
   listProjects: () => api("/projects"),
   createProject: (data) => api("/projects", { method: "POST", body: JSON.stringify(data) }),
   deleteProject: (id) => api(`/projects/${id}`, { method: "DELETE" }),
+  reorderProjects: (ids) => api("/projects/order", { method: "PUT", body: JSON.stringify(ids) }),
+  listAgents: () => api("/agents"),
+  browse: (path) => api(`/browse${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   clearColumn: (column) => api(`/columns/${column}/clear`, { method: "POST" }),
   listColumns: () => api("/columns"),
   updateColumns: (data) => api("/columns", { method: "PUT", body: JSON.stringify(data) }),
@@ -65,6 +68,7 @@ let cards = [];
 let projects = [];
 let columns = [];
 let draggedCard = null;
+let homeDir = "";
 
 async function refresh() {
   [cards, projects, columns] = await Promise.all([
@@ -73,6 +77,14 @@ async function refresh() {
     API.listColumns(),
   ]);
   renderBoard();
+}
+
+// Replace the home directory prefix with "~" for display.
+function shortenPath(p) {
+  if (homeDir && (p === homeDir || p.startsWith(homeDir + "/"))) {
+    return "~" + p.slice(homeDir.length);
+  }
+  return p;
 }
 
 // --- SSE ---
@@ -410,10 +422,7 @@ document.querySelectorAll(".dialog-close[data-close]").forEach((btn) => {
 // New task dialog
 async function openNewTaskDialog() {
   const select = document.getElementById("task-project");
-  select.innerHTML = `<option value="">Default (cagent/main)</option>`;
-  for (const p of projects) {
-    select.innerHTML += `<option value="${p.id}">${esc(p.name)}</option>`;
-  }
+  select.innerHTML = projects.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
   document.getElementById("new-task-dialog").showModal();
   document.getElementById("task-prompt").focus();
 }
@@ -463,8 +472,25 @@ document.getElementById("new-task-dialog").addEventListener("close", () => {
 // Projects dialog
 document.getElementById("btn-projects").addEventListener("click", async () => {
   renderProjects();
+  await populateAgentSelect();
   document.getElementById("projects-dialog").showModal();
 });
+
+// Populate the agent <select> with the YAML configs found under ~/.agents.
+async function populateAgentSelect() {
+  const select = document.getElementById("proj-agent");
+  let agents = [];
+  try {
+    agents = await API.listAgents();
+  } catch {
+    // Leave the list empty on error; the default agent is used server-side.
+  }
+  const options = [`<option value="">Default</option>`];
+  for (const a of agents) {
+    options.push(`<option value="${esc(a)}">${esc(a.split("/").pop())}</option>`);
+  }
+  select.innerHTML = options.join("");
+}
 
 document.getElementById("projects-dialog").querySelector("form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -493,14 +519,52 @@ function renderProjects() {
     return;
   }
   list.innerHTML = projects.map((p) => `
-    <div class="project-item">
-      <div>
+    <div class="project-item" draggable="true" data-id="${p.id}">
+      <span class="project-drag" title="Drag to reorder">☰</span>
+      <div class="project-info">
         <div class="project-name">${esc(p.name)}</div>
-        <div class="project-path">${esc(p.repoPath)}</div>
+        <div class="project-paths">
+          ${p.repoPath ? `<div class="project-path"><span class="project-path-label">repo</span>${esc(shortenPath(p.repoPath))}</div>` : ""}
+          ${p.agent ? `<div class="project-path"><span class="project-path-label">agent</span>${esc(p.agent.split("/").pop())}</div>` : ""}
+        </div>
       </div>
       <button class="btn btn-small btn-danger" onclick="deleteProject('${p.id}')" title="Delete project">✕</button>
     </div>
   `).join("");
+  enableProjectDragReorder(list);
+}
+
+// Drag-and-drop reordering of project items. On drop, the new order is
+// persisted and the board refreshed.
+function enableProjectDragReorder(list) {
+  let dragged = null;
+
+  list.querySelectorAll(".project-item").forEach((item) => {
+    item.addEventListener("dragstart", () => {
+      dragged = item;
+      item.classList.add("dragging");
+    });
+
+    item.addEventListener("dragend", async () => {
+      item.classList.remove("dragging");
+      dragged = null;
+      const ids = [...list.querySelectorAll(".project-item")].map((el) => el.dataset.id);
+      try {
+        await API.reorderProjects(ids);
+        await refresh();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    item.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (!dragged || dragged === item) return;
+      const rect = item.getBoundingClientRect();
+      const after = e.clientY > rect.top + rect.height / 2;
+      list.insertBefore(dragged, after ? item.nextSibling : item);
+    });
+  });
 }
 
 window.deleteProject = async (id) => {
@@ -508,6 +572,49 @@ window.deleteProject = async (id) => {
   await refresh();
   renderProjects();
 };
+
+// --- Folder picker ---
+
+// Server-side folder browser bound to the repo-path input.
+let folderCurrentPath = "";
+
+async function loadFolder(path) {
+  let data;
+  try {
+    data = await API.browse(path);
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+  folderCurrentPath = data.path;
+  document.getElementById("folder-current").textContent = data.path;
+
+  const rows = [];
+  if (data.parent) {
+    rows.push(`<button type="button" class="folder-entry folder-up" data-path="${esc(data.parent)}">⤴ ..</button>`);
+  }
+  for (const dir of data.dirs) {
+    const full = `${data.path.replace(/\/$/, "")}/${dir}`;
+    rows.push(`<button type="button" class="folder-entry" data-path="${esc(full)}">📁 ${esc(dir)}</button>`);
+  }
+  document.getElementById("folder-list").innerHTML = rows.join("") || `<div class="empty-column">No subfolders</div>`;
+}
+
+document.getElementById("proj-repo-browse").addEventListener("click", () => {
+  const current = document.getElementById("proj-repo").value.trim();
+  loadFolder(current);
+  document.getElementById("folder-dialog").showModal();
+});
+
+document.getElementById("folder-list").addEventListener("click", (e) => {
+  const btn = e.target.closest(".folder-entry");
+  if (btn) loadFolder(btn.dataset.path);
+});
+
+document.getElementById("folder-select").addEventListener("click", () => {
+  document.getElementById("proj-repo").value = folderCurrentPath;
+  document.getElementById("folder-dialog").close();
+});
 
 // Columns dialog
 document.getElementById("btn-columns").addEventListener("click", () => {
@@ -762,6 +869,9 @@ document.addEventListener("keydown", (e) => {
 });
 
 // --- Init ---
+
+// Cache the home directory so project paths can be shown with a "~" prefix.
+API.browse().then((d) => { homeDir = d.path; }).catch(() => {});
 
 refresh();
 connectSSE();

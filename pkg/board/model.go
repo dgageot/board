@@ -52,6 +52,7 @@ type Project struct {
 	Name     string `json:"name" db:"name"`
 	RepoPath string `json:"repoPath" db:"repo_path"`
 	Agent    string `json:"agent" db:"agent"`
+	Pos      int    `json:"pos" db:"pos"`
 }
 
 // sessionPrefix is used for all tmux sessions created by the board.
