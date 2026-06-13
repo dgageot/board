@@ -188,6 +188,13 @@ func (b *Board) handleJumpCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only attach a terminal once the agent's control plane answers; otherwise
+	// the session still shows the bare docker-agent launch command.
+	if !b.controller.Ready(card) {
+		writeError(w, errAgentStarting)
+		return
+	}
+
 	writeJSON(w, map[string]string{
 		"session": card.Session,
 	})

@@ -164,6 +164,8 @@ func TestHandleJumpCard(t *testing.T) {
 		ID: "c1", Title: "T", Column: "dev", Status: StatusRunning,
 		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "my-session",
 	}))
+	// A reachable control plane means the agent really started.
+	b.controller.clientFor = func(string, string) sessionClient { return &fakeClient{} }
 
 	req := httptest.NewRequest(http.MethodPost, "/api/cards/c1/jump", http.NoBody)
 	req.SetPathValue("id", "c1")
@@ -175,6 +177,24 @@ func TestHandleJumpCard(t *testing.T) {
 	var resp map[string]string
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 	assert.Equal(t, "my-session", resp["session"])
+}
+
+// A freshly created card whose agent has not come up yet must not attach a
+// terminal to the bare launch command.
+func TestHandleJumpCardAgentStillStarting(t *testing.T) {
+	b, store := newTestBoard(t)
+
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "c1", Title: "T", Column: "dev", Status: StatusRunning,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "my-session",
+	}))
+	// The default test client never reaches a control plane.
+	req := httptest.NewRequest(http.MethodPost, "/api/cards/c1/jump", http.NoBody)
+	req.SetPathValue("id", "c1")
+	rec := httptest.NewRecorder()
+	b.handleJumpCard(rec, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 }
 
 func TestHandleJumpCardNotFound(t *testing.T) {

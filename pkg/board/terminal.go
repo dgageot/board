@@ -11,6 +11,8 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
+
+	"github.com/dgageot/board/pkg/tmux"
 )
 
 // Default terminal dimensions when the client does not advertise its size.
@@ -58,7 +60,8 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	cols := terminalDim(r.URL.Query().Get("cols"), defaultCols)
 	rows := terminalDim(r.URL.Query().Get("rows"), defaultRows)
 
-	cmd := exec.Command("tmux", "-2", "attach", "-t", sessionName)
+	// Attach on the board's private tmux socket, not the user's default server.
+	cmd := exec.Command("tmux", "-S", tmux.SocketPath(), "-2", "attach", "-t", sessionName)
 	cmd.Env = append(cmd.Environ(),
 		"TERM=xterm-256color",
 		"COLORTERM=truecolor",

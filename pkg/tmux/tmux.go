@@ -3,7 +3,10 @@ package tmux
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"sync"
 
 	"al.essio.dev/pkg/shellescape"
@@ -13,16 +16,31 @@ import (
 // Sessions provides session management operations backed by tmux.
 type Sessions struct{}
 
-// defaultTmux returns a process-wide [gotmux.Tmux] handle. The handle is
-// stateless aside from the socket path it remembers, so it can be safely
-// reused across goroutines and we avoid spawning a fresh helper for every
-// call.
-var defaultTmux = sync.OnceValues(gotmux.DefaultTmux)
+// SocketPath is the dedicated tmux socket the board runs its sessions on.
+// Board shares the host's tmux binary but not its default server: a private
+// socket keeps board's server-wide options (default-terminal,
+// terminal-features, set-clipboard, escape-time, …) from leaking into the
+// user's interactive tmux. The path is stable across board restarts so the
+// controller can reattach to sessions left running on it.
+func SocketPath() string {
+	return filepath.Join(os.TempDir(), "board-tmux-"+strconv.Itoa(os.Getuid())+".sock")
+}
 
-// sessionDefaults are tmux options applied to every session so the embedded
-// session feels like a native terminal: no tmux chrome, keys passed straight
-// through, full terminal fidelity, and client-driven sizing.
-var sessionDefaults = [][]string{
+// defaultTmux returns a process-wide [gotmux.Tmux] handle bound to the board's
+// private socket. The struct is built directly (rather than via
+// gotmux.NewTmux) because NewTmux validates the socket eagerly, which fails
+// before the first session has started the server. The handle only remembers
+// the socket path, so it is safe to reuse across goroutines.
+var defaultTmux = sync.OnceValues(func() (*gotmux.Tmux, error) {
+	return &gotmux.Tmux{Socket: &gotmux.Socket{Path: SocketPath()}}, nil
+})
+
+// serverDefaults are tmux options the board applies to its private server so
+// every embedded session feels like a native terminal: no tmux chrome, keys
+// passed straight through, full terminal fidelity, and client-driven sizing.
+// They are set at global scope: the board owns this server, so global is the
+// right place and avoids re-setting them per session.
+var serverDefaults = [][]string{
 	// Visual chrome: hide every bit of tmux UI.
 	{"set", "-g", "status", "off"},
 	{"set", "-g", "visual-bell", "off"},
@@ -35,32 +53,33 @@ var sessionDefaults = [][]string{
 	{"set", "-g", "pane-border-status", "off"},
 	{"set", "-g", "pane-border-lines", "simple"},
 
-	// Input behavior: every keystroke reaches the agent, ESC is instant.
+	// Input behavior: every keystroke reaches the agent, ESC is instant. With
+	// no prefix bound, C-b reaches the agent too, so no unbind is needed.
 	{"set", "-g", "prefix", "none"},
 	{"set", "-g", "prefix2", "none"},
-	{"unbind", "C-b"},
 	{"set", "-g", "escape-time", "0"},
 	{"set", "-g", "mouse", "on"},
 
-	// Terminal fidelity: truecolor, clipboard, focus events.
+	// Terminal fidelity: truecolor, clipboard, focus events. terminal-features
+	// is set (not appended): the board owns the value on its own server, so a
+	// plain set keeps it from accumulating duplicates across restarts.
 	{"set", "-g", "allow-passthrough", "on"},
 	{"set", "-g", "focus-events", "on"},
 	{"set", "-g", "set-clipboard", "on"},
 	{"set", "-g", "default-terminal", "tmux-256color"},
-	{"set", "-ga", "terminal-features", ",xterm-256color:clipboard:ccolour:cstyle:focus:title:mouse:RGB"},
-	{"set-environment", "LANG", "en_US.UTF-8"},
-	{"set-environment", "LC_ALL", "en_US.UTF-8"},
+	{"set", "-g", "terminal-features", ",xterm-256color:clipboard:ccolour:cstyle:focus:title:mouse:RGB"},
+	{"set-environment", "-g", "LANG", "en_US.UTF-8"},
+	{"set-environment", "-g", "LC_ALL", "en_US.UTF-8"},
 
 	// Sizing: follow the attached client, not the smallest one.
 	{"set", "-g", "aggressive-resize", "on"},
 	{"set", "-g", "window-size", "latest"},
 }
 
-// applySessionDefaults applies [sessionDefaults] to the given session.
-// The -t flag must follow the subcommand; tmux rejects it as a global flag.
-func applySessionDefaults(sessionName string) {
-	for _, args := range sessionDefaults {
-		_ = tmuxRun(append([]string{args[0], "-t", sessionName}, args[1:]...)...)
+// applyServerDefaults applies [serverDefaults] to the board's private server.
+func applyServerDefaults() {
+	for _, args := range serverDefaults {
+		_ = tmuxRun(args...)
 	}
 }
 
@@ -115,7 +134,7 @@ func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket,
 		return fmt.Errorf("create session: %w", err)
 	}
 
-	applySessionDefaults(sessionName)
+	applyServerDefaults()
 
 	// Keep the pane (and thus the session) alive after the agent exits. Set
 	// while the shell is still running so there is no race where the agent
@@ -143,9 +162,10 @@ func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket,
 	return nil
 }
 
-// tmuxRun runs `tmux <args...>` and returns combined output as part of any error.
+// tmuxRun runs `tmux -S <socket> <args...>` against the board's private server
+// and returns combined output as part of any error.
 func tmuxRun(args ...string) error {
-	out, err := exec.Command("tmux", args...).CombinedOutput()
+	out, err := exec.Command("tmux", append([]string{"-S", SocketPath()}, args...)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %w", out, err)
 	}

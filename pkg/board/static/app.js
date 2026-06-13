@@ -253,7 +253,15 @@ async function handleCardAction(e) {
 
   try {
     if (action === "jump") {
-      const info = await API.jumpCard(id);
+      let info;
+      try {
+        info = await API.jumpCard(id);
+      } catch (err) {
+        // 503 while the docker agent is still coming up: tell the user instead
+        // of attaching a terminal to the bare launch command.
+        alert("The agent is still starting. Try again in a moment.");
+        return;
+      }
       openTerminal(info.session, cards.find((c) => c.id === id)?.title || "Terminal", id);
     } else if (action === "diff") {
       const title = cards.find((c) => c.id === id)?.title || "Diff";

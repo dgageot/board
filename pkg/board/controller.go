@@ -27,6 +27,9 @@ const (
 	snapshotTimeout = 10 * time.Second
 	// followupTimeout bounds a single follow-up delivery.
 	followupTimeout = 10 * time.Second
+	// readyProbeTimeout bounds the control-plane probe behind the Agent button
+	// so a click gets quick feedback instead of hanging.
+	readyProbeTimeout = 2 * time.Second
 )
 
 // Controller keeps each card in sync with its agent's control plane. One
@@ -206,6 +209,18 @@ func (c *Controller) setTitle(cardID, title string) {
 	if c.store.UpdateCardTitle(cardID, title) == nil {
 		c.onChanged()
 	}
+}
+
+// Ready reports whether the card's agent control plane answers, i.e. the agent
+// process has really started and its UI is worth showing. It lets the Agent
+// button avoid attaching a terminal to a session still showing the bare
+// docker-agent launch command.
+func (c *Controller) Ready(card *Card) bool {
+	client := c.clientFor(socketPath(card.AgentSession), card.AgentSession)
+	ctx, cancel := context.WithTimeout(c.ctx, readyProbeTimeout)
+	defer cancel()
+	_, err := client.Snapshot(ctx)
+	return err == nil
 }
 
 // MoveCardToColumn moves a card to the given column, reinserts it (for
