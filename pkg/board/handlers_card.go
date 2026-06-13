@@ -2,7 +2,6 @@ package board
 
 import (
 	"cmp"
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -54,16 +53,13 @@ func (b *Board) resolveProject(projectID string) (agent, repoPath string) {
 }
 
 // createCard creates a new card and launches its agent session. docker agent
-// creates the isolated git worktree (named after the card) on first launch, so
-// the board only needs to record where that worktree lives for later diffing,
-// editing, and cleanup.
-func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card *Card, err error) {
+// creates the isolated git worktree (named after the card) on first launch and
+// exposes its control plane on a per-card unix socket; the board records where
+// the worktree lives and starts watching the session. The title is left as a
+// placeholder derived from the prompt and replaced when the agent emits its
+// session_title event, so card creation is instant.
+func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 	agent, repoPath := b.resolveProject(projectID)
-
-	title, err := generateTitle(ctx, agent, prompt)
-	if err != nil {
-		return nil, fmt.Errorf("generate title: %w", err)
-	}
 
 	worktreeName := newWorktreeName()
 	branch := git.WorktreeBranch(worktreeName)
@@ -79,13 +75,13 @@ func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card 
 	}()
 
 	// Launch from the repository: --worktree branches the new worktree from it.
-	if err := b.sessions.NewSession(sessionName, repoPath, agent, agentSession, worktreeName, prompt); err != nil {
+	if err := b.sessions.NewSession(sessionName, repoPath, agent, agentSession, socketPath(agentSession), worktreeName, prompt); err != nil {
 		return nil, fmt.Errorf("tmux session: %w", err)
 	}
 
 	card = &Card{
 		ID:           newID(),
-		Title:        title,
+		Title:        placeholderTitle(prompt),
 		Column:       "dev",
 		Status:       StatusRunning,
 		Agent:        agent,
@@ -100,6 +96,7 @@ func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card 
 		return nil, fmt.Errorf("insert card: %w", err)
 	}
 
+	b.controller.Start(card)
 	b.broadcast()
 	return card, nil
 }
@@ -123,7 +120,7 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	card, err := b.createCard(r.Context(), req.Prompt, req.ProjectID)
+	card, err := b.createCard(req.Prompt, req.ProjectID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -166,7 +163,7 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if movedForward {
-		if err := b.poller.MoveCardToColumn(card, req.Column, columnPrompt(cols, req.Column)); err != nil {
+		if err := b.controller.MoveCardToColumn(card, req.Column, columnPrompt(cols, req.Column)); err != nil {
 			writeError(w, err)
 			return
 		}
@@ -174,12 +171,11 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 		card.Column = req.Column
 		card.Status = StatusRunning
 
-		b.poller.ResetCard(card.ID)
-
 		if err := b.store.ReinsertCard(card); err != nil {
 			writeError(w, fmt.Errorf("reinsert card: %w", err))
 			return
 		}
+		b.controller.Start(card)
 	}
 
 	b.broadcast()
@@ -212,9 +208,10 @@ func (b *Board) handleDiffCard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"diff": diff})
 }
 
-// deleteCardResources cleans up session and worktree for a card.
+// deleteCardResources stops watching the card and cleans up its session and
+// worktree.
 func (b *Board) deleteCardResources(card *Card) {
-	b.poller.ResetCard(card.ID)
+	b.controller.Stop(card.ID)
 	_ = b.sessions.KillSession(card.Session)
 	git.RemoveWorktree(card.RepoPath, card.Worktree, card.Branch)
 }
@@ -236,14 +233,28 @@ func (b *Board) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// generateTitle uses docker agent to generate a short title from a prompt.
-func generateTitle(ctx context.Context, agent, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, "docker", "agent", "debug", "title", agent, prompt)
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("docker agent debug title: %w", err)
+// placeholderTitle is the short temporary title shown until the agent emits
+// its session_title event. It is the prompt's first line, trimmed and cut to a
+// few words so a long prompt never becomes an unwieldy card title.
+func placeholderTitle(prompt string) string {
+	title := prompt
+	if i := strings.IndexByte(title, '\n'); i >= 0 {
+		title = title[:i]
 	}
-	return strings.TrimSpace(string(out)), nil
+	title = strings.TrimSpace(title)
+
+	const maxLen = 40
+	runes := []rune(title)
+	if len(runes) <= maxLen {
+		return title
+	}
+
+	cut := string(runes[:maxLen])
+	// Prefer a word boundary so the title does not end mid-word.
+	if i := strings.LastIndexByte(cut, ' '); i > 0 {
+		cut = cut[:i]
+	}
+	return strings.TrimSpace(cut) + "…"
 }
 
 func (b *Board) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {

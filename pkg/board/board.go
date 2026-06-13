@@ -10,12 +10,12 @@ import (
 
 // Board holds the application state.
 type Board struct {
-	config   Config
-	store    Store
-	sessions SessionManager
-	poller   *Poller
-	mu       sync.RWMutex
-	clients  map[chan struct{}]struct{}
+	config     Config
+	store      Store
+	sessions   SessionManager
+	controller *Controller
+	mu         sync.RWMutex
+	clients    map[chan struct{}]struct{}
 }
 
 func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionManager) *Board {
@@ -26,8 +26,8 @@ func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionMana
 		clients:  make(map[chan struct{}]struct{}),
 	}
 
-	b.poller = newPoller(store, sessions, b.broadcast)
-	go b.poller.Run(ctx)
+	b.controller = newController(ctx, store, sessions, b.broadcast)
+	b.controller.ReconcileAll()
 
 	return b
 }

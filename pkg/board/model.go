@@ -3,6 +3,8 @@ package board
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"os"
+	"path/filepath"
 )
 
 // Column represents a kanban column with a pre-defined prompt.
@@ -84,4 +86,13 @@ func newSessionName() string {
 // newAgentSessionID returns a unique docker-agent session ID for a card.
 func newAgentSessionID() string {
 	return newID()
+}
+
+// socketPath returns the unix socket a card's agent control plane listens on.
+// It is derived from the (unique) docker-agent session id, so it is stable
+// across board restarts and needs no extra storage. Kept short to stay under
+// the ~104-byte unix sun_path limit.
+func socketPath(agentSession string) string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".cagent", "run", "board-"+agentSession+".sock")
 }

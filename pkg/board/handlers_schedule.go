@@ -33,7 +33,7 @@ func (b *Board) handleScheduleCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	card, err := b.createCard(r.Context(), req.Prompt, req.ProjectID)
+	card, err := b.createCard(req.Prompt, req.ProjectID)
 	if err != nil {
 		writeError(w, err)
 		return

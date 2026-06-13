@@ -1,0 +1,241 @@
+package board
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/dgageot/board/pkg/agent"
+)
+
+// sessionClient is the slice of the control-plane client the controller needs.
+// It is an interface so tests can inject a fake without real sockets.
+type sessionClient interface {
+	Snapshot(ctx context.Context) (agent.Snapshot, error)
+	StreamEvents(ctx context.Context, since uint64, onEvent func(agent.Event) bool) error
+	Followup(ctx context.Context, idempotencyKey, message string) (bool, error)
+}
+
+const (
+	// retryDelay paces reconnect and relaunch attempts.
+	retryDelay = 500 * time.Millisecond
+	// followupTimeout bounds a single follow-up delivery.
+	followupTimeout = 10 * time.Second
+)
+
+// Controller keeps each card in sync with its agent's control plane. One
+// watcher goroutine per card tails the session event stream and mirrors the
+// running/waiting status and the title into the store, reconnecting — and
+// relaunching the tmux session if the agent died — as needed. It replaces the
+// old terminal-scraping poller: status, title and prompt delivery all go
+// through the control plane.
+type Controller struct {
+	// ctx is the board-lifetime context watchers derive from; they are started
+	// lazily (Start) after construction, so it is held here rather than passed.
+	ctx       context.Context //nolint:containedctx // base context for background watchers
+	store     Store
+	sessions  SessionManager
+	onChanged func()
+	clientFor func(socket, session string) sessionClient
+
+	mu       sync.Mutex
+	watchers map[string]context.CancelFunc
+}
+
+func newController(ctx context.Context, store Store, sessions SessionManager, onChanged func()) *Controller {
+	return &Controller{
+		ctx:       ctx,
+		store:     store,
+		sessions:  sessions,
+		onChanged: onChanged,
+		clientFor: func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
+		watchers:  make(map[string]context.CancelFunc),
+	}
+}
+
+// ReconcileAll starts a watcher for every existing card. Called on startup so
+// the board reattaches to sessions still running in tmux.
+func (c *Controller) ReconcileAll() {
+	cards, err := c.store.ListCards()
+	if err != nil {
+		return
+	}
+	for _, card := range cards {
+		c.Start(card)
+	}
+}
+
+// Start ensures a watcher is running for the card. Idempotent.
+func (c *Controller) Start(card *Card) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.watchers[card.ID]; ok {
+		return
+	}
+	ctx, cancel := context.WithCancel(c.ctx)
+	c.watchers[card.ID] = cancel
+	go c.watch(ctx, card.ID)
+}
+
+// Stop cancels the card's watcher, if any.
+func (c *Controller) Stop(cardID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cancel, ok := c.watchers[cardID]; ok {
+		cancel()
+		delete(c.watchers, cardID)
+	}
+}
+
+// watch keeps one card mirrored to its control plane: snapshot to resync, then
+// tail events; on a drop, reconnect; if the agent is gone, relaunch and resume.
+func (c *Controller) watch(ctx context.Context, cardID string) {
+	for ctx.Err() == nil {
+		card, err := c.store.GetCard(cardID)
+		if err != nil {
+			return // card deleted
+		}
+		client := c.clientFor(socketPath(card.AgentSession), card.AgentSession)
+
+		snap, err := client.Snapshot(ctx)
+		if err != nil {
+			// The control plane is unreachable. If the agent's tmux pane is
+			// gone, relaunch to resume; otherwise it is still starting, so just
+			// wait and retry.
+			if alive, aerr := c.sessions.Alive(card.Session); aerr == nil && !alive {
+				_ = c.relaunch(card, "")
+			}
+			if sleep(ctx, retryDelay) {
+				return
+			}
+			continue
+		}
+
+		c.applySnapshot(card, snap)
+
+		exited := false
+		_ = client.StreamEvents(ctx, snap.LastEventSeq, func(ev agent.Event) bool {
+			switch ev.Type {
+			case agent.EventGap:
+				return false // resume point evicted: reconnect and re-snapshot
+			case agent.EventSessionExited:
+				exited = true
+				return false
+			case agent.EventStreamStarted:
+				c.setStatus(cardID, StatusRunning)
+			case agent.EventStreamStopped:
+				c.setStatus(cardID, StatusWaiting)
+			case agent.EventSessionTitle:
+				c.setTitle(cardID, ev.Title)
+			}
+			return true
+		})
+
+		if exited {
+			// The agent process ended; resume it so the card stays usable.
+			_ = c.relaunch(card, "")
+		}
+		if sleep(ctx, retryDelay) {
+			return
+		}
+	}
+}
+
+// applySnapshot mirrors a fresh snapshot into the card: its title and whether
+// a turn is currently running.
+func (c *Controller) applySnapshot(card *Card, snap agent.Snapshot) {
+	if snap.Title != "" {
+		c.setTitle(card.ID, snap.Title)
+	}
+	status := StatusWaiting
+	if snap.Streaming {
+		status = StatusRunning
+	}
+	c.setStatus(card.ID, status)
+}
+
+// setStatus writes only the status field, and only on change, broadcasting so
+// clients refresh.
+func (c *Controller) setStatus(cardID string, status CardStatus) {
+	card, err := c.store.GetCard(cardID)
+	if err != nil || card.Status == status {
+		return
+	}
+	if c.store.UpdateCardStatus(cardID, status) == nil {
+		c.onChanged()
+	}
+}
+
+// setTitle writes only the title field, and only on change.
+func (c *Controller) setTitle(cardID, title string) {
+	card, err := c.store.GetCard(cardID)
+	if err != nil || card.Title == title {
+		return
+	}
+	if c.store.UpdateCardTitle(cardID, title) == nil {
+		c.onChanged()
+	}
+}
+
+// MoveCardToColumn moves a card to the given column, reinserts it (for
+// ordering), ensures it is watched, and delivers the column prompt.
+func (c *Controller) MoveCardToColumn(card *Card, column, prompt string) error {
+	card.Column = column
+	card.Status = StatusWaiting
+	if prompt != "" {
+		card.Status = StatusRunning
+	}
+
+	if err := c.store.ReinsertCard(card); err != nil {
+		return fmt.Errorf("reinsert card: %w", err)
+	}
+
+	c.Start(card) // no-op if already watching
+	return c.SendPrompt(card, prompt)
+}
+
+// SendPrompt delivers a prompt to the card's agent through the control plane.
+// The follow-up carries a fresh idempotency key so a retry can never
+// double-send. If the control plane is unreachable (the agent or its tmux
+// session died), the session is relaunched with the prompt as its next
+// message.
+func (c *Controller) SendPrompt(card *Card, prompt string) error {
+	if prompt == "" {
+		return nil
+	}
+
+	client := c.clientFor(socketPath(card.AgentSession), card.AgentSession)
+	ctx, cancel := context.WithTimeout(c.ctx, followupTimeout)
+	defer cancel()
+	if _, err := client.Followup(ctx, newID(), prompt); err == nil {
+		return nil
+	}
+
+	return c.relaunch(card, prompt)
+}
+
+// relaunch recreates the card's tmux session under the same name, resuming the
+// same docker-agent session (and its worktree) on the same control-plane
+// socket. A non-empty prompt is delivered as the resumed session's next
+// message. Launching from the worktree keeps the agent isolated even if
+// docker-agent's own worktree reattachment does not happen.
+func (c *Controller) relaunch(card *Card, prompt string) error {
+	_ = c.sessions.KillSession(card.Session)
+	return c.sessions.NewSession(
+		card.Session, card.Worktree, card.Agent, card.AgentSession,
+		socketPath(card.AgentSession), "", prompt,
+	)
+}
+
+// sleep waits for d or until ctx is done, reporting whether ctx was done.
+func sleep(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return true
+	case <-t.C:
+		return false
+	}
+}

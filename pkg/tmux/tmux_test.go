@@ -16,17 +16,19 @@ func TestShellQuote(t *testing.T) {
 }
 
 func TestAgentCommand(t *testing.T) {
+	const sock = "/run/board-abc.sock"
+
 	// Resume (no worktree name): omit --worktree so the session reattaches to
 	// its existing worktree; no prompt means wait for input.
-	assert.Equal(t, "docker agent run my-agent --yolo --session abc123",
-		agentCommand("my-agent", "abc123", "", ""))
+	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock",
+		agentCommand("my-agent", "abc123", sock, "", ""))
 
 	// Resume with a prompt: deliver it as the session's next message, quoted.
-	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 'do this'",
-		agentCommand("my-agent", "abc123", "", "do this"))
+	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock 'do this'",
+		agentCommand("my-agent", "abc123", sock, "", "do this"))
 
 	// First launch (worktree name set): create the isolated worktree branched
 	// from origin/main and deliver the first prompt.
-	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --worktree=board-xyz --worktree-base origin/main 'do this'",
-		agentCommand("my-agent", "abc123", "board-xyz", "do this"))
+	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base origin/main 'do this'",
+		agentCommand("my-agent", "abc123", sock, "board-xyz", "do this"))
 }

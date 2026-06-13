@@ -68,6 +68,10 @@ func applySessionDefaults(sessionName string) {
 // owns sessionID and passes it via --session: the first run creates that
 // session, later runs resume it.
 //
+// --listen exposes the run's control plane on listenSocket (a unix socket the
+// board owns), so the board can observe and drive the session over HTTP
+// instead of scraping the terminal.
+//
 // On the first run, worktreeName is non-empty: --worktree creates an isolated
 // git worktree (branched from origin/main) and every tool runs inside it. On
 // resume, worktreeName is empty and --worktree is omitted: docker agent
@@ -75,8 +79,9 @@ func applySessionDefaults(sessionName string) {
 // --worktree again (which would fail, the worktree already exists) is avoided.
 //
 // A non-empty prompt is appended as the first message.
-func agentCommand(agent, sessionID, worktreeName, prompt string) string {
-	cmd := fmt.Sprintf("docker agent run %s --yolo --session %s", agent, shellescape.Quote(sessionID))
+func agentCommand(agent, sessionID, listenSocket, worktreeName, prompt string) string {
+	cmd := fmt.Sprintf("docker agent run %s --yolo --session %s --listen %s",
+		agent, shellescape.Quote(sessionID), shellescape.Quote("unix://"+listenSocket))
 	if worktreeName != "" {
 		cmd += fmt.Sprintf(" --worktree=%s --worktree-base origin/main", shellescape.Quote(worktreeName))
 	}
@@ -90,13 +95,13 @@ func agentCommand(agent, sessionID, worktreeName, prompt string) string {
 // exec'd into the pane (replacing the shell) so that, when it exits, the pane
 // becomes a dead pane instead of dropping back to a shell. Combined with
 // remain-on-exit, the tmux session outlives a dead agent: the user can still
-// read its final output and the poller can detect the dead pane and reconnect.
+// read its final output and the controller can detect the dead pane and relaunch.
 //
 // A non-empty worktreeName marks the first run: workDir is then the repository
 // and --worktree branches a new worktree from it. On resume worktreeName is
 // empty and workDir is the existing worktree directory, so the agent stays
 // isolated there.
-func (Sessions) NewSession(sessionName, workDir, agent, sessionID, worktreeName, prompt string) error {
+func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket, worktreeName, prompt string) error {
 	tmux, err := defaultTmux()
 	if err != nil {
 		return fmt.Errorf("tmux init: %w", err)
@@ -128,30 +133,13 @@ func (Sessions) NewSession(sessionName, workDir, agent, sessionID, worktreeName,
 
 	// exec replaces the shell with the agent so the agent becomes the pane's
 	// process: when it exits the pane goes dead (see remain-on-exit above).
-	if err := panes[0].SendKeys("exec " + agentCommand(agent, sessionID, worktreeName, prompt)); err != nil {
+	if err := panes[0].SendKeys("exec " + agentCommand(agent, sessionID, listenSocket, worktreeName, prompt)); err != nil {
 		return fmt.Errorf("send keys: %w", err)
 	}
 	if err := panes[0].SendKeys("Enter"); err != nil {
 		return fmt.Errorf("send enter: %w", err)
 	}
 
-	return nil
-}
-
-// SendKeys sends a follow-up message to a running docker agent session.
-// A leading Escape dismisses any modal, menu or scroll mode so focus is
-// restored to the prompt editor before typing. The message is then sent
-// with -l (literal) so it lands in the editor as-is, and Enter submits it.
-func (Sessions) SendKeys(sessionName, message string) error {
-	if err := tmuxRun("send-keys", "-t", sessionName, "Escape"); err != nil {
-		return fmt.Errorf("send-keys Escape: %w", err)
-	}
-	if err := tmuxRun("send-keys", "-l", "-t", sessionName, message); err != nil {
-		return fmt.Errorf("send-keys -l: %w", err)
-	}
-	if err := tmuxRun("send-keys", "-t", sessionName, "Enter"); err != nil {
-		return fmt.Errorf("send-keys Enter: %w", err)
-	}
 	return nil
 }
 
@@ -163,9 +151,6 @@ func tmuxRun(args ...string) error {
 	}
 	return nil
 }
-
-// errSessionNotFound indicates the requested tmux session does not exist.
-var errSessionNotFound = errors.New("tmux session not found")
 
 // KillSession kills a tmux session.
 func (Sessions) KillSession(sessionName string) error {
@@ -182,32 +167,31 @@ func (Sessions) KillSession(sessionName string) error {
 	return session.Kill()
 }
 
-// PaneContent captures the current content of the first pane in a session. It
-// also reports whether that pane is dead, i.e. its agent has exited while
-// remain-on-exit keeps the session around. A missing session returns
-// [errSessionNotFound].
-func (Sessions) PaneContent(sessionName string) (content string, dead bool, err error) {
+// Alive reports whether the session exists and its agent pane is still
+// running. A pane goes dead when the agent exits (remain-on-exit keeps the
+// session around); a missing session reports not alive. The board uses this
+// to tell a slow-starting control plane from a session that needs relaunching.
+func (Sessions) Alive(sessionName string) (bool, error) {
 	tmux, err := defaultTmux()
 	if err != nil {
-		return "", false, err
+		return false, err
 	}
 
 	session, err := tmux.GetSessionByName(sessionName)
 	if err != nil {
-		return "", false, err
+		return false, err
 	}
 	if session == nil {
-		return "", false, errSessionNotFound
+		return false, nil
 	}
 
 	panes, err := session.ListPanes()
 	if err != nil {
-		return "", false, err
+		return false, err
 	}
 	if len(panes) == 0 {
-		return "", false, errors.New("no panes in session")
+		return false, nil
 	}
 
-	content, err = panes[0].CapturePane(nil)
-	return content, panes[0].Dead, err
+	return !panes[0].Dead, nil
 }

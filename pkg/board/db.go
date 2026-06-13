@@ -170,8 +170,8 @@ func (s *SQLiteStore) UpdateCard(c *Card) error {
 }
 
 // UpdateCardStatus updates only the status column of a card. It is meant for
-// background goroutines that hold a stale snapshot of the row (the poller
-// and the remote-session watcher); a full [UpdateCard] would silently revert
+// background goroutines that hold a stale snapshot of the row (the
+// controller's watchers); a full [UpdateCard] would silently revert
 // concurrent edits made by, e.g., the move-card handler.
 func (s *SQLiteStore) UpdateCardStatus(id string, status CardStatus) error {
 	_, err := s.db.Exec("UPDATE cards SET status = ? WHERE id = ?", status, id)
@@ -182,6 +182,14 @@ func (s *SQLiteStore) UpdateCardStatus(id string, status CardStatus) error {
 // as [SQLiteStore.UpdateCardStatus].
 func (s *SQLiteStore) UpdateCardSession(id, session string) error {
 	_, err := s.db.Exec("UPDATE cards SET session = ? WHERE id = ?", session, id)
+	return err
+}
+
+// UpdateCardTitle updates only the title column of a card. Same rationale as
+// [SQLiteStore.UpdateCardStatus]: the controller sets the title from a
+// session_title event without reverting concurrent edits.
+func (s *SQLiteStore) UpdateCardTitle(id, title string) error {
+	_, err := s.db.Exec("UPDATE cards SET title = ? WHERE id = ?", title, id)
 	return err
 }
 

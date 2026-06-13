@@ -1,0 +1,267 @@
+package board
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/dgageot/board/pkg/agent"
+)
+
+// fakeSessionManager records tmux operations and reports configurable liveness.
+type fakeSessionManager struct {
+	mu      sync.Mutex
+	created []newSessionCall
+	killed  []string
+	alive   bool
+}
+
+type newSessionCall struct {
+	name, workDir, sessionID, listenSocket, worktreeName, prompt string
+}
+
+func newFakeSessionManager() *fakeSessionManager {
+	return &fakeSessionManager{alive: true}
+}
+
+func (f *fakeSessionManager) NewSession(name, workDir, _, sessionID, listenSocket, worktreeName, prompt string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.created = append(f.created, newSessionCall{name, workDir, sessionID, listenSocket, worktreeName, prompt})
+	return nil
+}
+
+func (f *fakeSessionManager) KillSession(name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.killed = append(f.killed, name)
+	return nil
+}
+
+func (f *fakeSessionManager) Alive(string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.alive, nil
+}
+
+func (f *fakeSessionManager) calls() []newSessionCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]newSessionCall(nil), f.created...)
+}
+
+// fakeClient is a scripted control-plane client.
+type fakeClient struct {
+	mu        sync.Mutex
+	snapErr   error
+	snap      agent.Snapshot
+	events    []agent.Event
+	followErr error
+	followKey string
+	followMsg string
+}
+
+func (f *fakeClient) Snapshot(context.Context) (agent.Snapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.snap, f.snapErr
+}
+
+func (f *fakeClient) StreamEvents(ctx context.Context, _ uint64, onEvent func(agent.Event) bool) error {
+	f.mu.Lock()
+	evs := append([]agent.Event(nil), f.events...)
+	f.mu.Unlock()
+	for _, ev := range evs {
+		if !onEvent(ev) {
+			return nil
+		}
+	}
+	// Block until the watcher is canceled so we don't busy-loop reconnecting.
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (f *fakeClient) Followup(_ context.Context, key, msg string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.followKey, f.followMsg = key, msg
+	return false, f.followErr
+}
+
+// newTestController builds a controller wired to the given fake client.
+func newTestController(t *testing.T, store Store, sessions SessionManager, client sessionClient) *Controller {
+	t.Helper()
+	c := newController(t.Context(), store, sessions, func() {})
+	c.clientFor = func(string, string) sessionClient { return client }
+	return c
+}
+
+func devCard() *Card {
+	return &Card{
+		ID: "c1", Title: "old", Column: "dev", Status: StatusWaiting,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt",
+		Session: "s1", AgentSession: "sess-1",
+	}
+}
+
+func TestControllerSnapshotSetsTitleAndStatus(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{snap: agent.Snapshot{Title: "Real Title", Streaming: true, LastEventSeq: 7}}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Title == "Real Title" && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
+}
+
+func TestControllerEventsDriveStatusAndTitle(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventSessionTitle, Title: "Generated"},
+			{Type: agent.EventStreamStopped},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Title == "Generated" && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+}
+
+func TestControllerRelaunchesWhenSessionDead(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	sessions := newFakeSessionManager()
+	sessions.alive = false // pane is dead: the watcher must relaunch
+	client := &fakeClient{snapErr: errors.New("connection refused")}
+	c := newTestController(t, store, sessions, client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool { return len(sessions.calls()) > 0 }, time.Second, 5*time.Millisecond)
+
+	call := sessions.calls()[0]
+	assert.Equal(t, "s1", call.name, "relaunch reuses the tmux session name")
+	assert.Equal(t, "sess-1", call.sessionID, "relaunch resumes the same docker-agent session")
+	assert.Empty(t, call.worktreeName, "relaunch omits --worktree so the session reattaches")
+	assert.Equal(t, "wt", call.workDir, "relaunch resumes from the worktree")
+	assert.Equal(t, socketPath("sess-1"), call.listenSocket, "relaunch reuses the same socket")
+	assert.Empty(t, call.prompt)
+}
+
+func TestControllerDoesNotRelaunchWhileStarting(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	sessions := newFakeSessionManager()
+	sessions.alive = true // still starting: connection fails but pane is alive
+	client := &fakeClient{snapErr: errors.New("connection refused")}
+	c := newTestController(t, store, sessions, client)
+	c.Start(devCard())
+
+	time.Sleep(200 * time.Millisecond)
+	assert.Empty(t, sessions.calls(), "a starting session must not be relaunched")
+}
+
+func TestSendPromptUsesFollowup(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	client := &fakeClient{}
+	c := newTestController(t, store, sessions, client)
+
+	require.NoError(t, c.SendPrompt(devCard(), "hello"))
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	assert.Equal(t, "hello", client.followMsg)
+	assert.NotEmpty(t, client.followKey, "a follow-up carries an idempotency key")
+	assert.Empty(t, sessions.calls(), "a reachable session is not relaunched")
+}
+
+func TestSendPromptRelaunchesWhenControlPlaneUnreachable(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	client := &fakeClient{followErr: errors.New("connection refused")}
+	c := newTestController(t, store, sessions, client)
+
+	require.NoError(t, c.SendPrompt(devCard(), "hello"))
+
+	require.Len(t, sessions.calls(), 1)
+	call := sessions.calls()[0]
+	assert.Equal(t, "s1", call.name)
+	assert.Equal(t, "hello", call.prompt, "the prompt is delivered as the resumed session's next message")
+	assert.Empty(t, call.worktreeName)
+}
+
+func TestSendPromptEmptyIsNoop(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	c := newTestController(t, store, sessions, &fakeClient{})
+
+	require.NoError(t, c.SendPrompt(devCard(), ""))
+	assert.Empty(t, sessions.calls())
+}
+
+func TestControllerStopEndsWatcher(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	c := newTestController(t, store, newFakeSessionManager(), &fakeClient{snapErr: errors.New("x")})
+	c.Start(devCard())
+	c.Stop("c1")
+
+	c.mu.Lock()
+	_, ok := c.watchers["c1"]
+	c.mu.Unlock()
+	assert.False(t, ok, "watcher is removed on stop")
+}
+
+func TestMoveCardToColumnReinsertsAndPrompts(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	sessions := newFakeSessionManager()
+	client := &fakeClient{}
+	c := newTestController(t, store, sessions, client)
+
+	card := devCard()
+	require.NoError(t, c.MoveCardToColumn(card, "review", "Review the changes"))
+
+	got, _ := store.GetCard("c1")
+	assert.Equal(t, "review", got.Column)
+	assert.Equal(t, StatusRunning, got.Status, "a card with a prompt is running")
+
+	client.mu.Lock()
+	assert.Equal(t, "Review the changes", client.followMsg)
+	client.mu.Unlock()
+}
+
+func TestMoveCardToColumnNoPromptIsWaiting(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	c := newTestController(t, store, newFakeSessionManager(), &fakeClient{})
+
+	card := devCard()
+	require.NoError(t, c.MoveCardToColumn(card, "done", ""))
+
+	got, _ := store.GetCard("c1")
+	assert.Equal(t, "done", got.Column)
+	assert.Equal(t, StatusWaiting, got.Status)
+}
