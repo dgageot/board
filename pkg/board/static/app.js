@@ -463,10 +463,11 @@ async function submitNewTask(e) {
 
   const dialog = document.getElementById("new-task-dialog");
   const submitBtn = dialog.querySelector("button[type=submit]");
-  const originalText = submitBtn.textContent;
+  const label = submitBtn.querySelector(".btn-label");
+  const originalLabel = label.textContent;
   submitBtn.disabled = true;
   submitBtn.classList.add("btn-loading");
-  submitBtn.textContent = "Creating…";
+  label.textContent = "Creating…";
 
   try {
     await API.createCard({ prompt, projectId });
@@ -476,7 +477,7 @@ async function submitNewTask(e) {
     alert(err.message);
     submitBtn.disabled = false;
     submitBtn.classList.remove("btn-loading");
-    submitBtn.textContent = originalText;
+    label.textContent = originalLabel;
   }
 }
 
@@ -484,7 +485,7 @@ document.getElementById("new-task-dialog").addEventListener("close", () => {
   const submitBtn = document.getElementById("new-task-dialog").querySelector("button[type=submit]");
   submitBtn.disabled = false;
   submitBtn.classList.remove("btn-loading");
-  submitBtn.textContent = "🤖 Create Task";
+  submitBtn.querySelector(".btn-label").textContent = "Create Task";
 });
 
 // Projects dialog
