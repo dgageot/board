@@ -592,6 +592,13 @@ dialog {
   }
 }
 
+.dialog-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .dialog-body {
   padding: 22px 24px 24px;
 }

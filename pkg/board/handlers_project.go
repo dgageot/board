@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"fmt"
 	"net/http"
+
+	"github.com/dgageot/board/pkg/git"
 )
 
 func (b *Board) handleListProjects(w http.ResponseWriter, _ *http.Request) {
@@ -24,6 +26,11 @@ func (b *Board) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	p.ID = newID()
 	p.Agent = cmp.Or(p.Agent, b.config.DefaultAgent)
 	p.RepoPath = cmp.Or(p.RepoPath, b.config.DefaultRepoPath)
+
+	if !git.IsRepo(p.RepoPath) {
+		writeError(w, fmt.Errorf("%w: %q is not a git repository", errBadInput, p.RepoPath))
+		return
+	}
 
 	if err := b.store.InsertProject(&p); err != nil {
 		writeError(w, fmt.Errorf("insert project: %w", err))

@@ -254,7 +254,7 @@ async function handleCardAction(e) {
   try {
     if (action === "jump") {
       const info = await API.jumpCard(id);
-      openTerminal(info.session, cards.find((c) => c.id === id)?.title || "Terminal");
+      openTerminal(info.session, cards.find((c) => c.id === id)?.title || "Terminal", id);
     } else if (action === "diff") {
       const title = cards.find((c) => c.id === id)?.title || "Diff";
       openDiffDialog(id, title);
@@ -274,11 +274,13 @@ async function handleCardAction(e) {
 
 let activeTerm = null;
 let activeSocket = null;
+let activeCardId = null;
 
-async function openTerminal(sessionName, title) {
+async function openTerminal(sessionName, title, cardId) {
   const dialog = document.getElementById("terminal-dialog");
   const container = document.getElementById("terminal-container");
   document.getElementById("terminal-title").textContent = title;
+  activeCardId = cardId;
 
   closeTerminal();
   dialog.showModal();
@@ -388,6 +390,22 @@ document.getElementById("close-terminal").addEventListener("click", () => {
   document.getElementById("terminal-dialog").close();
 });
 
+// Diff/Code buttons in the terminal header act on the current card.
+document.getElementById("terminal-diff").addEventListener("click", () => {
+  if (!activeCardId) return;
+  const title = cards.find((c) => c.id === activeCardId)?.title || "Diff";
+  openDiffDialog(activeCardId, title);
+});
+
+document.getElementById("terminal-vscode").addEventListener("click", async () => {
+  if (!activeCardId) return;
+  try {
+    await API.openVSCode(activeCardId);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
 // The terminal dialog hosts a live TUI: ESC must reach the agent (so menus,
 // modes, etc. behave normally) but neither dismiss the <dialog> nor flow
 // through ghostty-web's keydown handler, which encodes ESC using the Kitty
@@ -485,7 +503,7 @@ async function populateAgentSelect() {
   } catch {
     // Leave the list empty on error; the default agent is used server-side.
   }
-  const options = [`<option value="">Default</option>`];
+  const options = [];
   for (const a of agents) {
     options.push(`<option value="${esc(a)}">${esc(a.split("/").pop())}</option>`);
   }

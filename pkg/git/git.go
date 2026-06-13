@@ -72,6 +72,13 @@ func runGit(dir string, args ...string) (string, error) {
 	return string(out), nil
 }
 
+// IsRepo reports whether path is inside a git working tree.
+func IsRepo(path string) bool {
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	cmd.Dir = path
+	return cmd.Run() == nil
+}
+
 // WorktreePath computes the worktree directory path, a sibling of the repo.
 func WorktreePath(repoPath, branch string) string {
 	// Resolve relative paths (e.g. ".") so the worktree lands next to the

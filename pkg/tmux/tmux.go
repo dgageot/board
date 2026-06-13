@@ -24,6 +24,7 @@ var defaultTmux = sync.OnceValues(gotmux.DefaultTmux)
 var sessionDefaults = [][]string{
 	{"set", "-g", "allow-passthrough", "on"},
 	{"set", "-g", "mouse", "on"},
+	{"set", "-g", "status", "off"},
 	{"set", "-g", "default-terminal", "tmux-256color"},
 	{"set", "-ga", "terminal-features", ",xterm-256color:clipboard:ccolour:cstyle:focus:title:mouse:RGB"},
 	{"set-environment", "LANG", "en_US.UTF-8"},

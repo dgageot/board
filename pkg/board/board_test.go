@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -36,6 +37,42 @@ func TestHandleListProjectsWithData(t *testing.T) {
 
 	var projects []*Project
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&projects))
+	require.Len(t, projects, 1)
+	assert.Equal(t, "Proj", projects[0].Name)
+}
+
+func TestHandleCreateProjectValidatesGitRepo(t *testing.T) {
+	b, store := newTestBoard(t)
+
+	body := `{"name":"Proj","repoPath":"/definitely/not/a/repo"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/projects", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	b.handleCreateProject(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	projects, err := store.ListProjects()
+	require.NoError(t, err)
+	assert.Empty(t, projects)
+}
+
+func TestHandleCreateProjectAcceptsGitRepo(t *testing.T) {
+	b, store := newTestBoard(t)
+
+	repo := t.TempDir()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repo
+	require.NoError(t, cmd.Run())
+
+	body := `{"name":"Proj","repoPath":"` + repo + `","agent":"/a"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/projects", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	b.handleCreateProject(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	projects, err := store.ListProjects()
+	require.NoError(t, err)
 	require.Len(t, projects, 1)
 	assert.Equal(t, "Proj", projects[0].Name)
 }
