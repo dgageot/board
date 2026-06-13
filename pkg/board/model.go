@@ -3,8 +3,6 @@ package board
 import (
 	"crypto/rand"
 	"encoding/hex"
-
-	"github.com/dgageot/board/pkg/git"
 )
 
 // Column represents a kanban column with a pre-defined prompt.
@@ -69,11 +67,13 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-// newBranchName returns a unique branch name for a local card. The name
-// is random rather than derived from the card's title, so the worktree
-// directory does not depend on the (slower) title generation.
-func newBranchName() string {
-	return git.BranchPrefix + newID()
+// newWorktreeName returns a unique worktree name for a card. docker-agent
+// derives the worktree directory (~/.cagent/worktrees/<name>) and branch
+// (worktree-<name>) from it, so the name must be a single path segment: a
+// plain hex id with a "board-" prefix. It is random rather than derived from
+// the card's title, so worktree creation does not wait on title generation.
+func newWorktreeName() string {
+	return "board-" + newID()
 }
 
 // newSessionName returns a unique tmux session name for a card.

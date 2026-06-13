@@ -6,26 +6,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func TestWorktreePath(t *testing.T) {
-	got := WorktreePath("/home/user/src/myrepo", "board/fix-bug-abc12345")
-	assert.Equal(t, "/home/user/src/fix-bug-abc12345", got)
+func TestWorktreeDir(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home dir")
+	}
+	got := WorktreeDir("board-abc12345")
+	assert.Equal(t, filepath.Join(home, ".cagent", "worktrees", "board-abc12345"), got)
 }
 
-func TestWorktreePathStripsPrefix(t *testing.T) {
-	got := WorktreePath("/repo", "board/my-branch")
-	assert.Equal(t, "/my-branch", got)
-}
-
-func TestWorktreePathRelativeRepo(t *testing.T) {
-	t.Chdir(t.TempDir())
-
-	got := WorktreePath(".", "board/my-branch")
-
-	// The worktree must be a sibling of the repo, not inside it.
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(filepath.Dir(wd), "my-branch"), got)
+func TestWorktreeBranch(t *testing.T) {
+	assert.Equal(t, "worktree-board-abc12345", WorktreeBranch("board-abc12345"))
 }

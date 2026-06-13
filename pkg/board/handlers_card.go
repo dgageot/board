@@ -53,7 +53,10 @@ func (b *Board) resolveProject(projectID string) (agent, repoPath string) {
 	return cmp.Or(project.Agent, b.config.DefaultAgent), cmp.Or(project.RepoPath, b.config.DefaultRepoPath)
 }
 
-// createCard creates a new card with a worktree and tmux session.
+// createCard creates a new card and launches its agent session. docker agent
+// creates the isolated git worktree (named after the card) on first launch, so
+// the board only needs to record where that worktree lives for later diffing,
+// editing, and cleanup.
 func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card *Card, err error) {
 	agent, repoPath := b.resolveProject(projectID)
 
@@ -62,14 +65,12 @@ func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card 
 		return nil, fmt.Errorf("generate title: %w", err)
 	}
 
-	branch := newBranchName()
-	wtPath := git.WorktreePath(repoPath, branch)
+	worktreeName := newWorktreeName()
+	branch := git.WorktreeBranch(worktreeName)
+	wtPath := git.WorktreeDir(worktreeName)
 	sessionName := newSessionName()
 	agentSession := newAgentSessionID()
 
-	if err := git.CreateWorktree(repoPath, branch, wtPath); err != nil {
-		return nil, fmt.Errorf("git worktree: %w", err)
-	}
 	defer func() {
 		if err != nil {
 			_ = b.sessions.KillSession(sessionName)
@@ -77,7 +78,8 @@ func (b *Board) createCard(ctx context.Context, prompt, projectID string) (card 
 		}
 	}()
 
-	if err := b.sessions.NewSession(sessionName, wtPath, agent, agentSession, prompt); err != nil {
+	// Launch from the repository: --worktree branches the new worktree from it.
+	if err := b.sessions.NewSession(sessionName, repoPath, agent, agentSession, worktreeName, prompt); err != nil {
 		return nil, fmt.Errorf("tmux session: %w", err)
 	}
 

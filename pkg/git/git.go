@@ -4,31 +4,11 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
-
-// BranchPrefix is the prefix the board uses for all worktree branches.
-const BranchPrefix = "board/"
-
-// CreateWorktree creates a new git worktree with a new branch based on origin/main.
-// It fetches origin first to ensure the branch starts from the latest remote state.
-func CreateWorktree(repoPath, branch, worktreePath string) error {
-	cmd := exec.Command("git", "fetch", "origin", "main")
-	cmd.Dir = repoPath
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git fetch: %s: %w", out, err)
-	}
-
-	cmd = exec.Command("git", "worktree", "add", "-b", branch, worktreePath, "origin/main")
-	cmd.Dir = repoPath
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git worktree add: %s: %w", out, err)
-	}
-
-	return nil
-}
 
 // RemoveWorktree removes a git worktree and its branch.
 func RemoveWorktree(repoPath, worktreePath, branch string) {
@@ -79,13 +59,17 @@ func IsRepo(path string) bool {
 	return cmd.Run() == nil
 }
 
-// WorktreePath computes the worktree directory path, a sibling of the repo.
-func WorktreePath(repoPath, branch string) string {
-	// Resolve relative paths (e.g. ".") so the worktree lands next to the
-	// repo instead of inside it.
-	if abs, err := filepath.Abs(repoPath); err == nil {
-		repoPath = abs
-	}
-	name := strings.TrimPrefix(branch, BranchPrefix)
-	return filepath.Join(filepath.Dir(repoPath), name)
+// WorktreeDir returns the directory docker-agent creates for a worktree of the
+// given name: ~/.cagent/worktrees/<name>. This mirrors docker-agent's
+// --worktree convention so the board can locate the worktree for diffs,
+// editing, and cleanup.
+func WorktreeDir(name string) string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".cagent", "worktrees", name)
+}
+
+// WorktreeBranch returns the branch docker-agent checks out for a worktree of
+// the given name: "worktree-<name>".
+func WorktreeBranch(name string) string {
+	return "worktree-" + name
 }

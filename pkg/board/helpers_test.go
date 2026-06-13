@@ -29,10 +29,12 @@ func openTestStore(t *testing.T) *SQLiteStore {
 // noopSessionManager is a no-op SessionManager for tests.
 type noopSessionManager struct{}
 
-func (noopSessionManager) NewSession(string, string, string, string, string) error { return nil }
-func (noopSessionManager) KillSession(string) error                                { return nil }
-func (noopSessionManager) SendKeys(string, string) error                           { return nil }
-func (noopSessionManager) PaneContent(string) (string, bool, error)                { return "", false, nil }
+func (noopSessionManager) NewSession(string, string, string, string, string, string) error {
+	return nil
+}
+func (noopSessionManager) KillSession(string) error                 { return nil }
+func (noopSessionManager) SendKeys(string, string) error            { return nil }
+func (noopSessionManager) PaneContent(string) (string, bool, error) { return "", false, nil }
 
 func newTestBoard(t *testing.T) (*Board, *SQLiteStore) {
 	t.Helper()

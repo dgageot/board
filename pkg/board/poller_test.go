@@ -23,9 +23,11 @@ type fakeSessionManager struct {
 
 // newSessionCall records the arguments of a NewSession call.
 type newSessionCall struct {
-	name      string
-	sessionID string
-	prompt    string
+	name         string
+	workDir      string
+	sessionID    string
+	worktreeName string
+	prompt       string
 }
 
 func newFakeSessionManager() *fakeSessionManager {
@@ -36,10 +38,16 @@ func newFakeSessionManager() *fakeSessionManager {
 	}
 }
 
-func (f *fakeSessionManager) NewSession(name, _, _, sessionID, prompt string) error {
+func (f *fakeSessionManager) NewSession(name, workDir, _, sessionID, worktreeName, prompt string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.created = append(f.created, newSessionCall{name: name, sessionID: sessionID, prompt: prompt})
+	f.created = append(f.created, newSessionCall{
+		name:         name,
+		workDir:      workDir,
+		sessionID:    sessionID,
+		worktreeName: worktreeName,
+		prompt:       prompt,
+	})
 	return nil
 }
 
@@ -273,6 +281,8 @@ func TestPollerReconnectsDeadSession(t *testing.T) {
 	require.Len(t, sessions.created, 1)
 	assert.Equal(t, "s1", sessions.created[0].name, "reconnect reuses the tmux session name")
 	assert.Equal(t, "sess-1", sessions.created[0].sessionID, "reconnect resumes the same docker-agent session")
+	assert.Empty(t, sessions.created[0].worktreeName, "reconnect omits --worktree so the session reattaches to its worktree")
+	assert.Equal(t, "rp", sessions.created[0].workDir, "reconnect launches from the repository")
 	assert.Empty(t, sessions.created[0].prompt, "reconnect resumes without a new prompt")
 }
 
@@ -295,6 +305,7 @@ func TestPollerReconnectsDeadPane(t *testing.T) {
 	require.Len(t, sessions.created, 1)
 	assert.Equal(t, "s1", sessions.created[0].name)
 	assert.Equal(t, "sess-1", sessions.created[0].sessionID)
+	assert.Empty(t, sessions.created[0].worktreeName)
 	assert.Empty(t, sessions.created[0].prompt)
 }
 
@@ -315,7 +326,7 @@ func TestSendPromptToCardRecreatesWhenDead(t *testing.T) {
 	sessions := newFakeSessionManager()
 	poller := newPoller(store, sessions, func() {})
 
-	card := &Card{ID: "c1", Session: "s1", Agent: "ag", Worktree: "wt", AgentSession: "sess-1"}
+	card := &Card{ID: "c1", Session: "s1", Agent: "ag", RepoPath: "rp", Worktree: "wt", AgentSession: "sess-1"}
 	// The agent pane has died: the prompt must not be typed into it (a dead
 	// pane swallows send-keys); the session is recreated with the prompt.
 	sessions.paneDead["s1"] = true
@@ -326,6 +337,8 @@ func TestSendPromptToCardRecreatesWhenDead(t *testing.T) {
 	require.Len(t, sessions.created, 1)
 	assert.Equal(t, "s1", sessions.created[0].name)
 	assert.Equal(t, "sess-1", sessions.created[0].sessionID)
+	assert.Empty(t, sessions.created[0].worktreeName, "a resumed session omits --worktree")
+	assert.Equal(t, "rp", sessions.created[0].workDir, "the session relaunches from the repository")
 	assert.Equal(t, "hello", sessions.created[0].prompt, "the prompt is delivered as the resumed session's next message")
 }
 

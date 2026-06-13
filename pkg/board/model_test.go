@@ -16,18 +16,20 @@ func TestNewID(t *testing.T) {
 	assert.NotEqual(t, id1, id2)
 }
 
-func TestNewBranchName(t *testing.T) {
-	branch := newBranchName()
+func TestNewWorktreeName(t *testing.T) {
+	name := newWorktreeName()
 
-	assert.True(t, strings.HasPrefix(branch, "board/"))
-	assert.Greater(t, len(branch), len("board/"))
+	assert.True(t, strings.HasPrefix(name, "board-"))
+	assert.Greater(t, len(name), len("board-"))
+	// docker-agent requires a single path segment (no separators).
+	assert.NotContains(t, name, "/")
 }
 
-func TestNewBranchNameUniqueness(t *testing.T) {
-	b1 := newBranchName()
-	b2 := newBranchName()
+func TestNewWorktreeNameUniqueness(t *testing.T) {
+	n1 := newWorktreeName()
+	n2 := newWorktreeName()
 
-	assert.NotEqual(t, b1, b2)
+	assert.NotEqual(t, n1, n2)
 }
 
 func TestColumnPrompt(t *testing.T) {
