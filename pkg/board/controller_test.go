@@ -57,13 +57,15 @@ func (f *fakeSessionManager) calls() []newSessionCall {
 
 // fakeClient is a scripted control-plane client.
 type fakeClient struct {
-	mu        sync.Mutex
-	snapErr   error
-	snap      agent.Snapshot
-	events    []agent.Event
-	followErr error
-	followKey string
-	followMsg string
+	mu           sync.Mutex
+	snapErr      error
+	snap         agent.Snapshot
+	events       []agent.Event
+	gotSince     uint64
+	streamCalled bool
+	followErr    error
+	followKey    string
+	followMsg    string
 }
 
 func (f *fakeClient) Snapshot(context.Context) (agent.Snapshot, error) {
@@ -72,8 +74,10 @@ func (f *fakeClient) Snapshot(context.Context) (agent.Snapshot, error) {
 	return f.snap, f.snapErr
 }
 
-func (f *fakeClient) StreamEvents(ctx context.Context, _ uint64, onEvent func(agent.Event) bool) error {
+func (f *fakeClient) StreamEvents(ctx context.Context, since uint64, onEvent func(agent.Event) bool) error {
 	f.mu.Lock()
+	f.gotSince = since
+	f.streamCalled = true
 	evs := append([]agent.Event(nil), f.events...)
 	f.mu.Unlock()
 	for _, ev := range evs {
@@ -109,17 +113,60 @@ func devCard() *Card {
 	}
 }
 
-func TestControllerSnapshotSetsTitleAndStatus(t *testing.T) {
+func TestControllerSnapshotSetsTitle(t *testing.T) {
 	store := openTestStore(t)
 	require.NoError(t, store.InsertCard(devCard()))
 
-	client := &fakeClient{snap: agent.Snapshot{Title: "Real Title", Streaming: true, LastEventSeq: 7}}
+	client := &fakeClient{snap: agent.Snapshot{Title: "Real Title"}}
 	c := newTestController(t, store, newFakeSessionManager(), client)
 	c.Start(devCard())
 
 	require.Eventually(t, func() bool {
 		card, err := store.GetCard("c1")
-		return err == nil && card.Title == "Real Title" && card.Status == StatusRunning
+		return err == nil && card.Title == "Real Title"
+	}, time.Second, 5*time.Millisecond)
+}
+
+// The snapshot's streaming flag is unreliable for attached sessions, so the
+// controller must replay the whole buffer (since 0) rather than tail from the
+// snapshot's last seq — otherwise a stream_started emitted before it connected
+// is missed and a working card never turns running.
+func TestControllerTailsFromBufferStart(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{snap: agent.Snapshot{LastEventSeq: 7, Streaming: false}}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		client.mu.Lock()
+		defer client.mu.Unlock()
+		return client.streamCalled
+	}, time.Second, 5*time.Millisecond)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	assert.Equal(t, uint64(0), client.gotSince)
+}
+
+// A turn already in progress when the watcher connects: its stream_started is
+// replayed from the buffer with no matching stop, so the card is running even
+// though the snapshot reports streaming=false.
+func TestControllerOpenStreamIsRunning(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard())) // starts waiting
+
+	client := &fakeClient{
+		snap:   agent.Snapshot{Streaming: false},
+		events: []agent.Event{{Type: agent.EventStreamStarted}},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
 	}, time.Second, 5*time.Millisecond)
 }
 

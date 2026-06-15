@@ -37,7 +37,11 @@ type Event struct {
 // Snapshot is the part of GET /snapshot the board uses to (re)build a card's
 // state and find the stream position to resume from.
 type Snapshot struct {
-	Title        string `json:"title"`
+	Title string `json:"title"`
+	// Streaming reports whether the server holds a turn's streaming lock. It is
+	// always false for attached (--listen) sessions — turns run in the TUI, not
+	// through the server's RunSession — so the controller ignores it and derives
+	// the running state from stream_started/stream_stopped events instead.
 	Streaming    bool   `json:"streaming"`
 	LastEventSeq uint64 `json:"last_event_seq"`
 }

@@ -145,20 +145,26 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 			continue
 		}
 
-		c.applySnapshot(card, snap)
+		c.setTitleFromSnapshot(card, snap)
 
+		// Derive the running state from the event stream, not snap.Streaming:
+		// for attached (--listen) sessions that flag is always false because
+		// turns run in the TUI, never through the server's RunSession (the only
+		// place its streaming lock is held). Tail from the start of the buffer
+		// (since 0) so the whole backlog is replayed: a turn that began before
+		// this watcher connected — its stream_started already past the
+		// snapshot's last seq — is still seen and keeps the card running.
+		//
 		// A turn can spawn nested streams: every sub-agent (transferred task)
-		// and skill emits its own stream_started/stream_stopped pair. Count the
-		// nesting depth so the card stays running until the outermost stream
-		// stops, instead of flipping to waiting the moment an inner sub-agent
-		// finishes while the parent is still working.
+		// and skill emits its own stream_started/stream_stopped pair. The depth
+		// keeps the card running until the outermost stream stops, instead of
+		// flipping to waiting the moment an inner sub-agent finishes while the
+		// parent is still working. Replayed orphan stops, whose start was
+		// evicted from the buffer, are clamped at zero.
 		depth := 0
-		if snap.Streaming {
-			depth = 1
-		}
 
 		exited := false
-		_ = client.StreamEvents(ctx, snap.LastEventSeq, func(ev agent.Event) bool {
+		_ = client.StreamEvents(ctx, 0, func(ev agent.Event) bool {
 			switch ev.Type {
 			case agent.EventGap:
 				return false // resume point evicted: reconnect and re-snapshot
@@ -191,17 +197,14 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 	}
 }
 
-// applySnapshot mirrors a fresh snapshot into the card: its title and whether
-// a turn is currently running.
-func (c *Controller) applySnapshot(card *Card, snap agent.Snapshot) {
+// setTitleFromSnapshot mirrors a fresh snapshot's title into the card. The
+// snapshot's streaming flag is deliberately ignored: it is unreliable for
+// attached sessions (see watch), so running/waiting is driven entirely by the
+// stream_started/stream_stopped events.
+func (c *Controller) setTitleFromSnapshot(card *Card, snap agent.Snapshot) {
 	if snap.Title != "" {
 		c.setTitle(card.ID, snap.Title)
 	}
-	status := StatusWaiting
-	if snap.Streaming {
-		status = StatusRunning
-	}
-	c.setStatus(card.ID, status)
 }
 
 // setStatus writes only the status field, and only on change, broadcasting so
