@@ -147,6 +147,16 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 
 		c.applySnapshot(card, snap)
 
+		// A turn can spawn nested streams: every sub-agent (transferred task)
+		// and skill emits its own stream_started/stream_stopped pair. Count the
+		// nesting depth so the card stays running until the outermost stream
+		// stops, instead of flipping to waiting the moment an inner sub-agent
+		// finishes while the parent is still working.
+		depth := 0
+		if snap.Streaming {
+			depth = 1
+		}
+
 		exited := false
 		_ = client.StreamEvents(ctx, snap.LastEventSeq, func(ev agent.Event) bool {
 			switch ev.Type {
@@ -156,9 +166,15 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 				exited = true
 				return false
 			case agent.EventStreamStarted:
+				depth++
 				c.setStatus(cardID, StatusRunning)
 			case agent.EventStreamStopped:
-				c.setStatus(cardID, StatusWaiting)
+				if depth > 0 {
+					depth--
+				}
+				if depth == 0 {
+					c.setStatus(cardID, StatusWaiting)
+				}
 			case agent.EventSessionTitle:
 				c.setTitle(cardID, ev.Title)
 			}

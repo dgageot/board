@@ -144,6 +144,34 @@ func TestControllerEventsDriveStatusAndTitle(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 }
 
+func TestControllerNestedStreamsStayRunning(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	// A turn with a sub-agent: parent starts, sub-agent starts then stops.
+	// The parent is still working, so the card must stay running.
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted}, // parent
+			{Type: agent.EventStreamStarted}, // sub-agent
+			{Type: agent.EventStreamStopped}, // sub-agent done, parent still running
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
+
+	// The inner stop must not have flipped the card to waiting.
+	card, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, StatusRunning, card.Status)
+}
+
 func TestControllerRelaunchesWhenSessionDead(t *testing.T) {
 	store := openTestStore(t)
 	require.NoError(t, store.InsertCard(devCard()))
