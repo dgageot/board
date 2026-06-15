@@ -3,6 +3,8 @@ package board
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -238,6 +240,25 @@ func TestControllerRelaunchesWhenSessionDead(t *testing.T) {
 	assert.Equal(t, "wt", call.workDir, "relaunch resumes from the worktree")
 	assert.Equal(t, socketPath("sess-1"), call.listenSocket, "relaunch reuses the same socket")
 	assert.Empty(t, call.prompt)
+}
+
+// A killed agent leaves its control-plane socket file behind; a unix listener
+// cannot bind a path that already exists, so relaunch must remove the stale
+// socket or the resumed run never exposes its control plane.
+func TestRelaunchRemovesStaleSocket(t *testing.T) {
+	store := openTestStore(t)
+	c := newTestController(t, store, newFakeSessionManager(), &fakeClient{})
+
+	card := devCard()
+	socket := socketPath(card.AgentSession)
+	require.NoError(t, os.MkdirAll(filepath.Dir(socket), 0o755))
+	require.NoError(t, os.WriteFile(socket, nil, 0o600))
+	t.Cleanup(func() { _ = os.Remove(socket) })
+
+	require.NoError(t, c.relaunch(card, ""))
+
+	_, err := os.Stat(socket)
+	assert.True(t, os.IsNotExist(err), "relaunch must remove the stale control-plane socket")
 }
 
 func TestControllerDoesNotRelaunchWhileStarting(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -289,9 +290,14 @@ func (c *Controller) SendPrompt(card *Card, prompt string) error {
 // docker-agent's own worktree reattachment does not happen.
 func (c *Controller) relaunch(card *Card, prompt string) error {
 	_ = c.sessions.KillSession(card.Session)
+	socket := socketPath(card.AgentSession)
+	// A killed agent (e.g. after a Docker Desktop restart) leaves its control-
+	// plane socket file behind. Remove it so the resumed run can bind --listen;
+	// otherwise the new agent fails to start and the card stays stuck "starting".
+	_ = os.Remove(socket)
 	return c.sessions.NewSession(
 		card.Session, card.Worktree, card.Agent, card.AgentSession,
-		socketPath(card.AgentSession), "", prompt,
+		socket, "", prompt,
 	)
 }
 
