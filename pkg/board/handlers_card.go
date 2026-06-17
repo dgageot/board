@@ -168,8 +168,9 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
+		// A move never changes the card's status: the color tracks the agent's
+		// activity, not the move. ReinsertCard preserves the current status.
 		card.Column = req.Column
-		card.Status = StatusRunning
 
 		if err := b.store.ReinsertCard(card); err != nil {
 			writeError(w, fmt.Errorf("reinsert card: %w", err))

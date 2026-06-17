@@ -354,23 +354,28 @@ func TestMoveCardToColumnReinsertsAndPrompts(t *testing.T) {
 
 	got, _ := store.GetCard("c1")
 	assert.Equal(t, "review", got.Column)
-	assert.Equal(t, StatusRunning, got.Status, "a card with a prompt is running")
+	assert.Equal(t, StatusWaiting, got.Status, "the move leaves the status untouched; the watcher drives running")
 
 	client.mu.Lock()
 	assert.Equal(t, "Review the changes", client.followMsg)
 	client.mu.Unlock()
 }
 
-func TestMoveCardToColumnNoPromptIsWaiting(t *testing.T) {
+// A move never changes the card's status: the color tracks the agent's
+// activity, not the move itself.
+func TestMoveCardToColumnPreservesStatus(t *testing.T) {
 	store := openTestStore(t)
-	require.NoError(t, store.InsertCard(devCard()))
+	running := devCard()
+	running.Status = StatusRunning
+	require.NoError(t, store.InsertCard(running))
 
 	c := newTestController(t, store, newFakeSessionManager(), &fakeClient{})
 
 	card := devCard()
+	card.Status = StatusRunning
 	require.NoError(t, c.MoveCardToColumn(card, "done", ""))
 
 	got, _ := store.GetCard("c1")
 	assert.Equal(t, "done", got.Column)
-	assert.Equal(t, StatusWaiting, got.Status)
+	assert.Equal(t, StatusRunning, got.Status)
 }

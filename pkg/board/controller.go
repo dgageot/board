@@ -244,13 +244,12 @@ func (c *Controller) Ready(card *Card) bool {
 }
 
 // MoveCardToColumn moves a card to the given column, reinserts it (for
-// ordering), ensures it is watched, and delivers the column prompt.
+// ordering), ensures it is watched, and delivers the column prompt. The status
+// is left untouched: the color tracks the agent's activity, not the move. When
+// a prompt is delivered the agent starts working and the watcher flips the card
+// to running on its own.
 func (c *Controller) MoveCardToColumn(card *Card, column, prompt string) error {
 	card.Column = column
-	card.Status = StatusWaiting
-	if prompt != "" {
-		card.Status = StatusRunning
-	}
 
 	if err := c.store.ReinsertCard(card); err != nil {
 		return fmt.Errorf("reinsert card: %w", err)
