@@ -96,17 +96,18 @@ func applyServerDefaults() {
 // instead of scraping the terminal.
 //
 // On the first run, worktreeName is non-empty: --worktree creates an isolated
-// git worktree (branched from origin/main) and every tool runs inside it. On
+// git worktree (branched from worktreeBase) and every tool runs inside it. On
 // resume, worktreeName is empty and --worktree is omitted: docker agent
 // reattaches the session to its original worktree automatically, so passing
 // --worktree again (which would fail, the worktree already exists) is avoided.
 //
 // A non-empty prompt is appended as the first message.
-func agentCommand(agent, sessionID, listenSocket, worktreeName, prompt string) string {
+func agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) string {
 	cmd := fmt.Sprintf("docker agent run %s --yolo --session %s --listen %s",
 		agent, shellescape.Quote(sessionID), shellescape.Quote("unix://"+listenSocket))
 	if worktreeName != "" {
-		cmd += fmt.Sprintf(" --worktree=%s --worktree-base origin/main", shellescape.Quote(worktreeName))
+		cmd += fmt.Sprintf(" --worktree=%s --worktree-base %s",
+			shellescape.Quote(worktreeName), shellescape.Quote(worktreeBase))
 	}
 	if prompt != "" {
 		cmd += " " + shellescape.Quote(prompt)
@@ -124,7 +125,7 @@ func agentCommand(agent, sessionID, listenSocket, worktreeName, prompt string) s
 // and --worktree branches a new worktree from it. On resume worktreeName is
 // empty and workDir is the existing worktree directory, so the agent stays
 // isolated there.
-func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket, worktreeName, prompt string) error {
+func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) error {
 	tmux, err := defaultTmux()
 	if err != nil {
 		return fmt.Errorf("tmux init: %w", err)
@@ -156,7 +157,7 @@ func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket,
 
 	// exec replaces the shell with the agent so the agent becomes the pane's
 	// process: when it exits the pane goes dead (see remain-on-exit above).
-	if err := panes[0].SendKeys("exec " + agentCommand(agent, sessionID, listenSocket, worktreeName, prompt)); err != nil {
+	if err := panes[0].SendKeys("exec " + agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt)); err != nil {
 		return fmt.Errorf("send keys: %w", err)
 	}
 	if err := panes[0].SendKeys("Enter"); err != nil {

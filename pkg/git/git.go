@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -36,7 +37,7 @@ func Diff(worktree string) (string, error) {
 	addCmd.Dir = worktree
 	_ = addCmd.Run()
 
-	base, err := runGit(worktree, "merge-base", "HEAD", "origin/main")
+	base, err := runGit(worktree, "merge-base", "HEAD", UpstreamBase(worktree))
 	if err != nil {
 		return "", err
 	}
@@ -63,6 +64,38 @@ func IsRepo(path string) bool {
 	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
 	cmd.Dir = path
 	return cmd.Run() == nil
+}
+
+// UpstreamBase returns the ref worktrees branch from and diffs compare against:
+// the default branch of the repository's upstream remote, as "<remote>/<branch>".
+//
+// Remote names are not universal: some users keep the canonical repo as
+// "origin" and never add a fork remote, while others name the canonical repo
+// "upstream" and point "origin" at their own fork. So the remote is detected
+// rather than assumed: a remote named "upstream" wins when present, otherwise
+// "origin". The branch is read from the remote's recorded HEAD, falling back
+// to "main".
+func UpstreamBase(dir string) string {
+	remote := upstreamRemote(dir)
+	if out, err := runGit(dir, "symbolic-ref", "--short", "refs/remotes/"+remote+"/HEAD"); err == nil {
+		if ref := strings.TrimSpace(out); ref != "" {
+			return ref
+		}
+	}
+	return remote + "/main"
+}
+
+// upstreamRemote returns "upstream" when the repository has a remote by that
+// name, otherwise "origin".
+func upstreamRemote(dir string) string {
+	out, err := runGit(dir, "remote")
+	if err != nil {
+		return "origin"
+	}
+	if slices.Contains(strings.Fields(out), "upstream") {
+		return "upstream"
+	}
+	return "origin"
 }
 
 // WorktreeDir returns the directory docker-agent creates for a worktree of the

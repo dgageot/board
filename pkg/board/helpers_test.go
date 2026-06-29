@@ -36,7 +36,7 @@ func openTestStore(t *testing.T) *SQLiteStore {
 // noopSessionManager is a no-op SessionManager for tests.
 type noopSessionManager struct{}
 
-func (noopSessionManager) NewSession(string, string, string, string, string, string, string) error {
+func (noopSessionManager) NewSession(string, string, string, string, string, string, string, string) error {
 	return nil
 }
 func (noopSessionManager) KillSession(string) error   { return nil }

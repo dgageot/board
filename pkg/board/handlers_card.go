@@ -80,8 +80,10 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 		}
 	}()
 
-	// Launch from the repository: --worktree branches the new worktree from it.
-	if err := b.sessions.NewSession(sessionName, repoPath, agent, agentSession, socketPath(agentSession), worktreeName, prompt); err != nil {
+	// Launch from the repository: --worktree branches the new worktree from the
+	// repo's upstream base (detected, not assumed — see git.UpstreamBase).
+	worktreeBase := git.UpstreamBase(repoPath)
+	if err := b.sessions.NewSession(sessionName, repoPath, agent, agentSession, socketPath(agentSession), worktreeName, worktreeBase, prompt); err != nil {
 		return nil, fmt.Errorf("tmux session: %w", err)
 	}
 

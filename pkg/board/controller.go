@@ -296,7 +296,7 @@ func (c *Controller) relaunch(card *Card, prompt string) error {
 	_ = os.Remove(socket)
 	return c.sessions.NewSession(
 		card.Session, card.Worktree, card.Agent, card.AgentSession,
-		socket, "", prompt,
+		socket, "", "", prompt,
 	)
 }
 

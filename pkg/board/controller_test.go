@@ -24,17 +24,17 @@ type fakeSessionManager struct {
 }
 
 type newSessionCall struct {
-	name, workDir, sessionID, listenSocket, worktreeName, prompt string
+	name, workDir, sessionID, listenSocket, worktreeName, worktreeBase, prompt string
 }
 
 func newFakeSessionManager() *fakeSessionManager {
 	return &fakeSessionManager{alive: true}
 }
 
-func (f *fakeSessionManager) NewSession(name, workDir, _, sessionID, listenSocket, worktreeName, prompt string) error {
+func (f *fakeSessionManager) NewSession(name, workDir, _, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.created = append(f.created, newSessionCall{name, workDir, sessionID, listenSocket, worktreeName, prompt})
+	f.created = append(f.created, newSessionCall{name, workDir, sessionID, listenSocket, worktreeName, worktreeBase, prompt})
 	return nil
 }
 
