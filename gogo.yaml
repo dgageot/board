@@ -1,0 +1,30 @@
+version: "1"
+
+default: dev
+
+tasks:
+  # Lint, test, and build on source changes
+  dev:
+    deps: [lint, test, build]
+    sources: go
+
+  # Run the board server
+  run:
+    cmd: go run .
+
+  # Build the board binary
+  build:
+    cmd: go build -o board .
+    sources: go
+    generates:
+      - board
+
+  # Run tests
+  test:
+    cmd: go test ./...
+    sources: go
+
+  # Run linter
+  lint:
+    cmd: golangci-lint run ./...
+    sources: [go, .golangci.yml]
