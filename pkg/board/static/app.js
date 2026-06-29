@@ -414,17 +414,41 @@ document.getElementById("terminal-vscode").addEventListener("click", async () =>
   }
 });
 
-// The terminal dialog hosts a live TUI: ESC must reach the agent (so menus,
-// modes, etc. behave normally) but neither dismiss the <dialog> nor flow
-// through ghostty-web's keydown handler, which encodes ESC using the Kitty
-// keyboard protocol (e.g. `\x1b[27u`) and shows up as garbage in bubbletea
-// TUIs. We send a plain `\x1b` byte ourselves and stop the event there.
-document.getElementById("terminal-dialog").addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  e.preventDefault();
-  e.stopPropagation();
+// Send a byte sequence to the agent if the terminal socket is live.
+function sendToAgent(data) {
   if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
-    activeSocket.send("\x1b");
+    activeSocket.send(data);
+  }
+}
+
+// CSI-u modifier field: 1 + bitmask (shift=1, alt=2, ctrl=4, super=8).
+function csiuModifiers(e) {
+  return 1 + (e.shiftKey ? 1 : 0) + (e.altKey ? 2 : 0) + (e.ctrlKey ? 4 : 0) + (e.metaKey ? 8 : 0);
+}
+
+// The terminal dialog hosts a live TUI. Two classes of keys need help reaching
+// the agent, both intercepted here (capture phase, before ghostty-web's own
+// keydown handler) and stopped so the <dialog> never dismisses and ghostty
+// never double-encodes:
+//
+//   - ESC: sent as a plain `\x1b`. ghostty would encode it as `\x1b[27u`
+//     (Kitty protocol), which shows up as garbage in bubbletea TUIs.
+//   - Ctrl+<digit/symbol> (e.g. C-1, C-2): these have no legacy byte, so
+//     ghostty (not in Kitty mode here) drops the Ctrl and sends a bare `1`.
+//     We emit the CSI-u sequence (`\x1b[<code>;<mods>u`) ourselves; tmux's
+//     extended-keys then bridges it to the agent. Ctrl+<letter> is left
+//     alone: it already maps to a C0 control byte that ghostty sends.
+document.getElementById("terminal-dialog").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    e.stopPropagation();
+    sendToAgent("\x1b");
+    return;
+  }
+  if (e.ctrlKey && e.key.length === 1 && !/[a-z]/i.test(e.key)) {
+    e.preventDefault();
+    e.stopPropagation();
+    sendToAgent(`\x1b[${e.key.codePointAt(0)};${csiuModifiers(e)}u`);
   }
 }, true);
 

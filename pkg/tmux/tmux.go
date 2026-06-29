@@ -55,10 +55,14 @@ var serverDefaults = [][]string{
 
 	// Input behavior: every keystroke reaches the agent, ESC is instant. With
 	// no prefix bound, C-b reaches the agent too, so no unbind is needed.
+	// extended-keys forwards CSI-u (Kitty keyboard) sequences so modified keys
+	// like C-1, C-2, C-m reach the agent; the board's private server has no
+	// user config, so it must enable this explicitly (default is off).
 	{"set", "-g", "prefix", "none"},
 	{"set", "-g", "prefix2", "none"},
 	{"set", "-g", "escape-time", "0"},
 	{"set", "-g", "mouse", "on"},
+	{"set", "-g", "extended-keys", "always"},
 
 	// Terminal fidelity: truecolor, clipboard, focus events. terminal-features
 	// is set (not appended): the board owns the value on its own server, so a
@@ -67,7 +71,7 @@ var serverDefaults = [][]string{
 	{"set", "-g", "focus-events", "on"},
 	{"set", "-g", "set-clipboard", "on"},
 	{"set", "-g", "default-terminal", "tmux-256color"},
-	{"set", "-g", "terminal-features", ",xterm-256color:clipboard:ccolour:cstyle:focus:title:mouse:RGB"},
+	{"set", "-g", "terminal-features", ",xterm-256color:clipboard:ccolour:cstyle:extkeys:focus:title:mouse:RGB"},
 	{"set-environment", "-g", "LANG", "en_US.UTF-8"},
 	{"set-environment", "-g", "LC_ALL", "en_US.UTF-8"},
 

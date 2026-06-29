@@ -25,6 +25,12 @@ func RemoveWorktree(repoPath, worktreePath, branch string) {
 // merge-base with main. This includes committed, staged, unstaged, and
 // untracked files.
 func Diff(worktree string) (string, error) {
+	// The worktree may not exist yet while the agent is still starting up and
+	// docker-agent has not created it. Report no changes rather than an error.
+	if _, err := os.Stat(worktree); err != nil {
+		return "", nil
+	}
+
 	// Mark untracked files as intent-to-add so they appear in the diff.
 	addCmd := exec.Command("git", "add", "--intent-to-add", ".")
 	addCmd.Dir = worktree

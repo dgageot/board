@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWorktreeDir(t *testing.T) {
@@ -19,4 +20,10 @@ func TestWorktreeDir(t *testing.T) {
 
 func TestWorktreeBranch(t *testing.T) {
 	assert.Equal(t, "worktree-board-abc12345", WorktreeBranch("board-abc12345"))
+}
+
+func TestDiffMissingWorktree(t *testing.T) {
+	diff, err := Diff(filepath.Join(t.TempDir(), "does-not-exist"))
+	require.NoError(t, err)
+	assert.Empty(t, diff)
 }
