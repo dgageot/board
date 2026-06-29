@@ -1,7 +1,6 @@
 package board
 
 import (
-	"cmp"
 	"fmt"
 	"net/http"
 
@@ -24,8 +23,15 @@ func (b *Board) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.ID = newID()
-	p.Agent = cmp.Or(p.Agent, b.config.DefaultAgent)
-	p.RepoPath = cmp.Or(p.RepoPath, b.config.DefaultRepoPath)
+
+	if p.RepoPath == "" {
+		writeError(w, fmt.Errorf("%w: repoPath required", errBadInput))
+		return
+	}
+	if p.Agent == "" {
+		writeError(w, fmt.Errorf("%w: agent required", errBadInput))
+		return
+	}
 
 	if !git.IsRepo(p.RepoPath) {
 		writeError(w, fmt.Errorf("%w: %q is not a git repository", errBadInput, p.RepoPath))
