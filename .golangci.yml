@@ -24,7 +24,7 @@ linters:
     - gochecksumtype
     - gocritic
     - gomoddirectives
-    - gomodguard
+    - gomodguard_v2
     - goprintffuncname
     - govet
     - grouper
