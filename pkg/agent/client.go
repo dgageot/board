@@ -25,7 +25,11 @@ const (
 	EventStreamStopped = "stream_stopped"
 	EventSessionTitle  = "session_title"
 	EventSessionExited = "session_exited"
-	EventGap           = "gap"
+	// EventError is emitted when a turn fails (model error, tool failure,
+	// hook block…). Unlike stream_stopped it is delivered on the blocking
+	// sink and buffered for replay, so it is the reliable failure signal.
+	EventError = "error"
+	EventGap   = "gap"
 )
 
 // Event is the subset of a runtime event the board cares about.

@@ -163,6 +163,13 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		// parent is still working. Replayed orphan stops, whose start was
 		// evicted from the buffer, are clamped at zero.
 		depth := 0
+		// failed marks that the current turn emitted an error event. The card is
+		// turned red the moment that event arrives — it is delivered reliably,
+		// while the stream_stopped that follows is best-effort and may be dropped,
+		// so waiting for the stop would leave a failed turn stuck as running. The
+		// flag also keeps a delivered stop from reverting red to waiting. It stays
+		// set across turns until the next one starts (stream_started).
+		failed := false
 
 		exited := false
 		_ = client.StreamEvents(ctx, 0, func(ev agent.Event) bool {
@@ -173,13 +180,17 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 				exited = true
 				return false
 			case agent.EventStreamStarted:
+				failed = false
 				depth++
 				c.setStatus(cardID, StatusRunning)
+			case agent.EventError:
+				failed = true
+				c.setStatus(cardID, StatusError)
 			case agent.EventStreamStopped:
 				if depth > 0 {
 					depth--
 				}
-				if depth == 0 {
+				if depth == 0 && !failed {
 					c.setStatus(cardID, StatusWaiting)
 				}
 			case agent.EventSessionTitle:

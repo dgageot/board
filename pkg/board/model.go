@@ -31,6 +31,9 @@ const (
 	StatusRunning CardStatus = "running"
 	StatusWaiting CardStatus = "waiting"
 	StatusDone    CardStatus = "done"
+	// StatusError marks a card whose last turn failed. It is sticky: the
+	// watcher keeps it until the next turn starts (stream_started).
+	StatusError CardStatus = "error"
 )
 
 // Card represents a task card on the board.

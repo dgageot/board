@@ -193,6 +193,73 @@ func TestControllerEventsDriveStatusAndTitle(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 }
 
+// A failed turn: cagent emits the error event, then still fires
+// stream_stopped. The card must end up red, not waiting.
+func TestControllerErrorEventMarksCardError(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventError},
+			{Type: agent.EventStreamStopped},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusError
+	}, time.Second, 5*time.Millisecond)
+}
+
+// cagent delivers the error event reliably but the trailing stream_stopped is
+// best-effort and can be dropped. The card must still go red on the error
+// event alone, without waiting for a stop that may never arrive.
+func TestControllerErrorWithoutStopMarksCardError(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventError},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusError
+	}, time.Second, 5*time.Millisecond)
+}
+
+// A new turn after a failure clears the sticky error: stream_started flips the
+// card back to running.
+func TestControllerStreamStartedClearsError(t *testing.T) {
+	store := openTestStore(t)
+	errored := devCard()
+	errored.Status = StatusError
+	require.NoError(t, store.InsertCard(errored))
+
+	client := &fakeClient{
+		snap:   agent.Snapshot{Streaming: false},
+		events: []agent.Event{{Type: agent.EventStreamStarted}},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
+}
+
 func TestControllerNestedStreamsStayRunning(t *testing.T) {
 	store := openTestStore(t)
 	require.NoError(t, store.InsertCard(devCard()))
