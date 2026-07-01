@@ -6,6 +6,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
@@ -49,11 +52,57 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
-// migrate applies pending migrations.
-func migrate(db *sqlx.DB) error {
+// migration is one embedded migration file and the schema version it brings
+// the database to.
+type migration struct {
+	version int
+	name    string
+}
+
+// loadMigrations reads the embedded migration files and orders them by the
+// version parsed from their filename prefix. Versions are validated to be
+// sequential from 1 so a renamed, dropped or duplicated file fails loudly
+// instead of silently skipping or re-running migrations.
+func loadMigrations() ([]migration, error) {
 	entries, err := migrationFiles.ReadDir("migrations")
 	if err != nil {
-		return fmt.Errorf("read migrations dir: %w", err)
+		return nil, fmt.Errorf("read migrations dir: %w", err)
+	}
+
+	migrations := make([]migration, 0, len(entries))
+	for _, e := range entries {
+		version, err := migrationVersion(e.Name())
+		if err != nil {
+			return nil, err
+		}
+		migrations = append(migrations, migration{version: version, name: e.Name()})
+	}
+	slices.SortFunc(migrations, func(a, b migration) int { return a.version - b.version })
+
+	for i, m := range migrations {
+		if m.version != i+1 {
+			return nil, fmt.Errorf("migration versions must be sequential from 1: unexpected %s", m.name)
+		}
+	}
+	return migrations, nil
+}
+
+// migrationVersion parses the numeric version prefix of a migration filename,
+// e.g. "002_project_position.sql" → 2.
+func migrationVersion(name string) (int, error) {
+	prefix, _, _ := strings.Cut(name, "_")
+	version, err := strconv.Atoi(prefix)
+	if err != nil || version <= 0 {
+		return 0, fmt.Errorf("migration %s: name must start with a positive version", name)
+	}
+	return version, nil
+}
+
+// migrate applies pending migrations.
+func migrate(db *sqlx.DB) error {
+	migrations, err := loadMigrations()
+	if err != nil {
+		return err
 	}
 
 	// Ensure the schema_version table exists.
@@ -61,7 +110,10 @@ func migrate(db *sqlx.DB) error {
 		return fmt.Errorf("create schema_version: %w", err)
 	}
 
-	current := currentVersion(db)
+	current, err := currentVersion(db)
+	if err != nil {
+		return fmt.Errorf("current version: %w", err)
+	}
 
 	// Bootstrap: a pre-migration database already has the full schema
 	// of migration 1; record that without re-applying it.
@@ -72,23 +124,27 @@ func migrate(db *sqlx.DB) error {
 		current = 1
 	}
 
-	for i := current; i < len(entries); i++ {
-		data, err := migrationFiles.ReadFile("migrations/" + entries[i].Name())
+	for _, m := range migrations {
+		if m.version <= current {
+			continue
+		}
+
+		data, err := migrationFiles.ReadFile("migrations/" + m.name)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", entries[i].Name(), err)
+			return fmt.Errorf("read %s: %w", m.name, err)
 		}
 
 		err = runInTx(db, func(tx *sqlx.Tx) error {
 			if _, err := tx.Exec(string(data)); err != nil {
 				return err
 			}
-			return setVersion(tx, i+1)
+			return setVersion(tx, m.version)
 		})
 		if err != nil {
-			return fmt.Errorf("migration %d: %w", i+1, err)
+			return fmt.Errorf("migration %d: %w", m.version, err)
 		}
 
-		log.Printf("applied migration %d", i+1)
+		log.Printf("applied migration %d", m.version)
 	}
 
 	return nil
@@ -108,12 +164,12 @@ func runInTx(db *sqlx.DB, fn func(*sqlx.Tx) error) error {
 	return tx.Commit()
 }
 
-func currentVersion(db *sqlx.DB) int {
+func currentVersion(db *sqlx.DB) (int, error) {
 	var version int
 	if err := db.Get(&version, `SELECT COALESCE(MAX(version), 0) FROM schema_version`); err != nil {
-		return 0
+		return 0, err
 	}
-	return version
+	return version, nil
 }
 
 func setVersion(tx *sqlx.Tx, version int) error {

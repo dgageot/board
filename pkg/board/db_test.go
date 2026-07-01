@@ -22,7 +22,32 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	require.NoError(t, migrate(db))
 	require.NoError(t, migrate(db))
 
-	assert.Equal(t, 4, currentVersion(db))
+	version, err := currentVersion(db)
+	require.NoError(t, err)
+	assert.Equal(t, 4, version)
+}
+
+func TestMigrationVersion(t *testing.T) {
+	v, err := migrationVersion("002_project_position.sql")
+	require.NoError(t, err)
+	assert.Equal(t, 2, v)
+
+	_, err = migrationVersion("no_version.sql")
+	require.Error(t, err)
+
+	_, err = migrationVersion("000_zero.sql")
+	require.Error(t, err)
+}
+
+// The embedded migrations themselves must be sequential from 1: a renamed or
+// dropped file would otherwise silently skip or re-run migrations.
+func TestLoadMigrationsAreSequential(t *testing.T) {
+	migrations, err := loadMigrations()
+	require.NoError(t, err)
+	require.NotEmpty(t, migrations)
+	for i, m := range migrations {
+		assert.Equal(t, i+1, m.version, m.name)
+	}
 }
 
 // --- Card CRUD ---
