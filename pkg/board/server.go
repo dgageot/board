@@ -139,7 +139,15 @@ func csrfProtect(next http.Handler) http.Handler {
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
+	writeJSONStatus(w, http.StatusOK, v)
+}
+
+// writeJSONStatus writes a JSON response with the given status code. The
+// Content-Type header is set before the status is written, as required by
+// net/http.
+func writeJSONStatus(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
 

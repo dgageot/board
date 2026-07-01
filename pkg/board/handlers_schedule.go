@@ -39,8 +39,7 @@ func (b *Board) handleScheduleCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, toScheduleCard(card))
+	writeJSONStatus(w, http.StatusCreated, toScheduleCard(card))
 }
 
 func (b *Board) handleListSchedule(w http.ResponseWriter, _ *http.Request) {

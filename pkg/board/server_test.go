@@ -19,6 +19,15 @@ func testHandler(t *testing.T) http.Handler {
 	return handler
 }
 
+func TestWriteJSONStatusSetsContentType(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeJSONStatus(rec, http.StatusCreated, map[string]string{"a": "b"})
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.JSONEq(t, `{"a":"b"}`, rec.Body.String())
+}
+
 func TestCSRFProtectRejectsCrossOriginWrites(t *testing.T) {
 	handler := testHandler(t)
 
