@@ -682,8 +682,9 @@ dialog.dialog-large {
 }
 
 /* Projects dialog: cap height and scroll only the project list so the
-   header and the Add Project form stay visible. */
-#projects-dialog {
+   header and the Add Project form stay visible. Scoped to [open] so the
+   display override never reveals the dialog while it's closed. */
+#projects-dialog[open] {
   max-height: min(86vh, 760px);
   display: flex;
   flex-direction: column;
