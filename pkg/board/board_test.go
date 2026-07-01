@@ -2,6 +2,7 @@ package board
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -227,6 +228,33 @@ func TestHandleCreateCardInvalidJSON(t *testing.T) {
 	b.handleCreateCard(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// A forward move is persisted before the column prompt is delivered: a failed
+// delivery must surface an error but never hide the move.
+func TestHandleMoveCardPersistsMoveWhenPromptFails(t *testing.T) {
+	b, store := newTestBoard(t)
+
+	require.NoError(t, store.SeedColumns(defaultColumns))
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "c1", Title: "T", Column: "dev", Status: StatusWaiting,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s1",
+	}))
+	// The agent is alive but rejects the follow-up: prompt delivery fails.
+	b.controller.clientFor = func(string, string) sessionClient {
+		return &fakeClient{followErr: errors.New("queue full")}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/cards/c1/move", strings.NewReader(`{"column":"review"}`))
+	req.SetPathValue("id", "c1")
+	rec := httptest.NewRecorder()
+	b.handleMoveCard(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	card, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, "review", card.Column, "the move is persisted even when the prompt fails")
 }
 
 func TestBroadcastToClients(t *testing.T) {

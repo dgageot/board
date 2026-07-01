@@ -255,11 +255,11 @@ func (c *Controller) Ready(card *Card) bool {
 }
 
 // MoveCardToColumn moves a card to the given column, reinserts it (for
-// ordering), ensures it is watched, and delivers the column prompt. The status
-// is left untouched: the color tracks the agent's activity, not the move. When
-// a prompt is delivered the agent starts working and the watcher flips the card
-// to running on its own.
-func (c *Controller) MoveCardToColumn(card *Card, column, prompt string) error {
+// ordering) and ensures it is watched. The status is left untouched: the
+// color tracks the agent's activity, not the move. Prompt delivery is a
+// separate step ([Controller.SendPrompt]): the move must be observable even
+// when the prompt cannot be delivered.
+func (c *Controller) MoveCardToColumn(card *Card, column string) error {
 	card.Column = column
 
 	if err := c.store.ReinsertCard(card); err != nil {
@@ -267,7 +267,7 @@ func (c *Controller) MoveCardToColumn(card *Card, column, prompt string) error {
 	}
 
 	c.Start(card) // no-op if already watching
-	return c.SendPrompt(card, prompt)
+	return nil
 }
 
 // SendPrompt delivers a prompt to the card's agent through the control plane.

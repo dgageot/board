@@ -171,24 +171,24 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A move never changes the card's status: the color tracks the agent's
+	// activity, not the move. ReinsertCard preserves the current status.
+	if err := b.controller.MoveCardToColumn(card, req.Column); err != nil {
+		writeError(w, err)
+		return
+	}
+
+	// The move is persisted: let every client see it before attempting prompt
+	// delivery, whose failure must not hide the move.
+	b.broadcast()
+
 	if movedForward {
-		if err := b.controller.MoveCardToColumn(card, req.Column, columnPrompt(cols, req.Column)); err != nil {
+		if err := b.controller.SendPrompt(card, columnPrompt(cols, req.Column)); err != nil {
 			writeError(w, err)
 			return
 		}
-	} else {
-		// A move never changes the card's status: the color tracks the agent's
-		// activity, not the move. ReinsertCard preserves the current status.
-		card.Column = req.Column
-
-		if err := b.store.ReinsertCard(card); err != nil {
-			writeError(w, fmt.Errorf("reinsert card: %w", err))
-			return
-		}
-		b.controller.Start(card)
 	}
 
-	b.broadcast()
 	writeJSON(w, card)
 }
 
