@@ -61,6 +61,18 @@ func TestFollowupReportsDuplicate(t *testing.T) {
 	assert.True(t, dup)
 }
 
+// An accepted follow-up with no body is still a success: the prompt was
+// delivered, the server just had nothing more to say.
+func TestFollowupToleratesEmptyBody(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	dup, err := c.Followup(t.Context(), "key-1", "do this")
+	require.NoError(t, err)
+	assert.False(t, dup)
+}
+
 func TestStreamEventsParsesDataLinesAndStops(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "10", r.URL.Query().Get("since"))

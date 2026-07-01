@@ -10,7 +10,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -138,7 +140,9 @@ func (c *Client) Followup(ctx context.Context, idempotencyKey, message string) (
 	var fr struct {
 		Duplicate bool `json:"duplicate"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&fr); err != nil {
+	// The prompt was accepted; an empty body is not an error, just a server
+	// that has nothing more to say.
+	if err := json.NewDecoder(resp.Body).Decode(&fr); err != nil && !errors.Is(err, io.EOF) {
 		return false, fmt.Errorf("decode followup: %w", err)
 	}
 	return fr.Duplicate, nil
