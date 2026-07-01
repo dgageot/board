@@ -54,19 +54,19 @@ func Run() error {
 		}
 	}
 
-	board, err := newBoard(ctx, cfg, store, tmux.Sessions{})
+	b, err := newBoard(ctx, cfg, store, tmux.Sessions{})
 	if err != nil {
 		return err
 	}
 
-	mux, err := buildMux(board)
+	handler, err := buildMux(b)
 	if err != nil {
 		return err
 	}
 
 	srv := &http.Server{
 		Addr:    cfg.ListenAddr,
-		Handler: mux,
+		Handler: handler,
 		// Bound header reads so idle half-open connections cannot pile up
 		// (slowloris). Body/write timeouts stay unset: SSE and terminal
 		// WebSockets are long-lived by design.
@@ -91,32 +91,32 @@ func Run() error {
 }
 
 // buildMux registers all routes for the board.
-func buildMux(board *Board) (http.Handler, error) {
+func buildMux(b *Board) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	// API routes
-	mux.HandleFunc("GET /api/projects", board.handleListProjects)
-	mux.HandleFunc("POST /api/projects", board.handleCreateProject)
-	mux.HandleFunc("PUT /api/projects/order", board.handleReorderProjects)
-	mux.HandleFunc("DELETE /api/projects/{id}", board.handleDeleteProject)
-	mux.HandleFunc("GET /api/agents", board.handleListAgents)
-	mux.HandleFunc("GET /api/browse", board.handleBrowse)
-	mux.HandleFunc("GET /api/columns", board.handleListColumns)
-	mux.HandleFunc("PUT /api/columns", board.handleUpdateColumns)
-	mux.HandleFunc("GET /api/cards", board.handleListCards)
-	mux.HandleFunc("POST /api/cards", board.handleCreateCard)
-	mux.HandleFunc("POST /api/cards/{id}/move", board.handleMoveCard)
-	mux.HandleFunc("POST /api/cards/{id}/jump", board.handleJumpCard)
-	mux.HandleFunc("GET /api/cards/{id}/diff", board.handleDiffCard)
-	mux.HandleFunc("DELETE /api/cards/{id}", board.handleDeleteCard)
-	mux.HandleFunc("POST /api/cards/{id}/vscode", board.handleOpenVSCode)
-	mux.HandleFunc("POST /api/columns/{column}/clear", board.handleClearColumn)
-	mux.HandleFunc("GET /api/events", board.handleSSE)
-	mux.HandleFunc("GET /api/terminal/{session}", board.handleTerminalWS)
+	mux.HandleFunc("GET /api/projects", b.handleListProjects)
+	mux.HandleFunc("POST /api/projects", b.handleCreateProject)
+	mux.HandleFunc("PUT /api/projects/order", b.handleReorderProjects)
+	mux.HandleFunc("DELETE /api/projects/{id}", b.handleDeleteProject)
+	mux.HandleFunc("GET /api/agents", b.handleListAgents)
+	mux.HandleFunc("GET /api/browse", b.handleBrowse)
+	mux.HandleFunc("GET /api/columns", b.handleListColumns)
+	mux.HandleFunc("PUT /api/columns", b.handleUpdateColumns)
+	mux.HandleFunc("GET /api/cards", b.handleListCards)
+	mux.HandleFunc("POST /api/cards", b.handleCreateCard)
+	mux.HandleFunc("POST /api/cards/{id}/move", b.handleMoveCard)
+	mux.HandleFunc("POST /api/cards/{id}/jump", b.handleJumpCard)
+	mux.HandleFunc("GET /api/cards/{id}/diff", b.handleDiffCard)
+	mux.HandleFunc("DELETE /api/cards/{id}", b.handleDeleteCard)
+	mux.HandleFunc("POST /api/cards/{id}/vscode", b.handleOpenVSCode)
+	mux.HandleFunc("POST /api/columns/{column}/clear", b.handleClearColumn)
+	mux.HandleFunc("GET /api/events", b.handleSSE)
+	mux.HandleFunc("GET /api/terminal/{session}", b.handleTerminalWS)
 
 	// Schedule API
-	mux.HandleFunc("POST /api/schedule", board.handleScheduleCard)
-	mux.HandleFunc("GET /api/schedule", board.handleListSchedule)
+	mux.HandleFunc("POST /api/schedule", b.handleScheduleCard)
+	mux.HandleFunc("GET /api/schedule", b.handleListSchedule)
 
 	// Static files
 	staticFS, err := fs.Sub(staticFiles, "static")
