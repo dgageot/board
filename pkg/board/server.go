@@ -56,6 +56,10 @@ func Run() error {
 	srv := &http.Server{
 		Addr:    cfg.ListenAddr,
 		Handler: mux,
+		// Bound header reads so idle half-open connections cannot pile up
+		// (slowloris). Body/write timeouts stay unset: SSE and terminal
+		// WebSockets are long-lived by design.
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	// Graceful shutdown
