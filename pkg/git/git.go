@@ -162,7 +162,8 @@ func upstreamRemote(dir string) string {
 // WorktreeDir returns the directory docker-agent creates for a worktree of the
 // given name: ~/.cagent/worktrees/<name>. This mirrors docker-agent's
 // --worktree convention so the board can locate the worktree for diffs,
-// editing, and cleanup.
+// editing, and cleanup. The home dir lookup error is ignored: the board
+// validates the home directory at startup.
 func WorktreeDir(name string) string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".cagent", "worktrees", name)

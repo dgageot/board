@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -25,6 +26,14 @@ var staticFiles embed.FS
 // Run starts the board server.
 func Run() error {
 	cfg := DefaultConfig()
+
+	// Worktree and control-plane socket paths are derived from the home
+	// directory (git.WorktreeDir, socketPath), which ignore lookup errors for
+	// convenience. Fail fast here instead of producing broken relative paths
+	// later.
+	if _, err := os.UserHomeDir(); err != nil {
+		return fmt.Errorf("home dir: %w", err)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

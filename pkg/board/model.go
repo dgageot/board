@@ -94,7 +94,8 @@ func newAgentSessionID() string {
 // socketPath returns the unix socket a card's agent control plane listens on.
 // It is derived from the (unique) docker-agent session id, so it is stable
 // across board restarts and needs no extra storage. Kept short to stay under
-// the ~104-byte unix sun_path limit.
+// the ~104-byte unix sun_path limit. The home dir lookup error is ignored:
+// [Run] validates the home directory at startup.
 func socketPath(agentSession string) string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".cagent", "run", "board-"+agentSession+".sock")
