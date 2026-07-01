@@ -79,8 +79,26 @@ func TestStreamEventsParsesDataLinesAndStops(t *testing.T) {
 
 	require.Len(t, got, 2)
 	assert.Equal(t, EventStreamStarted, got[0].Type)
+	assert.Equal(t, uint64(11), got[0].Seq, "the SSE id line is the event's seq")
 	assert.Equal(t, EventSessionTitle, got[1].Type)
 	assert.Equal(t, "My Task", got[1].Title)
+	assert.Equal(t, uint64(12), got[1].Seq)
+}
+
+func TestStreamEventsWithoutIDsHasZeroSeq(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, "data: {\"type\":\"stream_started\"}\n\n")
+	})
+
+	var got []Event
+	err := c.StreamEvents(t.Context(), 0, func(ev Event) bool {
+		got = append(got, ev)
+		return true
+	})
+	require.NoError(t, err)
+
+	require.Len(t, got, 1)
+	assert.Equal(t, uint64(0), got[0].Seq)
 }
 
 func TestStreamEventsErrorsOnBadStatus(t *testing.T) {

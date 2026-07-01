@@ -171,8 +171,34 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		// set across turns until the next one starts (stream_started).
 		failed := false
 
+		// Events at or below the snapshot's seq are replayed history. Their
+		// intermediate statuses must not be broadcast on every reconnect — a
+		// long-resolved error would flash the card red each time — so they only
+		// update the derived state, which is applied once, when the replay
+		// catches up with the snapshot. Replayed titles are dropped entirely:
+		// the snapshot's title already reflects them. Events without a seq are
+		// treated as live.
+		replaying := snap.LastEventSeq > 0
+		var replayStatus CardStatus
+		flushReplay := func() {
+			replaying = false
+			if replayStatus != "" {
+				c.setStatus(cardID, replayStatus)
+			}
+		}
+		setStatus := func(status CardStatus) {
+			if replaying {
+				replayStatus = status
+			} else {
+				c.setStatus(cardID, status)
+			}
+		}
+
 		exited := false
 		_ = client.StreamEvents(ctx, 0, func(ev agent.Event) bool {
+			if replaying && (ev.Seq == 0 || ev.Seq > snap.LastEventSeq) {
+				flushReplay() // past the snapshot: this event is live
+			}
 			switch ev.Type {
 			case agent.EventGap:
 				return false // resume point evicted: reconnect and re-snapshot
@@ -182,19 +208,24 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 			case agent.EventStreamStarted:
 				failed = false
 				depth++
-				c.setStatus(cardID, StatusRunning)
+				setStatus(StatusRunning)
 			case agent.EventError:
 				failed = true
-				c.setStatus(cardID, StatusError)
+				setStatus(StatusError)
 			case agent.EventStreamStopped:
 				if depth > 0 {
 					depth--
 				}
 				if depth == 0 && !failed {
-					c.setStatus(cardID, StatusWaiting)
+					setStatus(StatusWaiting)
 				}
 			case agent.EventSessionTitle:
-				c.setTitle(cardID, ev.Title)
+				if !replaying {
+					c.setTitle(cardID, ev.Title)
+				}
+			}
+			if replaying && ev.Seq == snap.LastEventSeq {
+				flushReplay() // caught up with the snapshot
 			}
 			return true
 		})

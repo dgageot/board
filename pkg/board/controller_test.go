@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -258,6 +259,90 @@ func TestControllerStreamStartedClearsError(t *testing.T) {
 		card, err := store.GetCard("c1")
 		return err == nil && card.Status == StatusRunning
 	}, time.Second, 5*time.Millisecond)
+}
+
+// A reconnect replays the whole event buffer. Historical events at or below
+// the snapshot's seq must not be re-broadcast one by one: a long-resolved
+// error would flash the card red on every reconnect. Only the state derived
+// at the end of the replay is applied — here it matches the stored one, so
+// nothing changes at all.
+func TestControllerReplayDoesNotBroadcastHistory(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard())) // waiting
+
+	// A failed turn followed by a successful one, all in the past.
+	client := &fakeClient{
+		snap: agent.Snapshot{LastEventSeq: 5},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted, Seq: 1},
+			{Type: agent.EventError, Seq: 2},
+			{Type: agent.EventStreamStopped, Seq: 3},
+			{Type: agent.EventStreamStarted, Seq: 4},
+			{Type: agent.EventStreamStopped, Seq: 5},
+		},
+	}
+
+	var changes atomic.Int32
+	c := newController(t.Context(), store, newFakeSessionManager(), func() { changes.Add(1) })
+	c.clientFor = func(string, string) sessionClient { return client }
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		client.mu.Lock()
+		defer client.mu.Unlock()
+		return client.streamCalled
+	}, time.Second, 5*time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // let the replay finish
+
+	card, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, StatusWaiting, card.Status)
+	assert.Zero(t, changes.Load(), "replayed history must not be re-broadcast")
+}
+
+// A turn still open at the end of the replay is real state, not history: the
+// derived running status is applied once the replay catches up.
+func TestControllerReplayedOpenTurnIsApplied(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard())) // waiting
+
+	client := &fakeClient{
+		snap:   agent.Snapshot{LastEventSeq: 1},
+		events: []agent.Event{{Type: agent.EventStreamStarted, Seq: 1}},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
+}
+
+// Replayed title events are stale by definition: the snapshot's title already
+// reflects them and must win.
+func TestControllerReplayedTitleIsIgnored(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Title: "Fresh", LastEventSeq: 2},
+		events: []agent.Event{
+			{Type: agent.EventSessionTitle, Title: "Stale", Seq: 1},
+			{Type: agent.EventStreamStarted, Seq: 2},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
+
+	card, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, "Fresh", card.Title, "the snapshot title wins over replayed title events")
 }
 
 func TestControllerNestedStreamsStayRunning(t *testing.T) {

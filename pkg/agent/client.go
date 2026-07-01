@@ -36,6 +36,10 @@ const (
 type Event struct {
 	Type  string `json:"type"`
 	Title string `json:"title"`
+	// Seq is the event's position in the session's buffer, parsed from the
+	// SSE "id:" line. It is 0 when the server sent no id. Compared with
+	// [Snapshot.LastEventSeq] it tells replayed history from live events.
+	Seq uint64 `json:"-"`
 }
 
 // Snapshot is the part of GET /snapshot the board uses to (re)build a card's
@@ -165,8 +169,14 @@ func (c *Client) StreamEvents(ctx context.Context, since uint64, onEvent func(Ev
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	var seq uint64
 	for scanner.Scan() {
-		data, ok := strings.CutPrefix(scanner.Text(), "data:")
+		line := scanner.Text()
+		if id, ok := strings.CutPrefix(line, "id:"); ok {
+			seq, _ = strconv.ParseUint(strings.TrimSpace(id), 10, 64)
+			continue
+		}
+		data, ok := strings.CutPrefix(line, "data:")
 		if !ok {
 			continue
 		}
@@ -174,6 +184,8 @@ func (c *Client) StreamEvents(ctx context.Context, since uint64, onEvent func(Ev
 		if json.Unmarshal([]byte(strings.TrimSpace(data)), &ev) != nil {
 			continue
 		}
+		ev.Seq = seq
+		seq = 0
 		if !onEvent(ev) {
 			return nil
 		}
