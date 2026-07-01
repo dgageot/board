@@ -76,7 +76,7 @@ func Run() error {
 }
 
 // buildMux registers all routes for the board.
-func buildMux(board *Board) (*http.ServeMux, error) {
+func buildMux(board *Board) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	// API routes
@@ -110,7 +110,28 @@ func buildMux(board *Board) (*http.ServeMux, error) {
 	}
 	mux.Handle("GET /", http.FileServer(http.FS(staticFS)))
 
-	return mux, nil
+	return csrfProtect(mux), nil
+}
+
+// csrfProtect rejects state-changing cross-origin requests. The board serves
+// a local, unauthenticated API: without this check any web page the user
+// visits could POST to localhost and create cards, send prompts to agents, or
+// delete data. Browsers attach an Origin header to cross-origin (and all
+// non-GET) requests; a mismatch with the target host is rejected. Requests
+// without an Origin come from non-browser clients and are allowed.
+func csrfProtect(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			// Safe methods; cross-origin reads are already blocked by CORS.
+		default:
+			if !sameOrigin(r) {
+				http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
