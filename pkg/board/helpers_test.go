@@ -63,7 +63,8 @@ func newTestBoard(t *testing.T) (*Board, *SQLiteStore) {
 
 	store := openTestStore(t)
 	cfg := Config{ListenAddr: ":0"}
-	b := newBoard(t.Context(), cfg, store, noopSessionManager{})
+	b, err := newBoard(t.Context(), cfg, store, noopSessionManager{})
+	require.NoError(t, err)
 	// Keep watchers from dialing real sockets.
 	b.controller.clientFor = func(string, string) sessionClient { return noopSessionClient{} }
 

@@ -18,7 +18,7 @@ type Board struct {
 	clients    map[chan struct{}]struct{}
 }
 
-func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionManager) *Board {
+func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionManager) (*Board, error) {
 	b := &Board{
 		config:   cfg,
 		store:    store,
@@ -27,9 +27,11 @@ func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionMana
 	}
 
 	b.controller = newController(ctx, store, sessions, b.broadcast)
-	b.controller.ReconcileAll()
+	if err := b.controller.ReconcileAll(); err != nil {
+		return nil, err
+	}
 
-	return b
+	return b, nil
 }
 
 // broadcast wakes all connected SSE clients so they emit a refresh frame.

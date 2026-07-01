@@ -71,14 +71,15 @@ func newController(ctx context.Context, store Store, sessions SessionManager, on
 
 // ReconcileAll starts a watcher for every existing card. Called on startup so
 // the board reattaches to sessions still running in tmux.
-func (c *Controller) ReconcileAll() {
+func (c *Controller) ReconcileAll() error {
 	cards, err := c.store.ListCards()
 	if err != nil {
-		return
+		return fmt.Errorf("list cards: %w", err)
 	}
 	for _, card := range cards {
 		c.Start(card)
 	}
+	return nil
 }
 
 // Start ensures a watcher is running for the card. Idempotent.

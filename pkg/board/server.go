@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -51,11 +50,14 @@ func Run() error {
 	}
 	if len(cols) == 0 {
 		if err := store.SeedColumns(defaultColumns); err != nil {
-			log.Printf("seed columns: %v", err)
+			return fmt.Errorf("seed columns: %w", err)
 		}
 	}
 
-	board := newBoard(ctx, cfg, store, tmux.Sessions{})
+	board, err := newBoard(ctx, cfg, store, tmux.Sessions{})
+	if err != nil {
+		return err
+	}
 
 	mux, err := buildMux(board)
 	if err != nil {
