@@ -502,7 +502,7 @@ func TestMoveCardToColumnReinserts(t *testing.T) {
 	c := newTestController(t, store, sessions, client)
 
 	card := devCard()
-	require.NoError(t, c.MoveCardToColumn(card, "review"))
+	require.NoError(t, c.MoveCardToColumn(card, "review", true))
 	require.NoError(t, c.SendPrompt(card, "Review the changes"))
 
 	got, _ := store.GetCard("c1")
@@ -526,7 +526,7 @@ func TestMoveCardToColumnPreservesStatus(t *testing.T) {
 
 	card := devCard()
 	card.Status = StatusRunning
-	require.NoError(t, c.MoveCardToColumn(card, "done"))
+	require.NoError(t, c.MoveCardToColumn(card, "done", false))
 
 	got, _ := store.GetCard("c1")
 	assert.Equal(t, "done", got.Column)

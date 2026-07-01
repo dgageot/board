@@ -196,7 +196,7 @@ func TestListCardsByColumn(t *testing.T) {
 	assert.Equal(t, "3", cards[1].ID)
 }
 
-func TestReinsertCardMovesToEnd(t *testing.T) {
+func TestMoveCardMovesToEnd(t *testing.T) {
 	store := openTestStore(t)
 
 	for _, id := range []string{"a", "b", "c"} {
@@ -206,10 +206,9 @@ func TestReinsertCardMovesToEnd(t *testing.T) {
 		}))
 	}
 
-	card, err := store.GetCard("a")
+	moved, err := store.MoveCard("a", "review", false)
 	require.NoError(t, err)
-	card.Column = "review"
-	require.NoError(t, store.ReinsertCard(card))
+	assert.Equal(t, "review", moved.Column)
 
 	cards, err := store.ListCards()
 	require.NoError(t, err)
@@ -218,6 +217,24 @@ func TestReinsertCardMovesToEnd(t *testing.T) {
 	assert.Equal(t, "c", cards[1].ID)
 	assert.Equal(t, "a", cards[2].ID)
 	assert.Equal(t, "review", cards[2].Column)
+}
+
+// The running check is part of the move transaction: a running card must be
+// rejected based on the stored status, not a caller's stale snapshot.
+func TestMoveCardRequireIdleRejectsRunning(t *testing.T) {
+	store := openTestStore(t)
+
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "a", Title: "a", Column: "dev", Status: StatusRunning,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s",
+	}))
+
+	_, err := store.MoveCard("a", "review", true)
+	require.ErrorIs(t, err, errCardRunning)
+
+	card, err := store.GetCard("a")
+	require.NoError(t, err)
+	assert.Equal(t, "dev", card.Column, "a rejected move must not be persisted")
 }
 
 // --- Project CRUD ---

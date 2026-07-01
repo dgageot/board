@@ -22,7 +22,11 @@ type Store interface {
 	UpdateCardTitle(id, title string) error
 	DeleteCard(id string) error
 	ListCardsByColumn(column string) ([]*Card, error)
-	ReinsertCard(c *Card) error
+	// MoveCard atomically moves a card to the given column and re-inserts it
+	// at the end of the ordering. The row is re-read inside the transaction so
+	// the move preserves the current status; when requireIdle is set a running
+	// card is rejected, atomically with the move.
+	MoveCard(id, column string, requireIdle bool) (*Card, error)
 
 	// Projects
 	ListProjects() ([]*Project, error)

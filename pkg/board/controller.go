@@ -286,16 +286,17 @@ func (c *Controller) Ready(card *Card) bool {
 }
 
 // MoveCardToColumn moves a card to the given column, reinserts it (for
-// ordering) and ensures it is watched. The status is left untouched: the
-// color tracks the agent's activity, not the move. Prompt delivery is a
+// ordering) and ensures it is watched. When requireIdle is set, a running
+// card is rejected atomically with the move. The status is left untouched:
+// the color tracks the agent's activity, not the move. Prompt delivery is a
 // separate step ([Controller.SendPrompt]): the move must be observable even
 // when the prompt cannot be delivered.
-func (c *Controller) MoveCardToColumn(card *Card, column string) error {
-	card.Column = column
-
-	if err := c.store.ReinsertCard(card); err != nil {
-		return fmt.Errorf("reinsert card: %w", err)
+func (c *Controller) MoveCardToColumn(card *Card, column string, requireIdle bool) error {
+	moved, err := c.store.MoveCard(card.ID, column, requireIdle)
+	if err != nil {
+		return fmt.Errorf("move card: %w", err)
 	}
+	*card = *moved
 
 	c.Start(card) // no-op if already watching
 	return nil

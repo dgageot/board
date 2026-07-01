@@ -166,14 +166,11 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 	srcIdx := columnIndex(cols, card.Column)
 	movedForward := dstIdx > srcIdx
 
-	if movedForward && card.Status == StatusRunning {
-		writeError(w, fmt.Errorf("%w: cannot move a running card forward", errBadInput))
-		return
-	}
-
 	// A move never changes the card's status: the color tracks the agent's
-	// activity, not the move. ReinsertCard preserves the current status.
-	if err := b.controller.MoveCardToColumn(card, req.Column); err != nil {
+	// activity, not the move. A running card cannot move forward; the check is
+	// enforced atomically by the store so a watcher flipping the status
+	// concurrently cannot slip past it.
+	if err := b.controller.MoveCardToColumn(card, req.Column, movedForward); err != nil {
 		writeError(w, err)
 		return
 	}
