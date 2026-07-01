@@ -54,19 +54,26 @@ type browseResponse struct {
 }
 
 // handleBrowse lists the subdirectories of the requested path so the UI can
-// offer a server-side folder picker. It defaults to the user's home directory.
+// offer a server-side folder picker. It defaults to the user's home directory
+// and refuses to leave it: the picker exists to select project repositories,
+// not to expose the whole filesystem to any page that can reach the API.
 func (b *Board) handleBrowse(w http.ResponseWriter, r *http.Request) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		writeError(w, fmt.Errorf("home dir: %w", err))
+		return
+	}
+
 	path := r.URL.Query().Get("path")
 	if path == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			writeError(w, fmt.Errorf("home dir: %w", err))
-			return
-		}
 		path = home
 	}
 
 	path = filepath.Clean(path)
+	if !withinDir(home, path) {
+		writeError(w, fmt.Errorf("%w: %s is outside the home directory", errBadInput, path))
+		return
+	}
 
 	entries, err := os.ReadDir(path)
 	if err != nil {
@@ -83,9 +90,19 @@ func (b *Board) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	slices.Sort(dirs)
 
 	parent := filepath.Dir(path)
-	if parent == path {
+	if parent == path || !withinDir(home, parent) {
 		parent = ""
 	}
 
 	writeJSON(w, browseResponse{Path: path, Parent: parent, Dirs: dirs})
+}
+
+// withinDir reports whether path is root itself or nested somewhere below it.
+// Both paths must already be absolute and clean.
+func withinDir(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
