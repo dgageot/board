@@ -106,25 +106,6 @@ func TestListCardsPreservesInsertionOrder(t *testing.T) {
 	assert.Equal(t, "c", cards[2].ID)
 }
 
-func TestUpdateCard(t *testing.T) {
-	store := openTestStore(t)
-
-	card := &Card{
-		ID: "card-1", Title: "Old", Column: "dev", Status: StatusRunning,
-		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s1",
-	}
-	require.NoError(t, store.InsertCard(card))
-
-	card.Title = "New"
-	card.Status = StatusWaiting
-	require.NoError(t, store.UpdateCard(card))
-
-	got, err := store.GetCard("card-1")
-	require.NoError(t, err)
-	assert.Equal(t, "New", got.Title)
-	assert.Equal(t, StatusWaiting, got.Status)
-}
-
 func TestUpdateCardStatusPreservesOtherFields(t *testing.T) {
 	store := openTestStore(t)
 
@@ -141,24 +122,6 @@ func TestUpdateCardStatusPreservesOtherFields(t *testing.T) {
 	assert.Equal(t, "Old", got.Title)
 	assert.Equal(t, "dev", got.Column)
 	assert.Equal(t, "s1", got.Session)
-}
-
-func TestUpdateCardSessionPreservesOtherFields(t *testing.T) {
-	store := openTestStore(t)
-
-	require.NoError(t, store.InsertCard(&Card{
-		ID: "card-1", Title: "Old", Column: "dev", Status: StatusRunning,
-		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s1",
-	}))
-
-	require.NoError(t, store.UpdateCardSession("card-1", "s2"))
-
-	got, err := store.GetCard("card-1")
-	require.NoError(t, err)
-	assert.Equal(t, "s2", got.Session)
-	assert.Equal(t, "Old", got.Title)
-	assert.Equal(t, StatusRunning, got.Status)
-	assert.Equal(t, "dev", got.Column)
 }
 
 func TestDeleteCard(t *testing.T) {

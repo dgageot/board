@@ -192,11 +192,6 @@ const (
 	cardColumns     = "id, title, col, status, project, agent, repo_path, branch, worktree, session, agent_session"
 	cardNamedValues = ":id, :title, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session"
 	insertCardSQL   = "INSERT INTO cards (" + cardColumns + ") VALUES (" + cardNamedValues + ")"
-	updateCardSQL   = `UPDATE cards SET
-		title = :title, col = :col, status = :status, project = :project, agent = :agent,
-		repo_path = :repo_path, branch = :branch, worktree = :worktree, session = :session,
-		agent_session = :agent_session
-		WHERE id = :id`
 )
 
 func (s *SQLiteStore) ListCards() ([]*Card, error) {
@@ -220,24 +215,12 @@ func (s *SQLiteStore) InsertCard(c *Card) error {
 	return err
 }
 
-func (s *SQLiteStore) UpdateCard(c *Card) error {
-	_, err := s.db.NamedExec(updateCardSQL, c)
-	return err
-}
-
 // UpdateCardStatus updates only the status column of a card. It is meant for
 // background goroutines that hold a stale snapshot of the row (the
-// controller's watchers); a full [UpdateCard] would silently revert
+// controller's watchers); a full-row update would silently revert
 // concurrent edits made by, e.g., the move-card handler.
 func (s *SQLiteStore) UpdateCardStatus(id string, status CardStatus) error {
 	_, err := s.db.Exec("UPDATE cards SET status = ? WHERE id = ?", status, id)
-	return err
-}
-
-// UpdateCardSession updates only the session column of a card. Same rationale
-// as [SQLiteStore.UpdateCardStatus].
-func (s *SQLiteStore) UpdateCardSession(id, session string) error {
-	_, err := s.db.Exec("UPDATE cards SET session = ? WHERE id = ?", session, id)
 	return err
 }
 

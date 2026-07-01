@@ -36,7 +36,7 @@ func TestHandleListScheduleWithCards(t *testing.T) {
 		Agent: "ag", RepoPath: "/repo", Branch: "br2", Worktree: "/wt2", Session: "s2",
 	}))
 	require.NoError(t, store.InsertCard(&Card{
-		ID: "c3", Title: "Done task", Column: "done", Status: StatusDone,
+		ID: "c3", Title: "Done task", Column: "done", Status: StatusWaiting,
 		Agent: "ag", RepoPath: "/repo", Branch: "br3", Worktree: "/wt3", Session: "s3",
 	}))
 

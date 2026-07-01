@@ -6,16 +6,11 @@ type Store interface {
 	ListCards() ([]*Card, error)
 	GetCard(id string) (*Card, error)
 	InsertCard(c *Card) error
-	UpdateCard(c *Card) error
 	// UpdateCardStatus persists only the status field of a card. Background
-	// goroutines (the controller's watchers) use it instead of [UpdateCard] so a
-	// stale snapshot of the row cannot silently revert concurrent edits made
-	// by the move-card handler.
+	// goroutines (the controller's watchers) use it so a stale snapshot of the
+	// row cannot silently revert concurrent edits made by the move-card
+	// handler.
 	UpdateCardStatus(id string, status CardStatus) error
-	// UpdateCardSession persists only the session field of a card. Same
-	// rationale as [UpdateCardStatus]: callers holding a stale snapshot must
-	// not revert concurrent column or status updates.
-	UpdateCardSession(id, session string) error
 	// UpdateCardTitle persists only the title field of a card. Used by the
 	// controller when a session_title event arrives, without clobbering
 	// concurrent edits.
