@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -55,10 +56,44 @@ func TestUpstreamBaseUsesOriginHead(t *testing.T) {
 	assert.Equal(t, "origin/main", UpstreamBase(repo))
 }
 
+func TestUpstreamBaseProbesDefaultBranches(t *testing.T) {
+	repo := initRepoWithCommit(t)
+	// origin exists but its HEAD was never recorded (e.g. a plain fetch):
+	// probe the conventional default branches instead of assuming main.
+	gitInDir(t, repo, "remote", "add", "origin", "https://example.com/canonical.git")
+	gitInDir(t, repo, "update-ref", "refs/remotes/origin/master", "HEAD")
+
+	assert.Equal(t, "origin/master", UpstreamBase(repo))
+}
+
+// GET /diff is a read: untracked files must show up in the diff without the
+// worktree's real index being touched.
+func TestDiffIncludesUntrackedWithoutTouchingIndex(t *testing.T) {
+	repo := initRepoWithCommit(t)
+	gitInDir(t, repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "new.txt"), []byte("hello\n"), 0o644))
+
+	diff, err := Diff(repo)
+	require.NoError(t, err)
+	assert.Contains(t, diff, "new.txt", "untracked files appear in the diff")
+	assert.Contains(t, diff, "+hello")
+
+	out, err := runGit(repo, "ls-files", "--", "new.txt")
+	require.NoError(t, err)
+	assert.Empty(t, strings.TrimSpace(out), "the real index must not gain an intent-to-add entry")
+}
+
 func initRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()
 	gitInDir(t, repo, "init")
+	return repo
+}
+
+func initRepoWithCommit(t *testing.T) string {
+	t.Helper()
+	repo := initRepo(t)
+	gitInDir(t, repo, "-c", "user.email=board@test", "-c", "user.name=board", "commit", "--allow-empty", "-m", "init")
 	return repo
 }
 
