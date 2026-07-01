@@ -43,14 +43,18 @@ type createCardRequest struct {
 
 // resolveProject returns the name, agent and repo path configured for the
 // given project. Cards are always created against a saved project, so a
-// missing or unknown project is an error.
+// missing or unknown project is a caller error; any other store failure is
+// internal and reported as such.
 func (b *Board) resolveProject(projectID string) (name, agent, repoPath string, err error) {
 	if projectID == "" {
 		return "", "", "", fmt.Errorf("%w: project required", errBadInput)
 	}
 	project, err := b.store.GetProject(projectID)
-	if err != nil || project == nil {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
 		return "", "", "", fmt.Errorf("%w: unknown project %q", errBadInput, projectID)
+	case err != nil:
+		return "", "", "", fmt.Errorf("get project %q: %w", projectID, err)
 	}
 	return project.Name, project.Agent, project.RepoPath, nil
 }
