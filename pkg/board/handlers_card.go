@@ -280,10 +280,13 @@ func (b *Board) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := exec.Command(b.config.EditorCommand, card.Worktree).Start(); err != nil {
+	cmd := exec.Command(b.config.EditorCommand, card.Worktree)
+	if err := cmd.Start(); err != nil {
 		writeError(w, fmt.Errorf("open editor: %w", err))
 		return
 	}
+	// Reap the editor when it exits so it does not linger as a zombie.
+	go func() { _ = cmd.Wait() }()
 
 	w.WriteHeader(http.StatusNoContent)
 }
