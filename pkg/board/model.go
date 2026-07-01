@@ -42,6 +42,7 @@ type Card struct {
 	Title    string     `json:"title" db:"title"`
 	Column   string     `json:"column" db:"col"`
 	Status   CardStatus `json:"status" db:"status"`
+	Project  string     `json:"project" db:"project"`
 	Agent    string     `json:"agent" db:"agent"`
 	RepoPath string     `json:"repoPath" db:"repo_path"`
 	Branch   string     `json:"branch" db:"branch"`

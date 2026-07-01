@@ -262,7 +262,8 @@ async function handleCardAction(e) {
         alert("The agent is still starting. Try again in a moment.");
         return;
       }
-      openTerminal(info.session, cards.find((c) => c.id === id)?.title || "Terminal", id);
+      const card = cards.find((c) => c.id === id);
+      openTerminal(info.session, card?.title || "Terminal", id, card?.project || "");
     } else if (action === "diff") {
       const title = cards.find((c) => c.id === id)?.title || "Diff";
       openDiffDialog(id, title);
@@ -284,10 +285,11 @@ let activeTerm = null;
 let activeSocket = null;
 let activeCardId = null;
 
-async function openTerminal(sessionName, title, cardId) {
+async function openTerminal(sessionName, title, cardId, project) {
   const dialog = document.getElementById("terminal-dialog");
   const container = document.getElementById("terminal-container");
   document.getElementById("terminal-title").textContent = title;
+  document.getElementById("terminal-project").textContent = project || "";
   activeCardId = cardId;
 
   closeTerminal();

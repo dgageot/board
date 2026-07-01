@@ -41,18 +41,18 @@ type createCardRequest struct {
 	ProjectID string `json:"projectId,omitempty"`
 }
 
-// resolveProject returns the agent and repo path configured for the given
-// project. Cards are always created against a saved project, so a missing or
-// unknown project is an error.
-func (b *Board) resolveProject(projectID string) (agent, repoPath string, err error) {
+// resolveProject returns the name, agent and repo path configured for the
+// given project. Cards are always created against a saved project, so a
+// missing or unknown project is an error.
+func (b *Board) resolveProject(projectID string) (name, agent, repoPath string, err error) {
 	if projectID == "" {
-		return "", "", fmt.Errorf("%w: project required", errBadInput)
+		return "", "", "", fmt.Errorf("%w: project required", errBadInput)
 	}
 	project, err := b.store.GetProject(projectID)
 	if err != nil || project == nil {
-		return "", "", fmt.Errorf("%w: unknown project %q", errBadInput, projectID)
+		return "", "", "", fmt.Errorf("%w: unknown project %q", errBadInput, projectID)
 	}
-	return project.Agent, project.RepoPath, nil
+	return project.Name, project.Agent, project.RepoPath, nil
 }
 
 // createCard creates a new card and launches its agent session. docker agent
@@ -62,7 +62,7 @@ func (b *Board) resolveProject(projectID string) (agent, repoPath string, err er
 // placeholder derived from the prompt and replaced when the agent emits its
 // session_title event, so card creation is instant.
 func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
-	agent, repoPath, err := b.resolveProject(projectID)
+	name, agent, repoPath, err := b.resolveProject(projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +92,7 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 		Title:        placeholderTitle(prompt),
 		Column:       "dev",
 		Status:       StatusRunning,
+		Project:      name,
 		Agent:        agent,
 		RepoPath:     repoPath,
 		Branch:       branch,
