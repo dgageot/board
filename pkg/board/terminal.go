@@ -5,8 +5,10 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/creack/pty"
@@ -28,8 +30,25 @@ type resizeMsg struct {
 	Rows uint16 `json:"rows"`
 }
 
-// wsUpgrader is a shared WebSocket upgrader that accepts all origins.
-var wsUpgrader = websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+// wsUpgrader is a shared WebSocket upgrader. Terminals are only attached from
+// pages the board itself serves, so cross-origin upgrades are rejected: a
+// malicious web page must not be able to drive a local agent terminal.
+var wsUpgrader = websocket.Upgrader{CheckOrigin: sameOrigin}
+
+// sameOrigin reports whether the request's Origin header, when present,
+// matches the host the request was sent to. Requests without an Origin
+// (non-browser clients) are allowed.
+func sameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Host, r.Host)
+}
 
 // terminalDim parses a terminal dimension query parameter, falling back to
 // def when missing or out of the uint16 range.
