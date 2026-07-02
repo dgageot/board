@@ -200,7 +200,6 @@ a {
   background: color-mix(in srgb, var(--surface-raised) 76%, transparent);
   color: var(--text);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(14px);
 
   &:hover:not(:disabled) {
     border-color: var(--border-strong);
@@ -267,7 +266,10 @@ main#board::-webkit-scrollbar-thumb,
   max-height: 100%;
   overflow: hidden;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), var(--shadow-sm);
-  backdrop-filter: blur(18px) saturate(130%);
+  /* No backdrop-filter here: columns sit on a flat background so blurring is
+     invisible, but it forces the compositor to keep a snapshot of everything
+     behind the column. Stale snapshots ghosted closed dialogs through the
+     board (Chromium/WebKit backdrop-filter invalidation bugs). */
 
   & .column-header {
     position: sticky;
@@ -521,6 +523,13 @@ main#board::-webkit-scrollbar-thumb,
 }
 
 /* Dialog */
+/* Never paint a closed dialog, whatever other display rules match. The UA
+   has dialog:not([open]) { display: none } but at zero specificity, so any
+   stray display override resurrects the closed dialog as a ghost overlay. */
+dialog:not([open]) {
+  display: none !important;
+}
+
 dialog {
   background: var(--surface-raised);
   color: var(--text);

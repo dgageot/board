@@ -469,6 +469,22 @@ document.querySelectorAll(".dialog-close[data-close]").forEach((btn) => {
   });
 });
 
+// Chromium/WebKit sometimes leave a stale composited layer of a closed dialog
+// (backdrop-filter invalidation bugs), ghosting it over the board until a full
+// navigation. Toggling a transform on the board forces the compositor to
+// rebuild its layers after any dialog closes.
+function nudgeRepaint() {
+  const board = document.getElementById("board");
+  board.style.transform = "translateZ(0)";
+  requestAnimationFrame(() => {
+    board.style.transform = "";
+  });
+}
+
+document.querySelectorAll("dialog").forEach((d) => {
+  d.addEventListener("close", nudgeRepaint);
+});
+
 // --- Dialogs ---
 
 // New task dialog
