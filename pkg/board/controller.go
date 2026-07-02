@@ -149,6 +149,14 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 
 		c.setTitleFromSnapshot(card, snap)
 
+		// The control plane answers: the agent has started. If the card is
+		// still marked starting, default to waiting; the event replay below
+		// promptly corrects it if a turn is already underway. Checking the
+		// loop-top read is safe: this watcher is the only status writer.
+		if card.Status == StatusStarting {
+			c.setStatus(cardID, StatusWaiting)
+		}
+
 		// Derive the running state from the event stream, not snap.Streaming:
 		// for attached (--listen) sessions that flag is always false because
 		// turns run in the TUI, never through the server's RunSession (the only
@@ -383,10 +391,16 @@ func (c *Controller) relaunch(card *Card, prompt string) error {
 	// plane socket file behind. Remove it so the resumed run can bind --listen;
 	// otherwise the new agent fails to start and the card stays stuck "starting".
 	_ = os.Remove(socket)
-	return c.sessions.NewSession(
+	err := c.sessions.NewSession(
 		card.Session, card.Worktree, card.Agent, card.AgentSession,
 		socket, "", "", prompt,
 	)
+	if err == nil {
+		// The agent is launching again: show it as starting until its control
+		// plane answers and the event stream drives the status.
+		c.setStatus(card.ID, StatusStarting)
+	}
+	return err
 }
 
 // sleep waits for d or until ctx is done, reporting whether ctx was done.

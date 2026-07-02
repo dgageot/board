@@ -23,6 +23,7 @@
   --danger: #fb7185;
   --success: #34d399;
   --warning: #fbbf24;
+  --info: #60a5fa;
   --accent-success: var(--success);
   --accent-danger: var(--danger);
   --accent-primary: var(--accent);
@@ -37,6 +38,7 @@
   --badge-waiting-bg: rgba(52, 211, 153, 0.14);
   --badge-done-bg: rgba(148, 163, 184, 0.14);
   --card-running-bg: linear-gradient(145deg, rgba(251, 191, 36, 0.13), rgba(30, 41, 59, 0.76));
+  --card-starting-bg: linear-gradient(145deg, rgba(96, 165, 250, 0.14), rgba(30, 41, 59, 0.76));
   --card-waiting-bg: linear-gradient(145deg, rgba(52, 211, 153, 0.12), rgba(30, 41, 59, 0.76));
   --card-error-bg: linear-gradient(145deg, rgba(248, 81, 73, 0.16), rgba(30, 41, 59, 0.76));
   --card-paused-bg: linear-gradient(145deg, rgba(226, 232, 240, 0.22), rgba(30, 41, 59, 0.76));
@@ -61,6 +63,7 @@
   --danger: #e11d48;
   --success: #059669;
   --warning: #d97706;
+  --info: #3b82f6;
   --shadow-sm: 0 8px 20px rgba(15, 23, 42, 0.08);
   --shadow-md: 0 24px 60px rgba(15, 23, 42, 0.14);
   --shadow-glow: 0 0 0 1px rgba(79, 70, 229, 0.12), 0 14px 34px rgba(79, 70, 229, 0.1);
@@ -68,6 +71,7 @@
   --badge-waiting-bg: rgba(5, 150, 105, 0.1);
   --badge-done-bg: rgba(100, 116, 139, 0.12);
   --card-running-bg: linear-gradient(145deg, rgba(251, 191, 36, 0.16), rgba(255, 255, 255, 0.92));
+  --card-starting-bg: linear-gradient(145deg, rgba(59, 130, 246, 0.13), rgba(255, 255, 255, 0.92));
   --card-waiting-bg: linear-gradient(145deg, rgba(16, 185, 129, 0.12), rgba(255, 255, 255, 0.92));
   --card-error-bg: linear-gradient(145deg, rgba(225, 29, 72, 0.14), rgba(255, 255, 255, 0.92));
   --card-paused-bg: linear-gradient(145deg, rgba(226, 232, 240, 0.85), rgba(255, 255, 255, 0.95));
@@ -433,6 +437,13 @@ main#board::-webkit-scrollbar-thumb,
     background: var(--card-running-bg);
     border-color: color-mix(in srgb, var(--warning) 34%, var(--border));
     animation: pulse-running 2.2s ease-in-out infinite;
+  }
+
+  /* An agent that is launching but has not answered yet: blue. */
+  &.card-starting {
+    background: var(--card-starting-bg);
+    border-color: color-mix(in srgb, var(--info) 34%, var(--border));
+    animation: pulse-starting 2.2s ease-in-out infinite;
   }
 
   &.card-waiting {
@@ -988,6 +999,11 @@ dialog.dialog-terminal[open] {
 @keyframes pulse-running {
   0%, 100% { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 22px rgba(0, 0, 0, 0.12); }
   50% { box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.18), 0 14px 32px rgba(251, 191, 36, 0.12); }
+}
+
+@keyframes pulse-starting {
+  0%, 100% { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 22px rgba(0, 0, 0, 0.12); }
+  50% { box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18), 0 14px 32px rgba(96, 165, 250, 0.12); }
 }
 
 @keyframes spin {

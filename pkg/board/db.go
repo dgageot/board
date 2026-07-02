@@ -259,15 +259,16 @@ func (s *SQLiteStore) ReinsertCard(c *Card) error {
 // MoveCard atomically moves a card to the given column, re-inserting it so it
 // gets the highest rowid. The row is re-read inside the transaction: the move
 // preserves the current status (not a caller's stale snapshot) and, when
-// requireIdle is set, a card whose watcher concurrently flipped it to running
-// is rejected with [errCardRunning]. The updated card is returned.
+// requireIdle is set, a card whose watcher concurrently flipped it to busy
+// (starting or running) is rejected with [errCardRunning]. The updated card
+// is returned.
 func (s *SQLiteStore) MoveCard(id, column string, requireIdle bool) (*Card, error) {
 	var card Card
 	err := runInTx(s.db, func(tx *sqlx.Tx) error {
 		if err := tx.Get(&card, "SELECT "+cardColumns+" FROM cards WHERE id = ?", id); err != nil {
 			return err
 		}
-		if requireIdle && card.Status == StatusRunning {
+		if requireIdle && card.Status.Busy() {
 			return errCardRunning
 		}
 		card.Column = column

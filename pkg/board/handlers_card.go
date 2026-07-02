@@ -95,7 +95,7 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 		ID:           newID(),
 		Title:        placeholderTitle(prompt),
 		Column:       "dev",
-		Status:       StatusRunning,
+		Status:       StatusStarting,
 		Project:      name,
 		Agent:        agent,
 		RepoPath:     repoPath,

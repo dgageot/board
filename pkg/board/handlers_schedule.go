@@ -20,7 +20,7 @@ func toScheduleCard(c *Card) scheduleCardResponse {
 		ID:       c.ID,
 		Title:    c.Title,
 		Column:   c.Column,
-		Running:  c.Status == StatusRunning,
+		Running:  c.Status.Busy(),
 		Branch:   c.Branch,
 		Worktree: c.Worktree,
 		RepoPath: c.RepoPath,

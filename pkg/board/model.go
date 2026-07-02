@@ -28,8 +28,12 @@ var defaultColumns = []Column{
 type CardStatus string
 
 const (
-	StatusRunning CardStatus = "running"
-	StatusWaiting CardStatus = "waiting"
+	// StatusStarting marks a card whose agent is launching but has not yet
+	// answered on its control plane. The watcher replaces it with a real
+	// status as soon as the agent emits events.
+	StatusStarting CardStatus = "starting"
+	StatusRunning  CardStatus = "running"
+	StatusWaiting  CardStatus = "waiting"
 	// StatusPaused marks a card whose turn is blocked on /pause. It lasts
 	// until the runtime emits events again (resume) or the turn ends.
 	StatusPaused CardStatus = "paused"
@@ -37,6 +41,12 @@ const (
 	// watcher keeps it until the next turn starts (stream_started).
 	StatusError CardStatus = "error"
 )
+
+// Busy reports whether the card's agent cannot accept a prompt right now: it
+// is either still starting or in the middle of a turn.
+func (s CardStatus) Busy() bool {
+	return s == StatusStarting || s == StatusRunning
+}
 
 // Card represents a task card on the board.
 type Card struct {

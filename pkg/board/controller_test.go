@@ -556,6 +556,39 @@ func TestRelaunchRemovesStaleSocket(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "relaunch must remove the stale control-plane socket")
 }
 
+// A relaunched agent is starting again: the card must turn blue until its
+// control plane answers.
+func TestRelaunchMarksCardStarting(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard())) // starts waiting
+	c := newTestController(t, store, newFakeSessionManager(), &fakeClient{})
+
+	require.NoError(t, c.relaunch(devCard(), ""))
+
+	card, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, StatusStarting, card.Status)
+}
+
+// Once the control plane answers, the agent has started: a card still marked
+// starting defaults to waiting (the event replay corrects it if a turn is
+// already underway).
+func TestControllerSnapshotClearsStarting(t *testing.T) {
+	store := openTestStore(t)
+	card := devCard()
+	card.Status = StatusStarting
+	require.NoError(t, store.InsertCard(card))
+
+	client := &fakeClient{snap: agent.Snapshot{}}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(card)
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+}
+
 func TestControllerDoesNotRelaunchWhileStarting(t *testing.T) {
 	store := openTestStore(t)
 	require.NoError(t, store.InsertCard(devCard()))

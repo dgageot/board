@@ -118,6 +118,11 @@ function isForwardMove(srcColId, dstColId) {
   return dstIdx > srcIdx;
 }
 
+// A busy agent (starting or mid-turn) cannot accept a prompt yet.
+function isBusy(card) {
+  return card?.status === "starting" || card?.status === "running";
+}
+
 function renderBoard() {
   const board = document.getElementById("board");
   board.innerHTML = "";
@@ -151,7 +156,7 @@ function renderBoard() {
     // Drop zone handlers
     body.addEventListener("dragover", (e) => {
       e.preventDefault();
-      if (draggedCard?.status === "running" && isForwardMove(draggedCard.column, col.id)) {
+      if (isBusy(draggedCard) && isForwardMove(draggedCard.column, col.id)) {
         e.dataTransfer.dropEffect = "none";
         return;
       }
@@ -170,7 +175,7 @@ function renderBoard() {
       body.classList.remove("drop-target");
       const cardId = e.dataTransfer.getData("text/plain");
       if (!cardId) return;
-      if (draggedCard?.status === "running" && isForwardMove(draggedCard.column, col.id)) return;
+      if (isBusy(draggedCard) && isForwardMove(draggedCard.column, col.id)) return;
       try {
         await API.moveCard(cardId, col.id);
       } catch (err) {
