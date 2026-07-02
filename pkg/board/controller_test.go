@@ -373,6 +373,83 @@ func TestControllerNestedStreamsStayRunning(t *testing.T) {
 	assert.Equal(t, StatusRunning, card.Status)
 }
 
+// A sub-agent's failure is not turn-fatal: the parent captures the error and
+// finishes the turn normally. The mid-turn error event turns the card red, but
+// the outermost stop's "normal" reason is authoritative and must clear it —
+// otherwise the card stays red until the user's next prompt.
+func TestControllerSubAgentErrorRecoveredByParent(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},                   // parent
+			{Type: agent.EventStreamStarted},                   // sub-agent
+			{Type: agent.EventError},                           // sub-agent fails
+			{Type: agent.EventStreamStopped, Reason: "error"},  // sub-agent ends
+			{Type: agent.EventStreamStopped, Reason: "normal"}, // parent completes fine
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+}
+
+// A turn that genuinely fails ends with a stop whose reason is "error": the
+// card must stay red, the normal-stop recovery must not kick in.
+func TestControllerFailedTurnStaysError(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventError},
+			{Type: agent.EventStreamStopped, Reason: "error"},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusError
+	}, time.Second, 5*time.Millisecond)
+}
+
+// Stream events are delivered best-effort: a dropped stream_stopped leaves the
+// depth counter skewed, and the drop never reaches the replay buffer either.
+// user_message — emitted only when a real user turn starts — is the resync
+// point: it must zero the drifted depth so the next turn's stop flips the card
+// back to waiting instead of leaving it stuck running forever.
+func TestControllerUserMessageHealsDroppedStop(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted}, // turn 1; its stop was dropped
+			{Type: agent.EventUserMessage},   // turn 2 begins: resync
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventStreamStopped, Reason: "normal"},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+}
+
 func TestControllerRelaunchesWhenSessionDead(t *testing.T) {
 	store := openTestStore(t)
 	require.NoError(t, store.InsertCard(devCard()))

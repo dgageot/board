@@ -27,6 +27,11 @@ const (
 	EventStreamStopped = "stream_stopped"
 	EventSessionTitle  = "session_title"
 	EventSessionExited = "session_exited"
+	// EventUserMessage marks a real user prompt entering the session. The
+	// runtime emits it only for human-authored turns (sub-agent and skill
+	// sub-sessions suppress it via SendUserMessage=false), right before the
+	// turn's outermost stream_started, which makes it a turn-boundary marker.
+	EventUserMessage = "user_message"
 	// EventError is emitted when a turn fails (model error, tool failure,
 	// hook block…). Unlike stream_stopped it is delivered on the blocking
 	// sink and buffered for replay, so it is the reliable failure signal.
@@ -34,10 +39,19 @@ const (
 	EventGap   = "gap"
 )
 
+// ReasonNormal is the stream_stopped reason for a turn that completed
+// cleanly, as opposed to "error", "canceled", "hook_blocked"...
+const ReasonNormal = "normal"
+
 // Event is the subset of a runtime event the board cares about.
 type Event struct {
 	Type  string `json:"type"`
 	Title string `json:"title"`
+	// Reason classifies how a stream ended (stream_stopped only): "normal",
+	// "error", "canceled", "hook_blocked"... It is authoritative for the
+	// turn's outcome, unlike mid-turn error events which a parent agent may
+	// have recovered from.
+	Reason string `json:"reason"`
 	// Seq is the event's position in the session's buffer, parsed from the
 	// SSE "id:" line. It is 0 when the server sent no id. Compared with
 	// [Snapshot.LastEventSeq] it tells replayed history from live events.

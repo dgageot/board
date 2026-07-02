@@ -163,13 +163,25 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		// flipping to waiting the moment an inner sub-agent finishes while the
 		// parent is still working. Replayed orphan stops, whose start was
 		// evicted from the buffer, are clamped at zero.
+		//
+		// Delivery of stream events is best-effort: the agent emits
+		// stream_stopped non-blockingly during teardown, and its TUI drops
+		// events for slow control-plane subscribers before they reach the
+		// replay buffer. A dropped start or stop therefore skews the depth for
+		// good — reconnecting and replaying cannot recover it. user_message is
+		// the recovery point: the runtime emits it only for real user turns
+		// (never for sub-agent or skill sub-sessions), right before the turn's
+		// outermost stream_started, so it resets the depth the same way the
+		// agent's own TUI zeroes its stream depth on every submit.
 		depth := 0
 		// failed marks that the current turn emitted an error event. The card is
 		// turned red the moment that event arrives — it is delivered reliably,
 		// while the stream_stopped that follows is best-effort and may be dropped,
-		// so waiting for the stop would leave a failed turn stuck as running. The
-		// flag also keeps a delivered stop from reverting red to waiting. It stays
-		// set across turns until the next one starts (stream_started).
+		// so waiting for the stop would leave a failed turn stuck as running. But
+		// an error is not always turn-fatal: a sub-agent's failure surfaces as an
+		// error event that the parent recovers from, so the outermost stop's
+		// reason is authoritative — "normal" means the turn completed and clears
+		// the flag. Otherwise it stays set until the next turn begins.
 		failed := false
 
 		// Events at or below the snapshot's seq are replayed history. Their
@@ -206,6 +218,12 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 			case agent.EventSessionExited:
 				exited = true
 				return false
+			case agent.EventUserMessage:
+				// A new user turn begins: any leftover depth is drift from
+				// dropped stream events. Resync here so one lost stop cannot
+				// leave the card stuck running forever.
+				depth = 0
+				failed = false
 			case agent.EventStreamStarted:
 				failed = false
 				depth++
@@ -217,8 +235,18 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 				if depth > 0 {
 					depth--
 				}
-				if depth == 0 && !failed {
-					setStatus(StatusWaiting)
+				if depth == 0 {
+					// The outermost stream ended: a "normal" reason means the
+					// turn completed even if a nested sub-agent errored along
+					// the way, so the sticky error is cleared. Any other reason
+					// (error, hook_blocked, or a dropped/empty one) leaves a
+					// failed turn red.
+					if ev.Reason == agent.ReasonNormal {
+						failed = false
+					}
+					if !failed {
+						setStatus(StatusWaiting)
+					}
 				}
 			case agent.EventSessionTitle:
 				if !replaying {
