@@ -183,6 +183,10 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		// reason is authoritative — "normal" means the turn completed and clears
 		// the flag. Otherwise it stays set until the next turn begins.
 		failed := false
+		// paused marks that the run loop is blocked on /pause (runtime_paused).
+		// There is no matching resume event, so any subsequent event — the loop
+		// emits nothing while blocked — means the session resumed.
+		paused := false
 
 		// Events at or below the snapshot's seq are replayed history. Their
 		// intermediate statuses must not be broadcast on every reconnect — a
@@ -226,12 +230,15 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 				failed = false
 			case agent.EventStreamStarted:
 				failed = false
+				paused = false
 				depth++
 				setStatus(StatusRunning)
 			case agent.EventError:
 				failed = true
+				paused = false
 				setStatus(StatusError)
 			case agent.EventStreamStopped:
+				paused = false
 				if depth > 0 {
 					depth--
 				}
@@ -248,9 +255,19 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 						setStatus(StatusWaiting)
 					}
 				}
+			case agent.EventRuntimePaused:
+				paused = true
+				setStatus(StatusPaused)
 			case agent.EventSessionTitle:
 				if !replaying {
 					c.setTitle(cardID, ev.Title)
+				}
+			default:
+				// The run loop emits nothing while blocked on /pause, so any
+				// other event means the session resumed mid-turn.
+				if paused {
+					paused = false
+					setStatus(StatusRunning)
 				}
 			}
 			if replaying && ev.Seq == snap.LastEventSeq {

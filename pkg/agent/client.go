@@ -36,7 +36,11 @@ const (
 	// hook block…). Unlike stream_stopped it is delivered on the blocking
 	// sink and buffered for replay, so it is the reliable failure signal.
 	EventError = "error"
-	EventGap   = "gap"
+	// EventRuntimePaused is emitted when the run loop blocks at an iteration
+	// boundary because /pause was toggled on. There is no matching resume
+	// event: the loop simply starts emitting events again once resumed.
+	EventRuntimePaused = "runtime_paused"
+	EventGap           = "gap"
 )
 
 // ReasonNormal is the stream_stopped reason for a turn that completed

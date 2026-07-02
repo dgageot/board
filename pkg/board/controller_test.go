@@ -240,6 +240,72 @@ func TestControllerErrorWithoutStopMarksCardError(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 }
 
+// A turn blocked on /pause: runtime_paused turns the card paused (whitish).
+func TestControllerPausedEventMarksCardPaused(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventRuntimePaused},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusPaused
+	}, time.Second, 5*time.Millisecond)
+}
+
+// There is no resume event: the run loop simply starts emitting events again.
+// Any event after runtime_paused must flip the card back to running.
+func TestControllerActivityAfterPauseResumesRunning(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventRuntimePaused},
+			{Type: "tool_call"}, // resumed: the loop emits again
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
+}
+
+// A turn that ends while paused (e.g. canceled) must not stay whitish.
+func TestControllerStopAfterPauseIsWaiting(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventRuntimePaused},
+			{Type: agent.EventStreamStopped},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+}
+
 // A new turn after a failure clears the sticky error: stream_started flips the
 // card back to running.
 func TestControllerStreamStartedClearsError(t *testing.T) {

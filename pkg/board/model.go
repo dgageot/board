@@ -30,6 +30,9 @@ type CardStatus string
 const (
 	StatusRunning CardStatus = "running"
 	StatusWaiting CardStatus = "waiting"
+	// StatusPaused marks a card whose turn is blocked on /pause. It lasts
+	// until the runtime emits events again (resume) or the turn ends.
+	StatusPaused CardStatus = "paused"
 	// StatusError marks a card whose last turn failed. It is sticky: the
 	// watcher keeps it until the next turn starts (stream_started).
 	StatusError CardStatus = "error"
