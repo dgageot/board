@@ -121,6 +121,12 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 	// 500ms, so a persistent failure is logged once, when it appears or
 	// changes, not on every retry.
 	lastSnapErr := ""
+	// relaunchedUnsupported guards the once-per-watcher relaunch of a session
+	// whose control plane lacks GET /snapshot: an agent left running by an old
+	// docker-agent binary. Relaunching resumes the session on the binary
+	// currently installed; if that one is still too old, relaunching again
+	// would only kill and restart the agent in a loop.
+	relaunchedUnsupported := false
 	for ctx.Err() == nil {
 		card, err := c.store.GetCard(cardID)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -144,12 +150,15 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 				lastSnapErr = msg
 				log.Printf("card %s: snapshot failed: %v", cardID, err)
 			}
-			// The control plane is unreachable. If the agent's tmux pane is
-			// gone, relaunch to resume; otherwise it is still starting, so just
-			// wait and retry.
+			// The control plane is unreachable or unusable. If the agent's
+			// tmux pane is gone — or it is alive but predates GET /snapshot
+			// (old docker-agent binary) — relaunch to resume on the current
+			// binary; otherwise the agent is still starting, so wait and retry.
+			unsupported := errors.Is(err, agent.ErrUnsupported) && !relaunchedUnsupported
 			if alive, aerr := c.sessions.Alive(card.Session); aerr != nil {
 				log.Printf("card %s: liveness check of session %s failed: %v", cardID, card.Session, aerr)
-			} else if !alive {
+			} else if !alive || unsupported {
+				relaunchedUnsupported = relaunchedUnsupported || unsupported
 				_ = c.relaunch(card, "")
 			}
 			if sleep(ctx, retryDelay) {

@@ -47,6 +47,12 @@ const (
 // cleanly, as opposed to "error", "canceled", "hook_blocked"...
 const ReasonNormal = "normal"
 
+// ErrUnsupported reports a control plane that answers but lacks GET /snapshot:
+// the agent runs docker-agent < v1.80.0 (or serves an unknown session). The
+// board cannot watch such a session; relaunching it picks up the binary
+// currently installed.
+var ErrUnsupported = errors.New("no GET /snapshot (docker-agent < v1.80.0, or unknown session)")
+
 // Event is the subset of a runtime event the board cares about.
 type Event struct {
 	Type  string `json:"type"`
@@ -122,8 +128,9 @@ func (c *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	if resp.StatusCode == http.StatusNotFound {
 		// The board always targets a session id it owns, so a 404 almost
 		// always means the route is missing: /snapshot needs docker-agent
-		// v1.80.0+. Say so, or the card silently sticks at "starting".
-		return Snapshot{}, fmt.Errorf("snapshot: %s (unknown session, or docker-agent < v1.80.0 without GET /snapshot)", resp.Status)
+		// v1.80.0+. Flag it so the watcher can relaunch instead of retrying
+		// forever and leaving the card stuck at "starting".
+		return Snapshot{}, fmt.Errorf("snapshot: %s: %w", resp.Status, ErrUnsupported)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return Snapshot{}, fmt.Errorf("snapshot: %s", resp.Status)

@@ -32,6 +32,18 @@ func TestSnapshot(t *testing.T) {
 	assert.Equal(t, uint64(42), snap.LastEventSeq)
 }
 
+// A 404 on /snapshot means the route is missing (docker-agent < v1.80.0): it
+// must be flagged as ErrUnsupported so the watcher relaunches the session
+// instead of retrying forever.
+func TestSnapshotNotFoundIsUnsupported(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	_, err := c.Snapshot(t.Context())
+	require.ErrorIs(t, err, ErrUnsupported)
+}
+
 func TestFollowupSendsMessageAndIdempotencyKey(t *testing.T) {
 	var gotKey, gotBody string
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
