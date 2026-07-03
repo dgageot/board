@@ -186,7 +186,7 @@ func TestHandleJumpCardAgentStillStarting(t *testing.T) {
 	b, store := newTestBoard(t)
 
 	require.NoError(t, store.InsertCard(&Card{
-		ID: "c1", Title: "T", Column: "dev", Status: StatusRunning,
+		ID: "c1", Title: "T", Column: "dev", Status: StatusStarting,
 		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "my-session",
 	}))
 	// The default test client never reaches a control plane.
@@ -196,6 +196,29 @@ func TestHandleJumpCardAgentStillStarting(t *testing.T) {
 	b.handleJumpCard(rec, req)
 
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+}
+
+// A card that already left "starting" opens even when the control plane is
+// unreachable (e.g. its socket vanished): the tmux session showing the
+// agent's UI is still attachable, so the probe must not lock the user out.
+func TestHandleJumpCardControlPlaneUnreachable(t *testing.T) {
+	b, store := newTestBoard(t)
+
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "c1", Title: "T", Column: "dev", Status: StatusWaiting,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "my-session",
+	}))
+	// The default test client never reaches a control plane.
+	req := httptest.NewRequest(http.MethodPost, "/api/cards/c1/jump", http.NoBody)
+	req.SetPathValue("id", "c1")
+	rec := httptest.NewRecorder()
+	b.handleJumpCard(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.Equal(t, "my-session", resp["session"])
 }
 
 func TestHandleJumpCardNotFound(t *testing.T) {

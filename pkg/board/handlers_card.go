@@ -199,9 +199,14 @@ func (b *Board) handleJumpCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only attach a terminal once the agent's control plane answers; otherwise
-	// the session still shows the bare docker-agent launch command.
-	if !b.controller.Ready(card) {
+	// While the card is still starting, only attach a terminal once the
+	// agent's control plane answers; before that the session shows the bare
+	// docker-agent launch command. The probe gates nothing else: once the
+	// card has left "starting" its UI has been up, and the tmux session stays
+	// attachable (remain-on-exit) even if the control plane later stops
+	// answering — e.g. its socket vanished — so probing then would only lock
+	// the user out of a live session.
+	if card.Status == StatusStarting && !b.controller.Ready(card) {
 		writeError(w, errAgentStarting)
 		return
 	}

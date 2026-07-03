@@ -353,9 +353,9 @@ func (c *Controller) setTitle(cardID, title string) {
 }
 
 // Ready reports whether the card's agent control plane answers, i.e. the agent
-// process has really started and its UI is worth showing. It lets the Agent
-// button avoid attaching a terminal to a session still showing the bare
-// docker-agent launch command.
+// process has really started and its UI is worth showing. The Agent button
+// consults it only while the card is still starting, to avoid attaching a
+// terminal to a session showing the bare docker-agent launch command.
 func (c *Controller) Ready(card *Card) bool {
 	client := c.clientFor(socketPath(card.AgentSession), card.AgentSession)
 	ctx, cancel := context.WithTimeout(c.ctx, readyProbeTimeout)
