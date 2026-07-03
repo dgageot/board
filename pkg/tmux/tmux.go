@@ -3,6 +3,7 @@ package tmux
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -197,6 +198,13 @@ func (Sessions) KillSession(sessionName string) error {
 // session around); a missing session reports not alive. The board uses this
 // to tell a slow-starting control plane from a session that needs relaunching.
 func (Sessions) Alive(sessionName string) (bool, error) {
+	// No server (after a reboot or a killed server) means every session is
+	// gone: report not alive rather than the query error, so the controller
+	// relaunches the agents instead of waiting forever.
+	if !serverRunning() {
+		return false, nil
+	}
+
 	tmux, err := defaultTmux()
 	if err != nil {
 		return false, err
@@ -219,4 +227,15 @@ func (Sessions) Alive(sessionName string) (bool, error) {
 	}
 
 	return !panes[0].Dead, nil
+}
+
+// serverRunning reports whether the board's private tmux server accepts
+// connections on its socket. A missing or stale socket fails the dial.
+func serverRunning() bool {
+	conn, err := net.Dial("unix", SocketPath())
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }

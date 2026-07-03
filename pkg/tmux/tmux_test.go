@@ -1,11 +1,37 @@
 package tmux
 
 import (
+	"os"
 	"testing"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// With no tmux server (e.g. after a reboot), Alive must report not alive
+// rather than an error, so the controller relaunches the agent instead of
+// waiting forever for a server that will never answer.
+func TestAliveNoServer(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir()) // point SocketPath at a socket-less dir
+
+	alive, err := Sessions{}.Alive("any")
+
+	require.NoError(t, err)
+	assert.False(t, alive)
+}
+
+// A stale socket file left behind by a killed server must also read as no
+// server: nothing is listening on it.
+func TestAliveStaleSocket(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	require.NoError(t, os.WriteFile(SocketPath(), nil, 0o600))
+
+	alive, err := Sessions{}.Alive("any")
+
+	require.NoError(t, err)
+	assert.False(t, alive)
+}
 
 func TestShellQuote(t *testing.T) {
 	assert.Equal(t, `'hello world'`, shellescape.Quote("hello world"))
