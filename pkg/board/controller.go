@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -116,6 +117,10 @@ func (c *Controller) Stop(cardID string) {
 // watch keeps one card mirrored to its control plane: snapshot to resync, then
 // tail events; on a drop, reconnect; if the agent is gone, relaunch and resume.
 func (c *Controller) watch(ctx context.Context, cardID string) {
+	// lastSnapErr is the last snapshot failure logged. The loop retries every
+	// 500ms, so a persistent failure is logged once, when it appears or
+	// changes, not on every retry.
+	lastSnapErr := ""
 	for ctx.Err() == nil {
 		card, err := c.store.GetCard(cardID)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -135,16 +140,26 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		snap, err := client.Snapshot(sctx)
 		scancel()
 		if err != nil {
+			if msg := err.Error(); msg != lastSnapErr {
+				lastSnapErr = msg
+				log.Printf("card %s: snapshot failed: %v", cardID, err)
+			}
 			// The control plane is unreachable. If the agent's tmux pane is
 			// gone, relaunch to resume; otherwise it is still starting, so just
 			// wait and retry.
-			if alive, aerr := c.sessions.Alive(card.Session); aerr == nil && !alive {
+			if alive, aerr := c.sessions.Alive(card.Session); aerr != nil {
+				log.Printf("card %s: liveness check of session %s failed: %v", cardID, card.Session, aerr)
+			} else if !alive {
 				_ = c.relaunch(card, "")
 			}
 			if sleep(ctx, retryDelay) {
 				return
 			}
 			continue
+		}
+		if lastSnapErr != "" {
+			lastSnapErr = ""
+			log.Printf("card %s: control plane answered", cardID)
 		}
 
 		c.setTitleFromSnapshot(card, snap)
@@ -286,6 +301,7 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 
 		if exited && ctx.Err() == nil {
 			// The agent process ended; resume it so the card stays usable.
+			log.Printf("card %s: agent exited", cardID)
 			_ = c.relaunch(card, "")
 		}
 		if sleep(ctx, retryDelay) {
@@ -385,6 +401,7 @@ func (c *Controller) SendPrompt(card *Card, prompt string) error {
 // message. Launching from the worktree keeps the agent isolated even if
 // docker-agent's own worktree reattachment does not happen.
 func (c *Controller) relaunch(card *Card, prompt string) error {
+	log.Printf("card %s: relaunching agent (tmux session %s, agent session %s)", card.ID, card.Session, card.AgentSession)
 	_ = c.sessions.KillSession(card.Session)
 	socket := socketPath(card.AgentSession)
 	// A killed agent (e.g. after a Docker Desktop restart) leaves its control-
@@ -395,12 +412,14 @@ func (c *Controller) relaunch(card *Card, prompt string) error {
 		card.Session, card.Worktree, card.Agent, card.AgentSession,
 		socket, "", "", prompt,
 	)
-	if err == nil {
-		// The agent is launching again: show it as starting until its control
-		// plane answers and the event stream drives the status.
-		c.setStatus(card.ID, StatusStarting)
+	if err != nil {
+		log.Printf("card %s: relaunch failed: %v", card.ID, err)
+		return err
 	}
-	return err
+	// The agent is launching again: show it as starting until its control
+	// plane answers and the event stream drives the status.
+	c.setStatus(card.ID, StatusStarting)
+	return nil
 }
 
 // sleep waits for d or until ctx is done, reporting whether ctx was done.

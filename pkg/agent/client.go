@@ -119,6 +119,12 @@ func (c *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		// The board always targets a session id it owns, so a 404 almost
+		// always means the route is missing: /snapshot needs docker-agent
+		// v1.80.0+. Say so, or the card silently sticks at "starting".
+		return Snapshot{}, fmt.Errorf("snapshot: %s (unknown session, or docker-agent < v1.80.0 without GET /snapshot)", resp.Status)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return Snapshot{}, fmt.Errorf("snapshot: %s", resp.Status)
 	}
