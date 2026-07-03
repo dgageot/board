@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"al.essio.dev/pkg/shellescape"
@@ -49,16 +50,27 @@ func TestAgentCommand(t *testing.T) {
 	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock",
 		agentCommand("my-agent", "abc123", sock, "", "", ""))
 
-	// Resume with a prompt: deliver it as the session's next message, quoted.
-	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock 'do this'",
-		agentCommand("my-agent", "abc123", sock, "", "", "do this"))
+	// Resume with a prompt: deliver it via stdin from the prompt file. The
+	// prompt text itself never appears on the command line.
+	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock - < /tmp/board-prompt-abc123",
+		agentCommand("my-agent", "abc123", sock, "", "", "/tmp/board-prompt-abc123"))
 
 	// First launch (worktree name set): create the isolated worktree branched
-	// from the given base and deliver the first prompt.
-	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base origin/main 'do this'",
-		agentCommand("my-agent", "abc123", sock, "board-xyz", "origin/main", "do this"))
+	// from the given base and deliver the first prompt via stdin.
+	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base origin/main - < /tmp/board-prompt-abc123",
+		agentCommand("my-agent", "abc123", sock, "board-xyz", "origin/main", "/tmp/board-prompt-abc123"))
 
 	// The worktree base is not assumed: a non-origin upstream flows through.
-	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base upstream/master 'do this'",
-		agentCommand("my-agent", "abc123", sock, "board-xyz", "upstream/master", "do this"))
+	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base upstream/master - < /tmp/board-prompt-abc123",
+		agentCommand("my-agent", "abc123", sock, "board-xyz", "upstream/master", "/tmp/board-prompt-abc123"))
+}
+
+// The prompt is staged in a file read verbatim by the agent: quotes,
+// backticks, dollars and newlines survive untouched because the shell that
+// launches the agent never sees the prompt text.
+func TestPromptFilePath(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+
+	assert.Equal(t, filepath.Join(os.TempDir(), "board-prompt-abc123"), promptFilePath("abc123"))
 }

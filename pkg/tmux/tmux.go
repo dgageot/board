@@ -102,18 +102,28 @@ func applyServerDefaults() {
 // reattaches the session to its original worktree automatically, so passing
 // --worktree again (which would fail, the worktree already exists) is avoided.
 //
-// A non-empty prompt is appended as the first message.
-func agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) string {
+// A non-empty promptFile is delivered as the first message via stdin
+// (`- < file`). The prompt never appears on the command line: this command is
+// typed into an interactive shell (see NewSession), where no amount of
+// escaping is fully safe for arbitrary user text.
+func agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile string) string {
 	cmd := fmt.Sprintf("docker agent run %s --yolo --session %s --listen %s",
 		agent, shellescape.Quote(sessionID), shellescape.Quote("unix://"+listenSocket))
 	if worktreeName != "" {
 		cmd += fmt.Sprintf(" --worktree=%s --worktree-base %s",
 			shellescape.Quote(worktreeName), shellescape.Quote(worktreeBase))
 	}
-	if prompt != "" {
-		cmd += " " + shellescape.Quote(prompt)
+	if promptFile != "" {
+		cmd += " - < " + shellescape.Quote(promptFile)
 	}
 	return cmd
+}
+
+// promptFilePath returns where a session's first prompt is staged for stdin
+// delivery. Derived from the (unique) docker-agent session id, so a relaunch
+// of the same session overwrites its own file rather than piling up new ones.
+func promptFilePath(sessionID string) string {
+	return filepath.Join(os.TempDir(), "board-prompt-"+sessionID)
 }
 
 // NewSession creates a tmux session and runs docker agent in it. The agent is
@@ -156,9 +166,20 @@ func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket,
 		return errors.New("no panes in session")
 	}
 
+	// The prompt goes through a file redirected to the agent's stdin, never
+	// through the typed command line: send-keys feeds an interactive shell,
+	// which would reinterpret any special characters in the prompt.
+	promptFile := ""
+	if prompt != "" {
+		promptFile = promptFilePath(sessionID)
+		if err := os.WriteFile(promptFile, []byte(prompt), 0o600); err != nil {
+			return fmt.Errorf("write prompt file: %w", err)
+		}
+	}
+
 	// exec replaces the shell with the agent so the agent becomes the pane's
 	// process: when it exits the pane goes dead (see remain-on-exit above).
-	if err := panes[0].SendKeys("exec " + agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt)); err != nil {
+	if err := panes[0].SendKeys("exec " + agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile)); err != nil {
 		return fmt.Errorf("send keys: %w", err)
 	}
 	if err := panes[0].SendKeys("Enter"); err != nil {
