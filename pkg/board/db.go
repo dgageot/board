@@ -189,8 +189,8 @@ func tableExists(db *sqlx.DB, name string) bool {
 // --- Cards ---
 
 const (
-	cardColumns     = "id, title, col, status, project, agent, repo_path, branch, worktree, session, agent_session"
-	cardNamedValues = ":id, :title, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session"
+	cardColumns     = "id, title, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost"
+	cardNamedValues = ":id, :title, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost"
 	insertCardSQL   = "INSERT INTO cards (" + cardColumns + ") VALUES (" + cardNamedValues + ")"
 )
 
@@ -229,6 +229,14 @@ func (s *SQLiteStore) UpdateCardStatus(id string, status CardStatus) error {
 // session_title event without reverting concurrent edits.
 func (s *SQLiteStore) UpdateCardTitle(id, title string) error {
 	_, err := s.db.Exec("UPDATE cards SET title = ? WHERE id = ?", title, id)
+	return err
+}
+
+// UpdateCardCost updates only the cost column of a card. Same rationale as
+// [SQLiteStore.UpdateCardStatus]: the controller mirrors the session's
+// cumulative cost from its snapshot without reverting concurrent edits.
+func (s *SQLiteStore) UpdateCardCost(id string, cost float64) error {
+	_, err := s.db.Exec("UPDATE cards SET cost = ? WHERE id = ?", cost, id)
 	return err
 }
 

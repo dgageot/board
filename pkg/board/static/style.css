@@ -466,13 +466,22 @@ main#board::-webkit-scrollbar-thumb,
     opacity: 0.72;
   }
 
-  & .card-title {
+    & .card-title {
     font-size: 14px;
     font-weight: 700;
     line-height: 1.35;
     letter-spacing: -0.01em;
     overflow-wrap: break-word;
     word-break: break-word;
+  }
+
+  & .card-cost {
+    margin-top: 5px;
+    font-size: 10.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    white-space: nowrap;
   }
 
 

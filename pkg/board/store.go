@@ -15,6 +15,10 @@ type Store interface {
 	// controller when a session_title event arrives, without clobbering
 	// concurrent edits.
 	UpdateCardTitle(id, title string) error
+	// UpdateCardCost persists only the cost field of a card. Used by the
+	// controller to mirror the agent session's cumulative cost from its
+	// snapshot, without clobbering concurrent edits.
+	UpdateCardCost(id string, cost float64) error
 	DeleteCard(id string) error
 	ListCardsByColumn(column string) ([]*Card, error)
 	// MoveCard atomically moves a card to the given column and re-inserts it

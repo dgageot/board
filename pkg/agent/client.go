@@ -78,6 +78,25 @@ type Snapshot struct {
 	// the running state from stream_started/stream_stopped events instead.
 	Streaming    bool   `json:"streaming"`
 	LastEventSeq uint64 `json:"last_event_seq"`
+	// Cost is the session's cumulative cost in US dollars. The control plane's
+	// snapshot has no aggregate cost field, so it is summed from the per-message
+	// costs the runtime records on each assistant message (see decodeSnapshot).
+	Cost float64 `json:"-"`
+}
+
+// snapshotWire mirrors the fields the board reads off GET /snapshot, including
+// the per-message costs that are summed into the aggregate [Snapshot.Cost].
+// The runtime records a cost on every assistant message; there is no
+// session-level total, so the board computes it here.
+type snapshotWire struct {
+	Title        string `json:"title"`
+	Streaming    bool   `json:"streaming"`
+	LastEventSeq uint64 `json:"last_event_seq"`
+	Messages     []struct {
+		Message struct {
+			Cost float64 `json:"cost"`
+		} `json:"message"`
+	} `json:"messages"`
 }
 
 // Client drives one session's control plane.
@@ -135,9 +154,17 @@ func (c *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	if resp.StatusCode != http.StatusOK {
 		return Snapshot{}, fmt.Errorf("snapshot: %s", resp.Status)
 	}
-	var snap Snapshot
-	if err := json.NewDecoder(resp.Body).Decode(&snap); err != nil {
+	var wire snapshotWire
+	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
 		return Snapshot{}, fmt.Errorf("decode snapshot: %w", err)
+	}
+	snap := Snapshot{
+		Title:        wire.Title,
+		Streaming:    wire.Streaming,
+		LastEventSeq: wire.LastEventSeq,
+	}
+	for _, m := range wire.Messages {
+		snap.Cost += m.Message.Cost
 	}
 	return snap, nil
 }

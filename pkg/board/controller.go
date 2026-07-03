@@ -172,6 +172,7 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		}
 
 		c.setTitleFromSnapshot(card, snap)
+		c.setCost(cardID, snap.Cost)
 
 		// The control plane answers: the agent has started. If the card is
 		// still marked starting, default to waiting; the event replay below
@@ -286,6 +287,13 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 					if !failed {
 						setStatus(StatusWaiting)
 					}
+					// A turn just finished: the event stream carries no cost, so
+					// re-snapshot to mirror the session's new cumulative cost
+					// onto the card. Only for live turns — replayed history is
+					// already reflected in the snapshot read at the loop top.
+					if !replaying {
+						c.refreshCost(ctx, cardID, client)
+					}
 				}
 			case agent.EventRuntimePaused:
 				paused = true
@@ -350,6 +358,37 @@ func (c *Controller) setTitle(cardID, title string) {
 	if c.store.UpdateCardTitle(cardID, title) == nil {
 		c.onChanged()
 	}
+}
+
+// setCost writes only the cost field, and only on change, broadcasting so
+// clients refresh. A zero cost from a snapshot with no billed messages yet is
+// ignored so it never clears a cost the card already shows.
+func (c *Controller) setCost(cardID string, cost float64) {
+	if cost == 0 {
+		return
+	}
+	card, err := c.store.GetCard(cardID)
+	if err != nil || card.Cost == cost {
+		return
+	}
+	if c.store.UpdateCardCost(cardID, cost) == nil {
+		c.onChanged()
+	}
+}
+
+// refreshCost re-reads the session snapshot and mirrors its cumulative cost
+// onto the card. It is called when a turn finishes, since the event stream
+// carries no cost. Failures are ignored: the next loop-top snapshot will
+// reconcile the cost, and a transient control-plane hiccup must not stop the
+// watcher.
+func (c *Controller) refreshCost(ctx context.Context, cardID string, client sessionClient) {
+	sctx, scancel := context.WithTimeout(ctx, snapshotTimeout)
+	defer scancel()
+	snap, err := client.Snapshot(sctx)
+	if err != nil {
+		return
+	}
+	c.setCost(cardID, snap.Cost)
 }
 
 // Ready reports whether the card's agent control plane answers, i.e. the agent

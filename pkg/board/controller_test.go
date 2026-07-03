@@ -131,6 +131,22 @@ func TestControllerSnapshotSetsTitle(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 }
 
+// The controller mirrors the session's cumulative cost from the snapshot onto
+// the card so it can be shown on the board.
+func TestControllerSnapshotSetsCost(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{snap: agent.Snapshot{Cost: 1.25}}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Cost == 1.25
+	}, time.Second, 5*time.Millisecond)
+}
+
 // The snapshot's streaming flag is unreliable for attached sessions, so the
 // controller must replay the whole buffer (since 0) rather than tail from the
 // snapshot's last seq — otherwise a stream_started emitted before it connected
