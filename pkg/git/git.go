@@ -3,6 +3,8 @@ package git
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -173,4 +175,210 @@ func WorktreeDir(name string) string {
 // the given name: "worktree-<name>".
 func WorktreeBranch(name string) string {
 	return "worktree-" + name
+}
+
+// PRURL returns the URL of the pull request opened for the worktree's current
+// branch, or an empty string when none exists yet. It shells out to the GitHub
+// CLI (`gh pr view --json url`), which resolves the PR from the checked-out
+// branch; a missing worktree, a missing `gh`, or simply no PR all yield an
+// empty URL and no error, so callers can poll it cheaply without treating the
+// common "not opened yet" case as a failure.
+//
+// The context bounds the `gh` invocation: it makes a network call to GitHub,
+// so a caller must be able to cap how long it waits (and cancel it) rather
+// than block on a stalled or unauthenticated CLI.
+func PRURL(ctx context.Context, worktree string) (string, error) {
+	if _, err := os.Stat(worktree); err != nil {
+		return "", nil
+	}
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", "--json", "url", "--jq", ".url")
+	cmd.Dir = worktree
+	out, err := cmd.Output()
+	if err != nil {
+		// `gh` exits non-zero when no PR is associated with the branch (and
+		// when it is not installed or not authenticated). None of these are
+		// worth surfacing: the card simply has no PR link yet.
+		return "", nil
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// PR status values returned by [PRStatus]. They are mutually exclusive and
+// each maps to a distinct icon + color the board shows next to a pull request
+// link.
+const (
+	// PRStatusUnknown means there is no PR, or its status could not be read
+	// (no `gh`, not authenticated, network error). The board shows no icon.
+	PRStatusUnknown = ""
+	// PRStatusMerged means the PR has been merged.
+	PRStatusMerged = "merged"
+	// PRStatusClosed means the PR was closed without being merged.
+	PRStatusClosed = "closed"
+	// PRStatusDraft means the PR is open but still a draft.
+	PRStatusDraft = "draft"
+	// PRStatusFailure means the PR is open and blocked: a check failed or a
+	// reviewer requested changes.
+	PRStatusFailure = "failure"
+	// PRStatusPending means the PR is open and checks are still running (and
+	// none has failed yet).
+	PRStatusPending = "pending"
+	// PRStatusSuccess means the PR is open and green: checks passed and/or a
+	// review approved it.
+	PRStatusSuccess = "success"
+	// PRStatusOpen means the PR is open with no CI or review signal yet, i.e.
+	// simply waiting for review.
+	PRStatusOpen = "open"
+)
+
+// prView is the subset of `gh pr view --json ...` output PRStatus parses. Each
+// check in statusCheckRollup is either a CheckRun (with a `conclusion` once
+// COMPLETED, else a running `status`) or a StatusContext (with a `state`), so
+// both fields are read.
+type prView struct {
+	State             string    `json:"state"`          // OPEN, MERGED, CLOSED
+	IsDraft           bool      `json:"isDraft"`        // open draft PR
+	ReviewDecision    string    `json:"reviewDecision"` // APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, ""
+	StatusCheckRollup []prCheck `json:"statusCheckRollup"`
+}
+
+// prCheck is one entry of a PR's statusCheckRollup.
+type prCheck struct {
+	Status     string `json:"status"`     // CheckRun: QUEUED, IN_PROGRESS, COMPLETED
+	Conclusion string `json:"conclusion"` // CheckRun: SUCCESS, FAILURE, ...
+	State      string `json:"state"`      // StatusContext: SUCCESS, FAILURE, PENDING, ...
+}
+
+// PRInfo is the pull request state the board shows on a card: a single
+// mutually-exclusive Status (one of the PRStatus* constants, driving the
+// icon) plus Approved, an independent flag for a green check mark shown when
+// the PR has an approving review and no outstanding change requests.
+type PRInfo struct {
+	Status   string `json:"status"`
+	Approved bool   `json:"approved"`
+}
+
+// PRStatus returns the merge/CI status of a pull request. It identifies the PR
+// by prURL when one is given (`gh pr view <url>`, which works from any
+// directory and keeps reporting a merged/closed PR even after the branch or
+// worktree is gone); otherwise it falls back to the PR of the worktree's
+// current branch. A missing worktree, a missing `gh`, no PR, or any read error
+// all yield a zero [PRInfo] (unknown status, not approved) and no error, so
+// callers can display it as "no icon" without treating the common cases as
+// failures.
+//
+// The context bounds the `gh` invocation: it reaches out to GitHub, so a
+// caller must be able to cap how long it waits (and cancel it).
+func PRStatus(ctx context.Context, worktree, prURL string) (PRInfo, error) {
+	args := []string{"pr", "view", "--json", "state,isDraft,reviewDecision,statusCheckRollup"}
+	cmd := exec.CommandContext(ctx, "gh", args...)
+	if prURL != "" {
+		// Resolve the PR by URL: independent of the local branch/worktree, and
+		// still valid once a merged PR's worktree has been cleaned up.
+		cmd.Args = append(cmd.Args, prURL)
+	} else {
+		// No recorded URL: fall back to the worktree's branch, if it exists.
+		if _, err := os.Stat(worktree); err != nil {
+			return PRInfo{}, nil
+		}
+		cmd.Dir = worktree
+	}
+
+	out, err := cmd.Output()
+	if err != nil {
+		return PRInfo{}, nil
+	}
+
+	var pr prView
+	if err := json.Unmarshal(out, &pr); err != nil {
+		return PRInfo{}, nil
+	}
+	return PRInfo{
+		Status:   rollupStatus(pr),
+		Approved: strings.EqualFold(pr.ReviewDecision, "APPROVED"),
+	}, nil
+}
+
+// rollupStatus reduces a PR's lifecycle state, draft flag, review decision and
+// check rollup to a single mutually-exclusive status, in priority order:
+//
+//   - merged / closed: the PR's terminal lifecycle state wins outright.
+//   - draft: an open draft is not ready for signals yet.
+//   - failure: a failed check or a "changes requested" review blocks it.
+//   - pending: checks are still running (none failed).
+//   - success: checks passed and/or a review approved it.
+//   - open: open with no CI or review signal, i.e. waiting for review.
+func rollupStatus(pr prView) string {
+	switch strings.ToUpper(pr.State) {
+	case "MERGED":
+		return PRStatusMerged
+	case "CLOSED":
+		return PRStatusClosed
+	}
+
+	if pr.IsDraft {
+		return PRStatusDraft
+	}
+
+	ci := ciStatus(pr.StatusCheckRollup)
+	review := strings.ToUpper(pr.ReviewDecision)
+
+	// A blocking signal (failed CI or requested changes) wins over anything
+	// green, so a card never looks ready while something needs attention.
+	if ci == PRStatusFailure || review == "CHANGES_REQUESTED" {
+		return PRStatusFailure
+	}
+	if ci == PRStatusPending {
+		return PRStatusPending
+	}
+	// Green: an explicit approval, or passing checks. ciStatus reports success
+	// only when at least one check ran, so a PR with no checks does not.
+	if review == "APPROVED" || ci == PRStatusSuccess {
+		return PRStatusSuccess
+	}
+	// Open with nothing to report yet: waiting for review.
+	return PRStatusOpen
+}
+
+// ciStatus reduces a PR's check rollup to failure, pending, success, or
+// unknown (no checks / none conclusive). A single failed check makes the whole
+// rollup a failure; otherwise any still-running check makes it pending; a
+// success requires at least one passing check.
+func ciStatus(checks []prCheck) string {
+	pending := false
+	passed := false
+	for _, c := range checks {
+		// A CheckRun reports its outcome in `conclusion` once COMPLETED and,
+		// while still running, leaves it empty with a `status` of QUEUED or
+		// IN_PROGRESS. A StatusContext reports its outcome in `state`. Prefer
+		// the completed outcome, then the StatusContext state, then the
+		// still-running CheckRun status.
+		outcome := c.Conclusion
+		if outcome == "" {
+			outcome = c.State
+		}
+		if outcome == "" {
+			outcome = c.Status
+		}
+		switch strings.ToUpper(outcome) {
+		case "FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED":
+			return PRStatusFailure
+		case "SUCCESS":
+			passed = true
+		case "NEUTRAL", "SKIPPED", "COMPLETED", "":
+			// Not a gating result. An empty outcome, or a bare COMPLETED with
+			// no recorded conclusion, neither passes nor blocks.
+		default:
+			// QUEUED, IN_PROGRESS, PENDING, EXPECTED, WAITING, REQUESTED...
+			pending = true
+		}
+	}
+	switch {
+	case pending:
+		return PRStatusPending
+	case passed:
+		return PRStatusSuccess
+	default:
+		return PRStatusUnknown
+	}
 }

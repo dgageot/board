@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dgageot/board/pkg/agent"
+	"github.com/dgageot/board/pkg/git"
 )
 
 // sessionClient is the slice of the control-plane client the controller needs.
@@ -32,7 +33,14 @@ const (
 	// readyProbeTimeout bounds the control-plane probe behind the Agent button
 	// so a click gets quick feedback instead of hanging.
 	readyProbeTimeout = 2 * time.Second
+	// prLookupTimeout bounds the `gh pr view` call: it reaches out to GitHub,
+	// so a stalled or unauthenticated CLI must not hang the lookup forever.
+	prLookupTimeout = 10 * time.Second
 )
+
+// pushColumn is the id of the column whose prompt asks the agent to open a
+// pull request. A card there is probed for the PR URL once its turn finishes.
+const pushColumn = "push"
 
 // Controller keeps each card in sync with its agent's control plane. One
 // watcher goroutine per card tails the session event stream and mirrors the
@@ -48,6 +56,9 @@ type Controller struct {
 	sessions  SessionManager
 	onChanged func()
 	clientFor func(socket, session string) sessionClient
+	// prURL discovers the pull request opened for a worktree branch. It is a
+	// field so tests can inject a fake without a real `gh` and GitHub repo.
+	prURL func(ctx context.Context, worktree string) (string, error)
 
 	mu       sync.Mutex
 	watchers map[string]*watcher
@@ -66,6 +77,7 @@ func newController(ctx context.Context, store Store, sessions SessionManager, on
 		sessions:  sessions,
 		onChanged: onChanged,
 		clientFor: func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
+		prURL:     git.PRURL,
 		watchers:  make(map[string]*watcher),
 	}
 }
@@ -286,6 +298,16 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 					}
 					if !failed {
 						setStatus(StatusWaiting)
+						// A turn just finished cleanly: if this is a Push-column
+						// card, the agent may have opened a pull request, so
+						// look for its URL. Run it off the event-stream callback
+						// (it shells out to `gh`, a network call) so a slow or
+						// stalled lookup never blocks event processing or the
+						// watcher's cancellation. Skipped during replay: the
+						// loop's top already refreshes state from the snapshot.
+						if !replaying {
+							go c.refreshPRURL(ctx, cardID)
+						}
 					}
 					// A turn just finished: the event stream carries no cost, so
 					// re-snapshot to mirror the session's new cumulative cost
@@ -372,6 +394,32 @@ func (c *Controller) setCost(cardID string, cost float64) {
 		return
 	}
 	if c.store.UpdateCardCost(cardID, cost) == nil {
+		c.onChanged()
+	}
+}
+
+// refreshPRURL looks up the pull request opened for a Push-column card's
+// branch and records its URL, broadcasting so the card shows the link. It is
+// called after a turn finishes cleanly, when the agent may have run `gh pr
+// create`. The card row is re-read so a concurrent move is respected: a card
+// no longer in the Push column is left alone, and the URL is written only on
+// change so a repeated lookup does not spam clients with refreshes.
+//
+// It runs in its own goroutine off the watcher's event loop; the passed
+// context (the watcher's) cancels the `gh` call when the card is stopped, and
+// a timeout bounds a stalled CLI.
+func (c *Controller) refreshPRURL(ctx context.Context, cardID string) {
+	card, err := c.store.GetCard(cardID)
+	if err != nil || card.Column != pushColumn {
+		return
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, prLookupTimeout)
+	defer cancel()
+	url, err := c.prURL(lookupCtx, card.Worktree)
+	if err != nil || url == "" || url == card.PRURL {
+		return
+	}
+	if c.store.UpdateCardPRURL(cardID, url) == nil {
 		c.onChanged()
 	}
 }

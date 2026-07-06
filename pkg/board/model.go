@@ -60,6 +60,10 @@ type Card struct {
 	Branch   string     `json:"branch" db:"branch"`
 	Worktree string     `json:"worktree" db:"worktree"`
 	Session  string     `json:"session" db:"session"`
+	// PRURL is the URL of the pull request opened for this card's branch,
+	// discovered once the Push column's turn finishes. Empty until a PR
+	// exists; the frontend renders it as a link on the card.
+	PRURL string `json:"prUrl" db:"pr_url"`
 	// AgentSession is the docker-agent conversation ID the card owns. It is
 	// passed to `docker agent run --session` on every launch, so a session
 	// recreated after the agent (or tmux) dies resumes the same conversation

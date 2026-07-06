@@ -189,8 +189,8 @@ func tableExists(db *sqlx.DB, name string) bool {
 // --- Cards ---
 
 const (
-	cardColumns     = "id, title, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost"
-	cardNamedValues = ":id, :title, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost"
+	cardColumns     = "id, title, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost, pr_url"
+	cardNamedValues = ":id, :title, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost, :pr_url"
 	insertCardSQL   = "INSERT INTO cards (" + cardColumns + ") VALUES (" + cardNamedValues + ")"
 )
 
@@ -237,6 +237,14 @@ func (s *SQLiteStore) UpdateCardTitle(id, title string) error {
 // cumulative cost from its snapshot without reverting concurrent edits.
 func (s *SQLiteStore) UpdateCardCost(id string, cost float64) error {
 	_, err := s.db.Exec("UPDATE cards SET cost = ? WHERE id = ?", cost, id)
+	return err
+}
+
+// UpdateCardPRURL updates only the pr_url column of a card. Same rationale as
+// [SQLiteStore.UpdateCardStatus]: the controller records the discovered pull
+// request without reverting concurrent edits.
+func (s *SQLiteStore) UpdateCardPRURL(id, prURL string) error {
+	_, err := s.db.Exec("UPDATE cards SET pr_url = ? WHERE id = ?", prURL, id)
 	return err
 }
 

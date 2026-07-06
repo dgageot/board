@@ -746,3 +746,63 @@ func TestMoveCardToColumnPreservesStatus(t *testing.T) {
 	assert.Equal(t, "done", got.Column)
 	assert.Equal(t, StatusRunning, got.Status)
 }
+
+// pushCard is a card sitting in the Push column, where the agent is expected
+// to open a pull request.
+func pushCard() *Card {
+	c := devCard()
+	c.Column = pushColumn
+	return c
+}
+
+// When a Push-column turn finishes cleanly, the controller looks up the pull
+// request the agent opened and records its URL on the card.
+func TestControllerRecordsPRURLOnPushTurnEnd(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(pushCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventStreamStopped, Reason: agent.ReasonNormal},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.prURL = func(context.Context, string) (string, error) { return "https://github.com/o/r/pull/7", nil }
+	c.Start(pushCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.PRURL == "https://github.com/o/r/pull/7"
+	}, time.Second, 5*time.Millisecond)
+}
+
+// A card outside the Push column is never probed for a pull request: the URL
+// stays empty even after a turn finishes.
+func TestControllerDoesNotRecordPRURLOutsidePush(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard())) // dev column
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventStreamStopped, Reason: agent.ReasonNormal},
+		},
+	}
+	var probed atomic.Bool
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.prURL = func(context.Context, string) (string, error) { probed.Store(true); return "x", nil }
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+
+	assert.False(t, probed.Load(), "only Push-column cards are probed for a pull request")
+	card, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Empty(t, card.PRURL)
+}
