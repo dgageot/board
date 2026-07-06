@@ -50,6 +50,7 @@ const API = {
   deleteCard: (id) => api(`/cards/${id}`, { method: "DELETE" }),
   moveCard: (id, column) => api(`/cards/${id}/move`, { method: "POST", body: JSON.stringify({ column }) }),
   diffCard: (id) => api(`/cards/${id}/diff`),
+  prStatus: (id) => api(`/cards/${id}/pr`),
   openVSCode: (id) => api(`/cards/${id}/vscode`, { method: "POST" }),
   listProjects: () => api("/projects"),
   createProject: (data) => api("/projects", { method: "POST", body: JSON.stringify(data) }),
@@ -214,6 +215,50 @@ function renderBoard() {
   }
 }
 
+// prIcon renders an Octicon SVG (16px viewBox) for a PR status, tinted via
+// currentColor by the matching .card-pr-<status> CSS class. The paths are
+// GitHub's own Primer octicons: a distinct glyph per state so "ready to merge"
+// and "merged" (and draft/closed) are told apart at a glance.
+const PR_ICON_PATHS = {
+  // git-pull-request: open, waiting for review (default before status loads).
+  open: `<path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/>`,
+  // git-pull-request-draft.
+  draft: `<path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z"/>`,
+  // git-pull-request-closed.
+  closed: `<path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.748.748 0 0 1 1.265.332.75.75 0 0 1-.205.729l-.97.97.97.97a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-.97-.97-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z"/>`,
+  // git-merge.
+  merged: `<path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z"/>`,
+  // check-circle-fill: green (CI passed / approved).
+  success: `<path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16Zm3.78-9.72a.751.751 0 0 0-.018-1.042.751.751 0 0 0-1.042-.018L6.75 9.19 5.28 7.72a.751.751 0 0 0-1.042.018.751.751 0 0 0-.018 1.042l2 2a.75.75 0 0 0 1.06 0Z"/>`,
+  // x-circle-fill: red (CI failed / changes requested).
+  failure: `<path d="M2.343 13.657A8 8 0 1 1 13.658 2.343 8 8 0 0 1 2.343 13.657ZM6.03 4.97a.751.751 0 0 0-1.042.018.751.751 0 0 0-.018 1.042L6.94 8 4.97 9.97a.749.749 0 0 0 .326 1.275.749.749 0 0 0 .734-.215L8 9.06l1.97 1.97a.749.749 0 0 0 1.275-.326.749.749 0 0 0-.215-.734L9.06 8l1.97-1.97a.749.749 0 0 0-.326-1.275.749.749 0 0 0-.734.215L8 6.94Z"/>`,
+  // hourglass: yellow (CI running).
+  pending: `<path d="M2.75 1h10.5a.75.75 0 0 1 0 1.5h-.75v1.25a4.75 4.75 0 0 1-1.9 3.8l-.333.25a.25.25 0 0 0 0 .4l.333.25a4.75 4.75 0 0 1 1.9 3.8v1.25h.75a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5h.75v-1.25a4.75 4.75 0 0 1 1.9-3.8l.333-.25a.25.25 0 0 0 0-.4L5.4 7.55a4.75 4.75 0 0 1-1.9-3.8V2.5h-.75a.75.75 0 0 1 0-1.5ZM11 2.5H5v1.25c0 1.023.482 1.986 1.3 2.6l.333.25c.934.7.934 2.1 0 2.8l-.333.25a3.251 3.251 0 0 0-1.3 2.6v1.25h6v-1.25a3.251 3.251 0 0 0-1.3-2.6l-.333-.25a1.748 1.748 0 0 1 0-2.8l.333-.25a3.251 3.251 0 0 0 1.3-2.6Z"/>`,
+};
+
+// prIconSvg wraps a status's octicon path in an <svg>. Unknown statuses fall
+// back to the plain open-PR glyph.
+function prIconSvg(status) {
+  const path = PR_ICON_PATHS[status] || PR_ICON_PATHS.open;
+  return `<svg class="card-pr-icon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="currentColor">${path}</svg>`;
+}
+
+// PR_STATUS_LABEL maps a PR status to a human-readable tooltip suffix.
+const PR_STATUS_LABEL = {
+  open: "Waiting for review",
+  draft: "Draft",
+  closed: "Closed",
+  merged: "Merged",
+  success: "Ready to merge",
+  failure: "Changes needed",
+  pending: "CI running",
+};
+
+// PR_APPROVED_SVG is the Octicon check mark shown, in green, when a PR has an
+// approving review and no outstanding change requests. It is separate from the
+// status icon so approval reads independently of CI/merge state.
+const PR_APPROVED_SVG = `<svg class="card-pr-approved" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>`;
+
 function renderCard(card, colId) {
   const el = document.createElement("div");
   el.className = `card card-${card.status}`;
@@ -224,11 +269,24 @@ function renderCard(card, colId) {
   const isLastCol = columns.length > 0 && columns[columns.length - 1].id === colId;
 
   const cost = formatCost(card.cost);
-  const costHtml = cost ? `<div class="card-cost" title="Total agent cost">${cost}</div>` : "";
+  const costHtml = cost ? `<span class="card-cost" title="Total agent cost">${cost}</span>` : "";
+
+  // Show a link to the pull request once the Push column has opened one. The
+  // GitHub-mark icon is uncolored initially; its merge/CI status is fetched
+  // per card after render (see loadPRStatus) and applied as a modifier class.
+  const prLink = card.prUrl
+    ? `<a class="card-pr" href="${esc(card.prUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(card.prUrl)}">${prIconSvg("open")}<span class="card-pr-label">${esc(prLabel(card.prUrl))}</span></a>`
+    : "";
+
+  // Cost and PR link share a single meta row; the wrapper is omitted entirely
+  // when neither is present so an empty line never adds card height.
+  const metaHtml = costHtml || prLink
+    ? `<div class="card-meta">${costHtml}${prLink}</div>`
+    : "";
 
   el.innerHTML = `
     <div class="card-title">${esc(card.title)}</div>
-    ${costHtml}
+    ${metaHtml}
     <div class="card-actions">
       <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" title="Open agent session">Agent</button>
       <button class="btn btn-small btn-secondary" data-action="diff" data-id="${card.id}" title="View worktree diff">Diff</button>
@@ -251,7 +309,42 @@ function renderCard(card, colId) {
     el.classList.remove("dragging");
   });
 
+  // Load the PR's merge/CI status on render (no auto-refresh): a card with a
+  // PR link gets its GitHub icon colored once the status comes back.
+  if (card.prUrl) {
+    loadPRStatus(card.id, el.querySelector(".card-pr"));
+  }
+
   return el;
+}
+
+// loadPRStatus fetches a card's pull request status, then swaps the link's
+// icon to the matching octicon, applies a color class, and appends a green
+// check mark when the PR is approved. It is best-effort: any error, or an
+// empty status, leaves the default (open-PR) icon in place. The link element
+// may be detached by a re-render before the fetch resolves; the update is
+// applied to whatever element was passed, which is then discarded harmlessly
+// if stale.
+async function loadPRStatus(id, linkEl) {
+  if (!linkEl) return;
+  let status, approved;
+  try {
+    ({ status, approved } = await API.prStatus(id));
+  } catch {
+    return; // best-effort: leave the default icon
+  }
+  if (!status) return;
+  linkEl.classList.add(`card-pr-${status}`);
+  const icon = linkEl.querySelector(".card-pr-icon");
+  if (icon) icon.outerHTML = prIconSvg(status);
+  let title = `${linkEl.title} — ${PR_STATUS_LABEL[status] || status}`;
+  // A green check mark for an approved PR, shown independently of the CI/merge
+  // status icon. Skipped once merged: approval is implied and adds no signal.
+  if (approved && status !== "merged") {
+    linkEl.insertAdjacentHTML("beforeend", PR_APPROVED_SVG);
+    title += " — Approved";
+  }
+  linkEl.title = title;
 }
 
 async function handleCardAction(e) {
@@ -942,6 +1035,15 @@ function formatCost(cost) {
   if (!n || n <= 0) return "";
   const decimals = n < 1 ? 3 : 2;
   return "$" + n.toFixed(decimals);
+}
+
+// prLabel renders a pull request URL as a short "PR #<n>" label by pulling the
+// number out of a GitHub-style .../pull/<n> path. When the URL has no such
+// number (an unexpected shape), it falls back to a plain "PR" so the link
+// still shows something meaningful.
+function prLabel(url) {
+  const m = String(url ?? "").match(/\/pull\/(\d+)/);
+  return m ? `PR #${m[1]}` : "PR";
 }
 
 // --- Keyboard shortcuts ---

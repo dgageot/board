@@ -475,8 +475,17 @@ main#board::-webkit-scrollbar-thumb,
     word-break: break-word;
   }
 
+  /* Cost label and PR link share one line below the title. */
+  & .card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    min-width: 0;
+  }
+
   & .card-cost {
-    margin-top: 5px;
+    flex-shrink: 0;
     font-size: 10.5px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -484,6 +493,71 @@ main#board::-webkit-scrollbar-thumb,
     white-space: nowrap;
   }
 
+  /* Link to the pull request opened for a Push-column card. Rendered as a
+     plain text link (GitHub icon + "PR #<n>"), not a badge. The label text
+     stays muted; the icon carries the merge/CI status color once loaded. */
+  & .card-pr {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.16s ease;
+
+    &:hover {
+      color: var(--text);
+      text-decoration: underline;
+    }
+
+    & .card-pr-icon {
+      flex-shrink: 0;
+      /* Neutral until the status loads; a status class below tints it. */
+      color: var(--text-muted);
+    }
+
+    & .card-pr-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Green check mark for an approved PR, shown after the label and always
+       green regardless of the status icon's color. */
+    & .card-pr-approved {
+      flex-shrink: 0;
+      color: #1a7f37;
+    }
+
+    /* Merge/CI/review status: only the octicon is colored, so the link stays
+       readable while still signaling state at a glance. Colors are GitHub's
+       own status palette. */
+    &.card-pr-open .card-pr-icon {
+      color: #1a7f37; /* green: open, waiting for review */
+    }
+    &.card-pr-draft .card-pr-icon {
+      color: #6e7781; /* gray: draft */
+    }
+    &.card-pr-closed .card-pr-icon {
+      color: #cf222e; /* red: closed, not merged */
+    }
+    &.card-pr-merged .card-pr-icon {
+      color: #8250df; /* purple: merged */
+    }
+    &.card-pr-success .card-pr-icon {
+      color: #1a7f37; /* green: CI passed / approved */
+    }
+    &.card-pr-failure .card-pr-icon {
+      color: #cf222e; /* red: CI failed / changes requested */
+    }
+    &.card-pr-pending .card-pr-icon {
+      color: #bf8700; /* yellow: CI running */
+    }
+  }
 
   & .card-actions {
     display: grid;

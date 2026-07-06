@@ -108,6 +108,7 @@ func buildMux(b *Board) (http.Handler, error) {
 	mux.HandleFunc("POST /api/cards/{id}/move", b.handleMoveCard)
 	mux.HandleFunc("POST /api/cards/{id}/jump", b.handleJumpCard)
 	mux.HandleFunc("GET /api/cards/{id}/diff", b.handleDiffCard)
+	mux.HandleFunc("GET /api/cards/{id}/pr", b.handlePRStatus)
 	mux.HandleFunc("DELETE /api/cards/{id}", b.handleDeleteCard)
 	mux.HandleFunc("POST /api/cards/{id}/vscode", b.handleOpenVSCode)
 	mux.HandleFunc("POST /api/columns/{column}/clear", b.handleClearColumn)

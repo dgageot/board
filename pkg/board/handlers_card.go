@@ -231,6 +231,26 @@ func (b *Board) handleDiffCard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"diff": diff})
 }
 
+// handlePRStatus reports the merge/CI status of a card's pull request, fetched
+// live from GitHub via `gh`. The board loads it per card on demand (on every
+// reload, no auto-refresh), so it is a plain read that never mutates state.
+// A card with no PR, or any lookup failure, yields an empty status, which the
+// frontend renders as no icon.
+func (b *Board) handlePRStatus(w http.ResponseWriter, r *http.Request) {
+	card, ok := b.getCard(w, r)
+	if !ok {
+		return
+	}
+
+	info, err := git.PRStatus(r.Context(), card.Worktree, card.PRURL)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+
+	writeJSON(w, info)
+}
+
 // deleteCardResources stops watching the card and cleans up its session and
 // worktree.
 func (b *Board) deleteCardResources(card *Card) {
