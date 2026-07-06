@@ -19,6 +19,10 @@ type Store interface {
 	// controller to mirror the agent session's cumulative cost from its
 	// snapshot, without clobbering concurrent edits.
 	UpdateCardCost(id string, cost float64) error
+	// UpdateCardPRURL persists only the pr_url field of a card. Used by the
+	// controller when it discovers the pull request opened for a Push-column
+	// card, without clobbering concurrent edits.
+	UpdateCardPRURL(id, prURL string) error
 	DeleteCard(id string) error
 	ListCardsByColumn(column string) ([]*Card, error)
 	// MoveCard atomically moves a card to the given column and re-inserts it

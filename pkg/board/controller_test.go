@@ -746,3 +746,57 @@ func TestMoveCardToColumnPreservesStatus(t *testing.T) {
 	assert.Equal(t, "done", got.Column)
 	assert.Equal(t, StatusRunning, got.Status)
 }
+
+// When a turn finishes, the controller looks up the PR whose head commit is
+// the card's worktree HEAD and records its URL.
+func TestControllerRecordsPRURLOnTurnEnd(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventStreamStopped, Reason: agent.ReasonNormal},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.prURLForHead = func(context.Context, string) (string, error) {
+		return "https://github.com/o/r/pull/7", nil
+	}
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.PRURL == "https://github.com/o/r/pull/7"
+	}, time.Second, 5*time.Millisecond)
+}
+
+// No match (e.g. unpushed local commits, or a transient `gh` failure) never
+// clears a URL the card already shows.
+func TestControllerEmptyPRURLDoesNotClear(t *testing.T) {
+	store := openTestStore(t)
+	card := devCard()
+	card.PRURL = "https://github.com/o/r/pull/7"
+	require.NoError(t, store.InsertCard(card))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventStreamStopped, Reason: agent.ReasonNormal},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.prURLForHead = func(context.Context, string) (string, error) { return "", nil } // no match
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+
+	card, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, "https://github.com/o/r/pull/7", card.PRURL, "no match must not clear the stored PR")
+}

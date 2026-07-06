@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dgageot/board/pkg/agent"
+	"github.com/dgageot/board/pkg/git"
 )
 
 // sessionClient is the slice of the control-plane client the controller needs.
@@ -32,6 +33,10 @@ const (
 	// readyProbeTimeout bounds the control-plane probe behind the Agent button
 	// so a click gets quick feedback instead of hanging.
 	readyProbeTimeout = 2 * time.Second
+	// prLookupTimeout bounds the `gh pr list` search for a card's PR: it
+	// reaches out to GitHub, so a stalled or unauthenticated CLI must not hang
+	// the lookup forever.
+	prLookupTimeout = 10 * time.Second
 )
 
 // Controller keeps each card in sync with its agent's control plane. One
@@ -48,6 +53,9 @@ type Controller struct {
 	sessions  SessionManager
 	onChanged func()
 	clientFor func(socket, session string) sessionClient
+	// prURLForHead finds the PR whose head commit is the worktree's HEAD. It
+	// is a field so tests can inject a fake without a real `gh` and GitHub repo.
+	prURLForHead func(ctx context.Context, worktree string) (string, error)
 
 	mu       sync.Mutex
 	watchers map[string]*watcher
@@ -61,12 +69,13 @@ type watcher struct {
 
 func newController(ctx context.Context, store Store, sessions SessionManager, onChanged func()) *Controller {
 	return &Controller{
-		ctx:       ctx,
-		store:     store,
-		sessions:  sessions,
-		onChanged: onChanged,
-		clientFor: func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
-		watchers:  make(map[string]*watcher),
+		ctx:          ctx,
+		store:        store,
+		sessions:     sessions,
+		onChanged:    onChanged,
+		clientFor:    func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
+		prURLForHead: git.PRURLForHead,
+		watchers:     make(map[string]*watcher),
 	}
 }
 
@@ -173,6 +182,9 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 
 		c.setTitleFromSnapshot(card, snap)
 		c.setCost(cardID, snap.Cost)
+		// Look up the card's PR by worktree HEAD off the watcher loop: it shells
+		// out to `gh` (a network call), which must not block event processing.
+		go c.refreshPRURL(ctx, cardID)
 
 		// The control plane answers: the agent has started. If the card is
 		// still marked starting, default to waiting; the event replay below
@@ -287,12 +299,13 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 					if !failed {
 						setStatus(StatusWaiting)
 					}
-					// A turn just finished: the event stream carries no cost, so
-					// re-snapshot to mirror the session's new cumulative cost
-					// onto the card. Only for live turns — replayed history is
-					// already reflected in the snapshot read at the loop top.
+					// A turn just finished: the event stream carries neither the
+					// session's cost nor any PR the agent opened, so re-snapshot
+					// and mirror both onto the card. Only for live turns —
+					// replayed history is already reflected in the snapshot read
+					// at the loop top.
 					if !replaying {
-						c.refreshCost(ctx, cardID, client)
+						go c.refreshFromSnapshot(ctx, cardID, client)
 					}
 				}
 			case agent.EventRuntimePaused:
@@ -376,19 +389,42 @@ func (c *Controller) setCost(cardID string, cost float64) {
 	}
 }
 
-// refreshCost re-reads the session snapshot and mirrors its cumulative cost
-// onto the card. It is called when a turn finishes, since the event stream
-// carries no cost. Failures are ignored: the next loop-top snapshot will
-// reconcile the cost, and a transient control-plane hiccup must not stop the
-// watcher.
-func (c *Controller) refreshCost(ctx context.Context, cardID string, client sessionClient) {
+// refreshFromSnapshot re-reads the session snapshot and mirrors the fields the
+// event stream does not carry — the cumulative cost, and any pull request the
+// agent opened — onto the card. It is called when a turn finishes. Failures
+// are ignored: the next loop-top snapshot will reconcile, and a transient
+// control-plane hiccup must not stop the watcher. It runs in its own goroutine
+// off the watcher's event loop; the passed context (the watcher's) bounds and
+// cancels the work.
+func (c *Controller) refreshFromSnapshot(ctx context.Context, cardID string, client sessionClient) {
 	sctx, scancel := context.WithTimeout(ctx, snapshotTimeout)
 	defer scancel()
-	snap, err := client.Snapshot(sctx)
+	if snap, err := client.Snapshot(sctx); err == nil {
+		c.setCost(cardID, snap.Cost)
+	}
+	c.refreshPRURL(ctx, cardID)
+}
+
+// refreshPRURL finds the pull request whose head commit is the card's worktree
+// HEAD and records its URL. The PR is identified by commit SHA, not branch
+// name, so a branch the agent pushed under a different name (e.g. to a fork)
+// still matches. It writes only on change and never clears a URL the card
+// already shows: an unpushed local commit or a transient `gh` failure simply
+// leaves the last known PR in place. The context bounds the `gh` lookup.
+func (c *Controller) refreshPRURL(ctx context.Context, cardID string) {
+	card, err := c.store.GetCard(cardID)
 	if err != nil {
 		return
 	}
-	c.setCost(cardID, snap.Cost)
+	lookupCtx, cancel := context.WithTimeout(ctx, prLookupTimeout)
+	defer cancel()
+	prURL, err := c.prURLForHead(lookupCtx, card.Worktree)
+	if err != nil || prURL == "" || prURL == card.PRURL {
+		return
+	}
+	if c.store.UpdateCardPRURL(cardID, prURL) == nil {
+		c.onChanged()
+	}
 }
 
 // Ready reports whether the card's agent control plane answers, i.e. the agent
