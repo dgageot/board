@@ -65,6 +65,9 @@ type Card struct {
 	// recreated after the agent (or tmux) dies resumes the same conversation
 	// instead of starting over.
 	AgentSession string `json:"agentSession" db:"agent_session"`
+	// Cost is the session's cumulative cost in US dollars, mirrored from the
+	// agent's control plane by the watcher (summed from per-message costs).
+	Cost float64 `json:"cost" db:"cost"`
 }
 
 // Project represents a saved project config.

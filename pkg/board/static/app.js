@@ -223,8 +223,12 @@ function renderCard(card, colId) {
 
   const isLastCol = columns.length > 0 && columns[columns.length - 1].id === colId;
 
+  const cost = formatCost(card.cost);
+  const costHtml = cost ? `<div class="card-cost" title="Total agent cost">${cost}</div>` : "";
+
   el.innerHTML = `
     <div class="card-title">${esc(card.title)}</div>
+    ${costHtml}
     <div class="card-actions">
       <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" title="Open agent session">Agent</button>
       <button class="btn btn-small btn-secondary" data-action="diff" data-id="${card.id}" title="View worktree diff">Diff</button>
@@ -928,6 +932,16 @@ const ESC_CHARS = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": 
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ESC_CHARS[c]);
+}
+
+// formatCost renders a card's cumulative agent cost as a dollar amount, or an
+// empty string when there is nothing to show yet. Sub-cent costs keep more
+// precision so an early, cheap turn is not rounded away to "$0.00".
+function formatCost(cost) {
+  const n = Number(cost);
+  if (!n || n <= 0) return "";
+  const decimals = n < 1 ? 3 : 2;
+  return "$" + n.toFixed(decimals);
 }
 
 // --- Keyboard shortcuts ---

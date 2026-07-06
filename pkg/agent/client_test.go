@@ -22,7 +22,7 @@ func testClient(t *testing.T, handler http.HandlerFunc) *Client {
 func TestSnapshot(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/sessions/sess-1/snapshot", r.URL.Path)
-		_, _ = io.WriteString(w, `{"title":"Hello","streaming":true,"last_event_seq":42}`)
+		_, _ = io.WriteString(w, `{"title":"Hello","streaming":true,"last_event_seq":42,"messages":[{"message":{"cost":0.25}},{"message":{"role":"user"}},{"message":{"cost":0.75}}]}`)
 	})
 
 	snap, err := c.Snapshot(t.Context())
@@ -30,6 +30,8 @@ func TestSnapshot(t *testing.T) {
 	assert.Equal(t, "Hello", snap.Title)
 	assert.True(t, snap.Streaming)
 	assert.Equal(t, uint64(42), snap.LastEventSeq)
+	// Cost is summed from the per-message costs, ignoring messages with none.
+	assert.InDelta(t, 1.0, snap.Cost, 1e-9)
 }
 
 // A 404 on /snapshot means the route is missing (docker-agent < v1.80.0): it
