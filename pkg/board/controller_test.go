@@ -606,6 +606,91 @@ func TestControllerSnapshotClearsStarting(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 }
 
+// A launch that carried an initial prompt is about to run its first turn: the
+// control plane answers while the agent is still initializing (MCP servers,
+// RAG indexing…), before the prompt is submitted. The card must stay
+// "starting" — not flash green — until the turn's stream_started arrives.
+func TestControllerExpectedTurnKeepsStarting(t *testing.T) {
+	store := openTestStore(t)
+	card := devCard()
+	card.Status = StatusStarting
+	require.NoError(t, store.InsertCard(card))
+
+	client := &fakeClient{snap: agent.Snapshot{}} // control plane answers, no events yet
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.ExpectTurn(card.ID)
+	c.Start(card)
+
+	require.Eventually(t, func() bool {
+		client.mu.Lock()
+		defer client.mu.Unlock()
+		return client.streamCalled
+	}, time.Second, 5*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+
+	got, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, StatusStarting, got.Status, "a card expecting its first turn must not turn green before the turn starts")
+}
+
+// The expected turn arriving (stream_started) flips the card to running and
+// clears the expectation, so the turn's end flips it to waiting as usual.
+func TestControllerExpectedTurnRunsThenWaits(t *testing.T) {
+	store := openTestStore(t)
+	card := devCard()
+	card.Status = StatusStarting
+	require.NoError(t, store.InsertCard(card))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{},
+		events: []agent.Event{
+			{Type: agent.EventUserMessage},
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventStreamStopped, Reason: agent.ReasonNormal},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.ExpectTurn(card.ID)
+	c.Start(card)
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+	assert.False(t, c.turnExpected(card.ID), "stream_started clears the expected turn")
+}
+
+// A prompt-bearing relaunch (SendPrompt to a dead agent) runs the prompt as
+// its first turn: the relaunched card must stay "starting" until that turn
+// begins, exactly like a fresh launch with a prompt.
+func TestRelaunchWithPromptExpectsTurn(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+	c := newTestController(t, store, newFakeSessionManager(), &fakeClient{})
+
+	require.NoError(t, c.relaunch(devCard(), "do it"))
+	assert.True(t, c.turnExpected("c1"), "a prompt-bearing relaunch expects a first turn")
+
+	// A plain resume (no prompt) must clear a stale expectation: no turn is
+	// coming, so the card may turn green once the control plane answers.
+	require.NoError(t, c.relaunch(devCard(), ""))
+	assert.False(t, c.turnExpected("c1"), "a promptless relaunch expects no turn")
+}
+
+// Stop drops the card's turn expectation along with its watcher, so a deleted
+// card does not leak an entry.
+func TestControllerStopClearsExpectTurn(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+	c := newTestController(t, store, newFakeSessionManager(), &fakeClient{})
+
+	c.ExpectTurn("c1")
+	c.Start(devCard())
+	c.Stop("c1")
+
+	assert.False(t, c.turnExpected("c1"))
+}
+
 func TestControllerDoesNotRelaunchWhileStarting(t *testing.T) {
 	store := openTestStore(t)
 	require.NoError(t, store.InsertCard(devCard()))

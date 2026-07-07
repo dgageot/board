@@ -109,6 +109,10 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 		return nil, fmt.Errorf("insert card: %w", err)
 	}
 
+	// The launch carries the initial prompt: the first turn is imminent, so
+	// the watcher must hold the card at "starting" until stream_started
+	// instead of flashing green when the control plane first answers.
+	b.controller.ExpectTurn(card.ID)
 	b.controller.Start(card)
 	b.broadcast()
 	return card, nil

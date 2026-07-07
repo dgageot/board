@@ -59,6 +59,12 @@ type Controller struct {
 
 	mu       sync.Mutex
 	watchers map[string]*watcher
+	// expectTurn marks cards whose latest launch carried an initial prompt: a
+	// first turn is imminent, so the watcher keeps them "starting" until the
+	// event stream reports it instead of flashing green ("waiting") first.
+	// Without it, a card whose agent spends a while initializing (MCP servers,
+	// RAG indexing…) before running the prompt looks done when it never ran.
+	expectTurn map[string]bool
 }
 
 // watcher tracks a running watch goroutine so it can be cancelled and waited on.
@@ -76,6 +82,7 @@ func newController(ctx context.Context, store Store, sessions SessionManager, on
 		clientFor:    func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
 		prURLForHead: git.PRURLForHead,
 		watchers:     make(map[string]*watcher),
+		expectTurn:   make(map[string]bool),
 	}
 }
 
@@ -108,6 +115,28 @@ func (c *Controller) Start(card *Card) {
 	}()
 }
 
+// ExpectTurn records that the card's agent was just launched with an initial
+// prompt, so its first turn is imminent.
+func (c *Controller) ExpectTurn(cardID string) {
+	c.setExpectTurn(cardID, true)
+}
+
+func (c *Controller) setExpectTurn(cardID string, expect bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if expect {
+		c.expectTurn[cardID] = true
+	} else {
+		delete(c.expectTurn, cardID)
+	}
+}
+
+func (c *Controller) turnExpected(cardID string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.expectTurn[cardID]
+}
+
 // Stop cancels the card's watcher and waits for it to exit. Waiting matters:
 // it guarantees the watcher cannot relaunch the session after the caller goes
 // on to tear it down (kill the tmux session, remove the worktree), which would
@@ -116,6 +145,7 @@ func (c *Controller) Stop(cardID string) {
 	c.mu.Lock()
 	w, ok := c.watchers[cardID]
 	delete(c.watchers, cardID)
+	delete(c.expectTurn, cardID)
 	c.mu.Unlock()
 	if ok {
 		w.cancel()
@@ -190,7 +220,13 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		// still marked starting, default to waiting; the event replay below
 		// promptly corrects it if a turn is already underway. Checking the
 		// loop-top read is safe: this watcher is the only status writer.
-		if card.Status == StatusStarting {
+		// Exception: a launch that carried an initial prompt is about to run
+		// its first turn — the control plane answers while the agent is still
+		// initializing (MCP servers, RAG indexing…), before the TUI submits
+		// the prompt — so the card stays "starting" until stream_started flips
+		// it to running. Flashing green ("waiting") before the first turn
+		// would misreport an agent that is still working as done.
+		if card.Status == StatusStarting && !c.turnExpected(cardID) {
 			c.setStatus(cardID, StatusWaiting)
 		}
 
@@ -276,6 +312,7 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 			case agent.EventStreamStarted:
 				failed = false
 				paused = false
+				c.setExpectTurn(cardID, false) // the expected turn arrived
 				depth++
 				setStatus(StatusRunning)
 			case agent.EventError:
@@ -501,7 +538,11 @@ func (c *Controller) relaunch(card *Card, prompt string) error {
 		return err
 	}
 	// The agent is launching again: show it as starting until its control
-	// plane answers and the event stream drives the status.
+	// plane answers and the event stream drives the status. A prompt-bearing
+	// relaunch runs that prompt as its first turn, so the card must stay
+	// "starting" until the turn's stream_started — not flash green while the
+	// agent is still initializing.
+	c.setExpectTurn(card.ID, prompt != "")
 	c.setStatus(card.ID, StatusStarting)
 	return nil
 }
