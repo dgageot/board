@@ -109,6 +109,40 @@ func TestRollupStatus(t *testing.T) {
 	}
 }
 
+// The check rollup lists every run recorded on the head commit, including
+// stale ones superseded by a re-run or cancelled by a concurrency group. Only
+// the most recent run of each check may count, otherwise a PR shows red after
+// a failed check was re-run green.
+func TestRollupStatusIgnoresSupersededRuns(t *testing.T) {
+	at := func(minute int) time.Time { return time.Date(2026, 1, 1, 12, minute, 0, 0, time.UTC) }
+	run := func(name, conclusion string, minute int) prCheck {
+		return prCheck{Name: name, WorkflowName: "CI", Status: "COMPLETED", Conclusion: conclusion, StartedAt: at(minute)}
+	}
+	ctx := func(name, state string, minute int) prCheck {
+		return prCheck{Context: name, State: state, StartedAt: at(minute)}
+	}
+
+	tests := []struct {
+		name   string
+		checks []prCheck
+		want   string
+	}{
+		{"failed run re-run green is success", []prCheck{run("test", "FAILURE", 0), run("test", "SUCCESS", 5)}, PRStatusSuccess},
+		{"cancelled run superseded by green is success", []prCheck{run("test", "CANCELLED", 0), run("test", "SUCCESS", 5)}, PRStatusSuccess},
+		{"failed run re-running again is pending", []prCheck{run("test", "FAILURE", 0), {Name: "test", WorkflowName: "CI", Status: "IN_PROGRESS", StartedAt: at(5)}}, PRStatusPending},
+		{"latest run failing is still failure", []prCheck{run("test", "SUCCESS", 0), run("test", "FAILURE", 5)}, PRStatusFailure},
+		{"same job name in another workflow is distinct", []prCheck{run("test", "SUCCESS", 5), {Name: "test", WorkflowName: "Nightly", Status: "COMPLETED", Conclusion: "FAILURE", StartedAt: at(0)}}, PRStatusFailure},
+		{"status context superseded by green is success", []prCheck{ctx("ci/build", "FAILURE", 0), ctx("ci/build", "SUCCESS", 5)}, PRStatusSuccess},
+		{"unnamed entries are all kept", []prCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}, {Status: "COMPLETED", Conclusion: "FAILURE"}}, PRStatusFailure},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr := prView{State: "OPEN", StatusCheckRollup: tt.checks}
+			assert.Equal(t, tt.want, rollupStatus(pr))
+		})
+	}
+}
+
 func TestUpstreamBaseFallsBackToOrigin(t *testing.T) {
 	repo := initRepo(t)
 	// No remotes at all: fall back to the conventional origin/main.

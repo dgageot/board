@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // RemoveWorktree removes a git worktree and its branch.
@@ -303,9 +304,27 @@ type prView struct {
 
 // prCheck is one entry of a PR's statusCheckRollup.
 type prCheck struct {
-	Status     string `json:"status"`     // CheckRun: QUEUED, IN_PROGRESS, COMPLETED
-	Conclusion string `json:"conclusion"` // CheckRun: SUCCESS, FAILURE, ...
-	State      string `json:"state"`      // StatusContext: SUCCESS, FAILURE, PENDING, ...
+	Name         string    `json:"name"`         // CheckRun: check run name
+	WorkflowName string    `json:"workflowName"` // CheckRun: owning workflow
+	Context      string    `json:"context"`      // StatusContext: context name
+	Status       string    `json:"status"`       // CheckRun: QUEUED, IN_PROGRESS, COMPLETED
+	Conclusion   string    `json:"conclusion"`   // CheckRun: SUCCESS, FAILURE, ...
+	State        string    `json:"state"`        // StatusContext: SUCCESS, FAILURE, PENDING, ...
+	StartedAt    time.Time `json:"startedAt"`    // start of this run (both kinds)
+}
+
+// key groups the runs of one logical check: the status context name, or the
+// workflow plus check run name (the same job name can exist in two
+// workflows). An empty key means the entry cannot be grouped and is kept
+// as-is.
+func (c prCheck) key() string {
+	if c.Context != "" {
+		return c.Context
+	}
+	if c.Name == "" {
+		return ""
+	}
+	return c.WorkflowName + "\x00" + c.Name
 }
 
 // PRInfo is the pull request state the board shows on a card: a single
@@ -399,14 +418,39 @@ func rollupStatus(pr prView) string {
 	return PRStatusOpen
 }
 
+// latestChecks reduces a check rollup to the most recent run of each check.
+// The rollup lists every run recorded on the PR's head commit — including
+// stale ones superseded by a re-run, or cancelled by a concurrency group — so
+// judging all of them would keep a PR red after a failed check was re-run
+// green. GitHub's UI (and `gh pr checks`) only shows the latest run per
+// check; this mirrors that.
+func latestChecks(checks []prCheck) []prCheck {
+	sorted := slices.Clone(checks)
+	slices.SortStableFunc(sorted, func(a, b prCheck) int {
+		return b.StartedAt.Compare(a.StartedAt) // newest first
+	})
+	seen := map[string]bool{}
+	latest := make([]prCheck, 0, len(sorted))
+	for _, c := range sorted {
+		key := c.key()
+		if key != "" && seen[key] {
+			continue // an older run of a check already kept
+		}
+		seen[key] = true
+		latest = append(latest, c)
+	}
+	return latest
+}
+
 // ciStatus reduces a PR's check rollup to failure, pending, success, or
-// unknown (no checks / none conclusive). A single failed check makes the whole
-// rollup a failure; otherwise any still-running check makes it pending; a
-// success requires at least one passing check.
+// unknown (no checks / none conclusive). Only the latest run of each check
+// counts (see latestChecks). A single failed check makes the whole rollup a
+// failure; otherwise any still-running check makes it pending; a success
+// requires at least one passing check.
 func ciStatus(checks []prCheck) string {
 	pending := false
 	passed := false
-	for _, c := range checks {
+	for _, c := range latestChecks(checks) {
 		// A CheckRun reports its outcome in `conclusion` once COMPLETED and,
 		// while still running, leaves it empty with a `status` of QUEUED or
 		// IN_PROGRESS. A StatusContext reports its outcome in `state`. Prefer
