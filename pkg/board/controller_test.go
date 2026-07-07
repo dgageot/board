@@ -657,7 +657,34 @@ func TestControllerExpectedTurnRunsThenWaits(t *testing.T) {
 		card, err := store.GetCard("c1")
 		return err == nil && card.Status == StatusWaiting
 	}, time.Second, 5*time.Millisecond)
-	assert.False(t, c.turnExpected(card.ID), "stream_started clears the expected turn")
+	expected, _ := c.turnExpected(card.ID)
+	assert.False(t, expected, "stream_started clears the expected turn")
+}
+
+// An expected turn that never starts must not pin the card at "starting"
+// forever — a starting card counts as busy and cannot even be moved. Past
+// expectTurnTimeout the hold is dropped: the stream is cut when the
+// expectation expires, the watcher re-evaluates it and falls back to waiting.
+func TestControllerExpectedTurnExpires(t *testing.T) {
+	store := openTestStore(t)
+	card := devCard()
+	card.Status = StatusStarting
+	require.NoError(t, store.InsertCard(card))
+
+	client := &fakeClient{snap: agent.Snapshot{}} // control plane answers, the turn never starts
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	// An expectation about to expire: the hold lasts a few more milliseconds.
+	c.mu.Lock()
+	c.expectTurn[card.ID] = time.Now().Add(50 * time.Millisecond).Add(-expectTurnTimeout)
+	c.mu.Unlock()
+	c.Start(card)
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+	expected, _ := c.turnExpected(card.ID)
+	assert.False(t, expected, "an expired expectation is dropped")
 }
 
 // A prompt-bearing relaunch (SendPrompt to a dead agent) runs the prompt as
@@ -669,12 +696,14 @@ func TestRelaunchWithPromptExpectsTurn(t *testing.T) {
 	c := newTestController(t, store, newFakeSessionManager(), &fakeClient{})
 
 	require.NoError(t, c.relaunch(devCard(), "do it"))
-	assert.True(t, c.turnExpected("c1"), "a prompt-bearing relaunch expects a first turn")
+	expected, _ := c.turnExpected("c1")
+	assert.True(t, expected, "a prompt-bearing relaunch expects a first turn")
 
 	// A plain resume (no prompt) must clear a stale expectation: no turn is
 	// coming, so the card may turn green once the control plane answers.
 	require.NoError(t, c.relaunch(devCard(), ""))
-	assert.False(t, c.turnExpected("c1"), "a promptless relaunch expects no turn")
+	expected, _ = c.turnExpected("c1")
+	assert.False(t, expected, "a promptless relaunch expects no turn")
 }
 
 // Stop drops the card's turn expectation along with its watcher, so a deleted
@@ -688,7 +717,8 @@ func TestControllerStopClearsExpectTurn(t *testing.T) {
 	c.Start(devCard())
 	c.Stop("c1")
 
-	assert.False(t, c.turnExpected("c1"))
+	expected, _ := c.turnExpected("c1")
+	assert.False(t, expected)
 }
 
 func TestControllerDoesNotRelaunchWhileStarting(t *testing.T) {

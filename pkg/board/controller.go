@@ -37,6 +37,12 @@ const (
 	// reaches out to GitHub, so a stalled or unauthenticated CLI must not hang
 	// the lookup forever.
 	prLookupTimeout = 10 * time.Second
+	// expectTurnTimeout bounds how long an expected first turn may hold a
+	// card at "starting". If the launch prompt never runs (dropped, or
+	// canceled by a user attached to the TUI), the card falls back to waiting
+	// instead of sitting blue — and unmovable, starting counts as busy —
+	// forever. Generous: agent init (MCP servers, RAG indexing…) can be slow.
+	expectTurnTimeout = 5 * time.Minute
 )
 
 // Controller keeps each card in sync with its agent's control plane. One
@@ -64,7 +70,11 @@ type Controller struct {
 	// event stream reports it instead of flashing green ("waiting") first.
 	// Without it, a card whose agent spends a while initializing (MCP servers,
 	// RAG indexing…) before running the prompt looks done when it never ran.
-	expectTurn map[string]bool
+	// The value is the launch time: an expectation older than
+	// expectTurnTimeout no longer holds the card. In-memory only: a board
+	// restart forgets it, reopening the early green flash for cards mid-launch
+	// — a narrow window that self-corrects at stream_started.
+	expectTurn map[string]time.Time
 }
 
 // watcher tracks a running watch goroutine so it can be cancelled and waited on.
@@ -82,7 +92,7 @@ func newController(ctx context.Context, store Store, sessions SessionManager, on
 		clientFor:    func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
 		prURLForHead: git.PRURLForHead,
 		watchers:     make(map[string]*watcher),
-		expectTurn:   make(map[string]bool),
+		expectTurn:   make(map[string]time.Time),
 	}
 }
 
@@ -125,16 +135,31 @@ func (c *Controller) setExpectTurn(cardID string, expect bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if expect {
-		c.expectTurn[cardID] = true
+		c.expectTurn[cardID] = time.Now()
 	} else {
 		delete(c.expectTurn, cardID)
 	}
 }
 
-func (c *Controller) turnExpected(cardID string) bool {
+// turnExpected reports whether the card should be held at "starting" because
+// its launch prompt's first turn has not been seen yet, and for how much
+// longer the hold may last. An expectation past expectTurnTimeout is dropped:
+// the prompt was likely lost, and waiting is a recoverable misreport while a
+// stuck "starting" card cannot even be moved.
+func (c *Controller) turnExpected(cardID string) (bool, time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.expectTurn[cardID]
+	since, ok := c.expectTurn[cardID]
+	if !ok {
+		return false, 0
+	}
+	remaining := expectTurnTimeout - time.Since(since)
+	if remaining <= 0 {
+		delete(c.expectTurn, cardID)
+		log.Printf("card %s: expected turn never started; showing as waiting", cardID)
+		return false, 0
+	}
+	return true, remaining
 }
 
 // Stop cancels the card's watcher and waits for it to exit. Waiting matters:
@@ -219,15 +244,28 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		// The control plane answers: the agent has started. If the card is
 		// still marked starting, default to waiting; the event replay below
 		// promptly corrects it if a turn is already underway. Checking the
-		// loop-top read is safe: this watcher is the only status writer.
+		// loop-top read is safe: the only other status writer is relaunch,
+		// which writes "starting" — after setting the turn expectation when it
+		// carries a prompt — so a stale read at worst delays this transition
+		// to the next loop iteration.
 		// Exception: a launch that carried an initial prompt is about to run
 		// its first turn — the control plane answers while the agent is still
 		// initializing (MCP servers, RAG indexing…), before the TUI submits
 		// the prompt — so the card stays "starting" until stream_started flips
 		// it to running. Flashing green ("waiting") before the first turn
-		// would misreport an agent that is still working as done.
-		if card.Status == StatusStarting && !c.turnExpected(cardID) {
-			c.setStatus(cardID, StatusWaiting)
+		// would misreport an agent that is still working as done. The hold is
+		// bounded: while it lasts, the event stream below is given a deadline
+		// so a turn that never starts cuts a quiet stream, re-runs this check
+		// and falls back to waiting — the stream would otherwise block forever
+		// and never re-evaluate the expectation. When the turn does arrive the
+		// deadline just forces one spurious reconnect, which replays cheaply.
+		streamCtx, streamCancel := ctx, context.CancelFunc(func() {})
+		if card.Status == StatusStarting {
+			if expected, remaining := c.turnExpected(cardID); !expected {
+				c.setStatus(cardID, StatusWaiting)
+			} else {
+				streamCtx, streamCancel = context.WithTimeout(ctx, remaining)
+			}
 		}
 
 		// Derive the running state from the event stream, not snap.Streaming:
@@ -293,7 +331,7 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		}
 
 		exited := false
-		_ = client.StreamEvents(ctx, 0, func(ev agent.Event) bool {
+		_ = client.StreamEvents(streamCtx, 0, func(ev agent.Event) bool {
 			if replaying && (ev.Seq == 0 || ev.Seq > snap.LastEventSeq) {
 				flushReplay() // past the snapshot: this event is live
 			}
@@ -365,6 +403,7 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 			}
 			return true
 		})
+		streamCancel()
 
 		if exited && ctx.Err() == nil {
 			// The agent process ended; resume it so the card stays usable.
