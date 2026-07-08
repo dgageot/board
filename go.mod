@@ -1,6 +1,6 @@
 module github.com/dgageot/board
 
-go 1.26.1
+go 1.26.5
 
 require (
 	al.essio.dev/pkg/shellescape v1.6.0
