@@ -115,6 +115,9 @@ func newTestController(t *testing.T, store Store, sessions SessionManager, clien
 	t.Helper()
 	c := newController(t.Context(), store, sessions, func() {})
 	c.clientFor = func(string, string) sessionClient { return client }
+	// Keep tests hermetic: never shell out to `gh` for PR lookups. Tests
+	// exercising the PR path override this with their own fake.
+	c.prURLForHead = func(context.Context, string) (string, error) { return "", nil }
 	return c
 }
 

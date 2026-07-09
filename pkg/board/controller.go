@@ -474,7 +474,9 @@ func (c *Controller) setCost(cardID string, cost float64) {
 // finishes. Failures are ignored: the next loop-top snapshot will reconcile,
 // and a transient control-plane hiccup must not stop the watcher. It runs in
 // its own goroutine off the watcher's event loop; the passed context (the
-// watcher's) bounds and cancels the work.
+// watcher's) bounds and cancels the work. Last-write-wins: a newer live
+// session_title may be overwritten by this older snapshot's title, which the
+// next turn end or reconnect self-heals.
 func (c *Controller) refreshFromSnapshot(ctx context.Context, cardID string, client sessionClient) {
 	sctx, scancel := context.WithTimeout(ctx, snapshotTimeout)
 	defer scancel()
