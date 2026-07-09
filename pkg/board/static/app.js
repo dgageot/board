@@ -58,7 +58,7 @@ const API = {
   reorderProjects: (ids) => api("/projects/order", { method: "PUT", body: JSON.stringify(ids) }),
   listAgents: () => api("/agents"),
   browse: (path) => api(`/browse${path ? `?path=${encodeURIComponent(path)}` : ""}`),
-  clearColumn: (column) => api(`/columns/${column}/clear`, { method: "POST" }),
+  clearColumn: (column) => api(`/columns/${encodeURIComponent(column)}/clear`, { method: "POST" }),
   listColumns: () => api("/columns"),
   updateColumns: (data) => api("/columns", { method: "PUT", body: JSON.stringify(data) }),
 };
@@ -142,14 +142,14 @@ function renderBoard() {
     colEl.style.setProperty("--col-accent", color);
     colEl.innerHTML = `
       <div class="column-header">
-        <span class="column-title">${col.emoji} ${esc(col.name)}</span>
+        <span class="column-title">${esc(col.emoji)} ${esc(col.name)}</span>
         <div class="column-header-actions">
           ${headerExtra}
           ${clearExtra}
           <span class="card-count">${colCards.length}</span>
         </div>
       </div>
-      <div class="column-body" data-column="${col.id}"></div>
+      <div class="column-body" data-column="${esc(col.id)}"></div>
     `;
 
     const body = colEl.querySelector(".column-body");
@@ -852,6 +852,12 @@ function wireColumnEditorItem(item) {
 
   item.querySelector(".column-drag").addEventListener("mousedown", () => {
     item.draggable = true;
+    // A press without a drag must not leave the row draggable, or text
+    // selection in its inputs would start a row drag. During a real drag the
+    // mouseup fires at drop time, after dragstart, so the drag is unaffected.
+    document.addEventListener("mouseup", () => {
+      item.draggable = false;
+    }, { once: true });
   });
 
   item.addEventListener("dragstart", () => {

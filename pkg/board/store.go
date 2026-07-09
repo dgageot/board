@@ -6,6 +6,10 @@ type Store interface {
 	ListCards() ([]*Card, error)
 	GetCard(id string) (*Card, error)
 	InsertCard(c *Card) error
+	// InsertCardInFirstColumn inserts the card into the board's first column,
+	// resolved atomically inside the insert transaction so a concurrent
+	// column replace cannot leave the card in a deleted column.
+	InsertCardInFirstColumn(c *Card) error
 	// UpdateCardStatus persists only the status field of a card. Background
 	// goroutines (the controller's watchers) use it so a stale snapshot of the
 	// row cannot silently revert concurrent edits made by the move-card
@@ -28,7 +32,8 @@ type Store interface {
 	// MoveCard atomically moves a card to the given column and re-inserts it
 	// at the end of the ordering. The row is re-read inside the transaction so
 	// the move preserves the current status; when requireIdle is set a running
-	// card is rejected, atomically with the move.
+	// card is rejected, atomically with the move. The destination column must
+	// exist, checked atomically with the move.
 	MoveCard(id, column string, requireIdle bool) (*Card, error)
 
 	// Projects

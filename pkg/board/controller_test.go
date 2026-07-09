@@ -824,6 +824,7 @@ func TestControllerStopEndsWatcher(t *testing.T) {
 
 func TestMoveCardToColumnReinserts(t *testing.T) {
 	store := openTestStore(t)
+	require.NoError(t, store.SeedColumns(defaultColumns))
 	require.NoError(t, store.InsertCard(devCard()))
 
 	sessions := newFakeSessionManager()
@@ -847,6 +848,7 @@ func TestMoveCardToColumnReinserts(t *testing.T) {
 // activity, not the move itself.
 func TestMoveCardToColumnPreservesStatus(t *testing.T) {
 	store := openTestStore(t)
+	require.NoError(t, store.SeedColumns(defaultColumns))
 	running := devCard()
 	running.Status = StatusRunning
 	require.NoError(t, store.InsertCard(running))

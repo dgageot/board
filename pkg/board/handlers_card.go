@@ -71,9 +71,9 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 		return nil, err
 	}
 
-	// New cards enter the board's first column, whatever it is configured to
-	// be. Resolved before launching the agent so a misconfigured board fails
-	// before any session or worktree exists.
+	// Fail fast when the board has no columns, before any session or worktree
+	// exists. The card's actual column is assigned atomically at insert time
+	// (InsertCardInFirstColumn), so this check is only an early exit.
 	cols, err := b.store.ListColumns()
 	if err != nil {
 		return nil, fmt.Errorf("list columns: %w", err)
@@ -105,7 +105,6 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 	card = &Card{
 		ID:           newID(),
 		Title:        placeholderTitle(prompt),
-		Column:       cols[0].ID,
 		Status:       StatusStarting,
 		Project:      name,
 		Agent:        agent,
@@ -116,7 +115,9 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 		AgentSession: agentSession,
 	}
 
-	if err := b.store.InsertCard(card); err != nil {
+	// The first column is resolved inside the insert transaction: a
+	// concurrent column replace cannot leave the card in a deleted column.
+	if err := b.store.InsertCardInFirstColumn(card); err != nil {
 		return nil, fmt.Errorf("insert card: %w", err)
 	}
 
@@ -183,6 +184,10 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	srcIdx := columnIndex(cols, card.Column)
+	// A card whose column is unknown (only possible via a hand-edited DB;
+	// store-level checks keep cards in existing columns) has srcIdx -1, so any
+	// move counts as forward: idle is required and the prompt is delivered — a
+	// safe recovery path back onto the board.
 	movedForward := dstIdx > srcIdx
 
 	// A move never changes the card's status: the color tracks the agent's

@@ -3,8 +3,14 @@ package board
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 )
+
+// columnIDPattern constrains client-supplied column ids: they end up in URL
+// paths (clear-column) and DOM attributes, so only a safe charset is
+// accepted. Generated ids (hex) always match.
+var columnIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 func (b *Board) handleListColumns(w http.ResponseWriter, _ *http.Request) {
 	cols, err := b.store.ListColumns()
@@ -41,8 +47,8 @@ func (b *Board) handleUpdateColumns(w http.ResponseWriter, r *http.Request) {
 }
 
 // normalizeColumns validates a posted column list in place: every column
-// needs a name, ids must be unique, and columns without an id (new ones) get
-// one generated.
+// needs a name, ids must be unique and URL/DOM-safe, and columns without an
+// id (new ones) get one generated.
 func normalizeColumns(cols []Column) error {
 	if len(cols) == 0 {
 		return fmt.Errorf("%w: at least one column required", errBadInput)
@@ -50,11 +56,15 @@ func normalizeColumns(cols []Column) error {
 	seen := make(map[string]bool, len(cols))
 	for i := range cols {
 		cols[i].Name = strings.TrimSpace(cols[i].Name)
+		cols[i].Emoji = strings.TrimSpace(cols[i].Emoji)
 		if cols[i].Name == "" {
 			return fmt.Errorf("%w: column name required", errBadInput)
 		}
 		if cols[i].ID == "" {
 			cols[i].ID = newID()
+		}
+		if !columnIDPattern.MatchString(cols[i].ID) {
+			return fmt.Errorf("%w: invalid column id %q", errBadInput, cols[i].ID)
 		}
 		if seen[cols[i].ID] {
 			return fmt.Errorf("%w: duplicate column id %q", errBadInput, cols[i].ID)

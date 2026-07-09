@@ -1,7 +1,9 @@
 package board
 
 import (
+	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -34,7 +36,11 @@ func openStore() (*SQLiteStore, error) {
 	}
 
 	dbPath := filepath.Join(dbDir, "board.db")
-	db, err := sqlx.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
+	// _txlock=immediate makes read-then-write transactions (MoveCard,
+	// ReplaceColumns) take the write lock up front, so a concurrent writer
+	// surfaces as a retryable SQLITE_BUSY (covered by busy_timeout) instead of
+	// a non-retryable SQLITE_BUSY_SNAPSHOT on lock upgrade.
+	db, err := sqlx.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
@@ -215,6 +221,24 @@ func (s *SQLiteStore) InsertCard(c *Card) error {
 	return err
 }
 
+// InsertCardInFirstColumn inserts the card into the board's first column,
+// resolved inside the transaction. Deciding the column at insert time (rather
+// than from a snapshot the caller read earlier) closes the race with a
+// concurrent ReplaceColumns that removes the column the caller saw: the card
+// can never land in a column that no longer exists.
+func (s *SQLiteStore) InsertCardInFirstColumn(c *Card) error {
+	return runInTx(s.db, func(tx *sqlx.Tx) error {
+		if err := tx.Get(&c.Column, "SELECT id FROM columns ORDER BY pos LIMIT 1"); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: no columns configured", errBadInput)
+			}
+			return err
+		}
+		_, err := tx.NamedExec(insertCardSQL, c)
+		return err
+	})
+}
+
 // UpdateCardStatus updates only the status column of a card. It is meant for
 // background goroutines that hold a stale snapshot of the row (the
 // controller's watchers); a full-row update would silently revert
@@ -276,11 +300,20 @@ func (s *SQLiteStore) ReinsertCard(c *Card) error {
 // gets the highest rowid. The row is re-read inside the transaction: the move
 // preserves the current status (not a caller's stale snapshot) and, when
 // requireIdle is set, a card whose watcher concurrently flipped it to busy
-// (starting or running) is rejected with [errCardRunning]. The updated card
-// is returned.
+// (starting or running) is rejected with [errCardRunning]. The destination
+// column's existence is also checked inside the transaction, so a concurrent
+// ReplaceColumns that deletes it cannot leave the card orphaned. The updated
+// card is returned.
 func (s *SQLiteStore) MoveCard(id, column string, requireIdle bool) (*Card, error) {
 	var card Card
 	err := runInTx(s.db, func(tx *sqlx.Tx) error {
+		var exists bool
+		if err := tx.Get(&exists, "SELECT COUNT(*) > 0 FROM columns WHERE id = ?", column); err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("%w: unknown column %q", errBadInput, column)
+		}
 		if err := tx.Get(&card, "SELECT "+cardColumns+" FROM cards WHERE id = ?", id); err != nil {
 			return err
 		}
@@ -388,18 +421,18 @@ func (s *SQLiteStore) ReplaceColumns(cols []Column) error {
 	for i, c := range cols {
 		ids[i] = c.ID
 	}
-	query, args, err := sqlx.In("SELECT COUNT(*) FROM cards WHERE col NOT IN (?)", ids)
+	query, args, err := sqlx.In("SELECT DISTINCT col FROM cards WHERE col NOT IN (?) ORDER BY col", ids)
 	if err != nil {
 		return err
 	}
 
 	return runInTx(s.db, func(tx *sqlx.Tx) error {
-		var orphaned int
-		if err := tx.Get(&orphaned, query, args...); err != nil {
+		var orphans []string
+		if err := tx.Select(&orphans, query, args...); err != nil {
 			return err
 		}
-		if orphaned > 0 {
-			return errColumnHasCards
+		if len(orphans) > 0 {
+			return fmt.Errorf("%w: %s", errColumnHasCards, strings.Join(orphans, ", "))
 		}
 		if _, err := tx.Exec("DELETE FROM columns"); err != nil {
 			return err

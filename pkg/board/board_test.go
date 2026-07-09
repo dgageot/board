@@ -151,6 +151,7 @@ func TestHandleUpdateColumnsRejectsBadInput(t *testing.T) {
 		{"empty list", `[]`},
 		{"missing name", `[{"id":"dev","prompt":"p"}]`},
 		{"duplicate id", `[{"id":"dev","name":"A"},{"id":"dev","name":"B"}]`},
+		{"unsafe id", `[{"id":"\"><img src=x>","name":"A"}]`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

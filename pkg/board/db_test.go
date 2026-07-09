@@ -161,6 +161,7 @@ func TestListCardsByColumn(t *testing.T) {
 
 func TestMoveCardMovesToEnd(t *testing.T) {
 	store := openTestStore(t)
+	require.NoError(t, store.SeedColumns(defaultColumns))
 
 	for _, id := range []string{"a", "b", "c"} {
 		require.NoError(t, store.InsertCard(&Card{
@@ -186,6 +187,7 @@ func TestMoveCardMovesToEnd(t *testing.T) {
 // rejected based on the stored status, not a caller's stale snapshot.
 func TestMoveCardRequireIdleRejectsRunning(t *testing.T) {
 	store := openTestStore(t)
+	require.NoError(t, store.SeedColumns(defaultColumns))
 
 	require.NoError(t, store.InsertCard(&Card{
 		ID: "a", Title: "a", Column: "dev", Status: StatusRunning,
@@ -345,9 +347,59 @@ func TestReplaceColumnsRejectsDeletingColumnWithCards(t *testing.T) {
 
 	err := store.ReplaceColumns([]Column{{ID: "a", Name: "A", Emoji: "🅰️", Prompt: ""}})
 	require.ErrorIs(t, err, errColumnHasCards)
+	assert.Contains(t, err.Error(), "b", "the blocking column is named")
 
 	// The rejected replace must not be persisted.
 	cols, err := store.ListColumns()
 	require.NoError(t, err)
 	assert.Len(t, cols, 2)
+}
+
+// The first column is resolved inside the insert transaction, so the card can
+// never land in a column deleted by a concurrent replace.
+func TestInsertCardInFirstColumn(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.SeedColumns([]Column{
+		{ID: "first", Name: "First", Emoji: "1️⃣", Prompt: ""},
+		{ID: "second", Name: "Second", Emoji: "2️⃣", Prompt: ""},
+	}))
+
+	card := &Card{
+		ID: "c1", Title: "t", Status: StatusStarting,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s",
+	}
+	require.NoError(t, store.InsertCardInFirstColumn(card))
+	assert.Equal(t, "first", card.Column)
+
+	got, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, "first", got.Column)
+}
+
+func TestInsertCardInFirstColumnRejectsNoColumns(t *testing.T) {
+	store := openTestStore(t)
+
+	err := store.InsertCardInFirstColumn(&Card{
+		ID: "c1", Title: "t", Status: StatusStarting,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s",
+	})
+	require.ErrorIs(t, err, errBadInput)
+}
+
+// The destination column is checked inside the move transaction, so a
+// concurrent replace that deletes it cannot orphan the card.
+func TestMoveCardRejectsUnknownColumn(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.SeedColumns(defaultColumns))
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "a", Title: "a", Column: "dev", Status: StatusWaiting,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s",
+	}))
+
+	_, err := store.MoveCard("a", "gone", false)
+	require.ErrorIs(t, err, errBadInput)
+
+	card, err := store.GetCard("a")
+	require.NoError(t, err)
+	assert.Equal(t, "dev", card.Column, "a rejected move must not be persisted")
 }
