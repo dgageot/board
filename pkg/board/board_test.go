@@ -120,19 +120,73 @@ func TestHandleUpdateColumns(t *testing.T) {
 
 	require.NoError(t, store.SeedColumns([]Column{
 		{ID: "dev", Name: "Dev", Emoji: "🔨", Prompt: "old"},
+		{ID: "old", Name: "Old", Emoji: "🗑", Prompt: ""},
 	}))
 
-	body := `[{"id":"dev","prompt":"new prompt"}]`
+	// Rename dev, change its prompt, drop "old", add a new column (no id) and
+	// put it first.
+	body := `[{"name":"Plan","emoji":"📝","prompt":"plan it"},{"id":"dev","name":"Build","emoji":"🔨","prompt":"new prompt"}]`
 	req := httptest.NewRequest(http.MethodPut, "/api/columns", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	b.handleUpdateColumns(rec, req)
 
-	assert.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Equal(t, http.StatusOK, rec.Code)
 
 	cols, err := store.ListColumns()
 	require.NoError(t, err)
-	require.Len(t, cols, 1)
-	assert.Equal(t, "new prompt", cols[0].Prompt)
+	require.Len(t, cols, 2)
+	assert.NotEmpty(t, cols[0].ID, "a new column gets a generated id")
+	assert.Equal(t, "Plan", cols[0].Name)
+	assert.Equal(t, "plan it", cols[0].Prompt)
+	assert.Equal(t, "dev", cols[1].ID)
+	assert.Equal(t, "Build", cols[1].Name)
+	assert.Equal(t, "new prompt", cols[1].Prompt)
+}
+
+func TestHandleUpdateColumnsRejectsBadInput(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"empty list", `[]`},
+		{"missing name", `[{"id":"dev","prompt":"p"}]`},
+		{"duplicate id", `[{"id":"dev","name":"A"},{"id":"dev","name":"B"}]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, _ := newTestBoard(t)
+
+			req := httptest.NewRequest(http.MethodPut, "/api/columns", strings.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+			b.handleUpdateColumns(rec, req)
+
+			assert.Equal(t, http.StatusBadRequest, rec.Code)
+		})
+	}
+}
+
+func TestHandleUpdateColumnsRejectsDeletingColumnWithCards(t *testing.T) {
+	b, store := newTestBoard(t)
+
+	require.NoError(t, store.SeedColumns([]Column{
+		{ID: "dev", Name: "Dev", Emoji: "🔨", Prompt: ""},
+		{ID: "done", Name: "Done", Emoji: "✅", Prompt: ""},
+	}))
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "c1", Title: "T", Column: "done", Status: StatusWaiting,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s",
+	}))
+
+	body := `[{"id":"dev","name":"Dev","emoji":"🔨","prompt":""}]`
+	req := httptest.NewRequest(http.MethodPut, "/api/columns", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	b.handleUpdateColumns(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	cols, err := store.ListColumns()
+	require.NoError(t, err)
+	assert.Len(t, cols, 2)
 }
 
 func TestHandleUpdateColumnsInvalidJSON(t *testing.T) {

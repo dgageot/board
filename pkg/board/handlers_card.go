@@ -71,6 +71,17 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 		return nil, err
 	}
 
+	// New cards enter the board's first column, whatever it is configured to
+	// be. Resolved before launching the agent so a misconfigured board fails
+	// before any session or worktree exists.
+	cols, err := b.store.ListColumns()
+	if err != nil {
+		return nil, fmt.Errorf("list columns: %w", err)
+	}
+	if len(cols) == 0 {
+		return nil, errors.New("no columns configured")
+	}
+
 	worktreeName := newWorktreeName()
 	branch := git.WorktreeBranch(worktreeName)
 	wtPath := git.WorktreeDir(worktreeName)
@@ -94,7 +105,7 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 	card = &Card{
 		ID:           newID(),
 		Title:        placeholderTitle(prompt),
-		Column:       "dev",
+		Column:       cols[0].ID,
 		Status:       StatusStarting,
 		Project:      name,
 		Agent:        agent,

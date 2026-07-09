@@ -787,36 +787,97 @@ document.getElementById("folder-select").addEventListener("click", () => {
   document.getElementById("folder-dialog").close();
 });
 
-// Columns dialog
+// Columns dialog: a full editor for the board's columns. Rows can be
+// reordered by their drag handle, renamed, given a new emoji and prompt,
+// deleted, or added; nothing is persisted until Save posts the whole list.
 document.getElementById("btn-columns").addEventListener("click", () => {
   renderColumnsEditor();
   document.getElementById("columns-dialog").showModal();
 });
 
+document.getElementById("col-add").addEventListener("click", () => {
+  const list = document.getElementById("columns-list");
+  list.insertAdjacentHTML("beforeend", columnEditorItem({ id: "", name: "", emoji: "", prompt: "" }));
+  const item = list.lastElementChild;
+  wireColumnEditorItem(item);
+  item.querySelector(".col-name").focus();
+});
+
 document.getElementById("columns-dialog").querySelector("form").addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  const updates = columns.map((col) => {
-    const textarea = document.getElementById(`col-prompt-${col.id}`);
-    return { id: col.id, prompt: textarea ? textarea.value : col.prompt };
-  });
+  const updates = [...document.querySelectorAll("#columns-list .column-edit-item")].map((el) => ({
+    id: el.dataset.id,
+    name: el.querySelector(".col-name").value.trim(),
+    emoji: el.querySelector(".col-emoji").value.trim(),
+    prompt: el.querySelector(".col-prompt").value,
+  }));
 
   try {
-    await API.updateColumns(updates);
+    columns = await API.updateColumns(updates);
+    renderBoard();
     document.getElementById("columns-dialog").close();
   } catch (err) {
     alert(err.message);
   }
 });
 
+function columnEditorItem(col) {
+  return `
+    <div class="column-edit-item" data-id="${esc(col.id)}">
+      <div class="column-edit-row">
+        <span class="column-drag" title="Drag to reorder">☰</span>
+        <input class="col-emoji" type="text" value="${esc(col.emoji)}" placeholder="🔨" title="Emoji" autocomplete="off">
+        <input class="col-name" type="text" value="${esc(col.name)}" placeholder="Column name" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button type="button" class="btn btn-small btn-danger col-delete" title="Delete column">✕</button>
+      </div>
+      <textarea class="col-prompt" rows="3" placeholder="No prompt (manual column)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">${esc(col.prompt)}</textarea>
+    </div>
+  `;
+}
+
 function renderColumnsEditor() {
   const list = document.getElementById("columns-list");
-  list.innerHTML = columns.map((col) => `
-    <div class="column-prompt-item">
-      <div class="column-prompt-name">${esc(col.name)}</div>
-      <textarea id="col-prompt-${col.id}" rows="3" placeholder="No prompt (manual column)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">${esc(col.prompt)}</textarea>
-    </div>
-  `).join("");
+  list.innerHTML = columns.map((col) => columnEditorItem(col)).join("");
+  list.querySelectorAll(".column-edit-item").forEach(wireColumnEditorItem);
+}
+
+// Drag-to-reorder and delete for one column editor row. The row is only
+// draggable while the handle is held, so text selection in the inputs keeps
+// working.
+let draggedColumnItem = null;
+
+function wireColumnEditorItem(item) {
+  const list = item.parentElement;
+
+  item.querySelector(".column-drag").addEventListener("mousedown", () => {
+    item.draggable = true;
+  });
+
+  item.addEventListener("dragstart", () => {
+    draggedColumnItem = item;
+    item.classList.add("dragging");
+  });
+
+  item.addEventListener("dragend", () => {
+    item.draggable = false;
+    item.classList.remove("dragging");
+    draggedColumnItem = null;
+  });
+
+  item.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    if (!draggedColumnItem || draggedColumnItem === item) return;
+    const rect = item.getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    list.insertBefore(draggedColumnItem, after ? item.nextSibling : item);
+  });
+
+  // Deletion is local until Save; the server rejects deleting a column that
+  // still has cards.
+  item.querySelector(".col-delete").addEventListener("click", () => {
+    item.remove();
+  });
 }
 
 // --- Diff Dialog ---

@@ -41,5 +41,9 @@ type Store interface {
 	// Columns
 	ListColumns() ([]Column, error)
 	SeedColumns(cols []Column) error
-	UpdateColumnPrompt(id, prompt string) error
+	// ReplaceColumns atomically replaces the whole column set with cols, in
+	// order. Deleting a column that still holds cards is rejected with
+	// errColumnHasCards, atomically with the replace, so no card can be left
+	// pointing at a column that no longer exists.
+	ReplaceColumns(cols []Column) error
 }

@@ -15,6 +15,10 @@ var (
 	// inside the store transaction so a watcher flipping the status
 	// concurrently cannot slip a running card past the handler's check.
 	errCardRunning = fmt.Errorf("%w: cannot move a running card forward", errBadInput)
+	// errColumnHasCards rejects a column update that would delete a column
+	// still holding cards. It is checked inside the store transaction so a
+	// concurrent card move cannot slip past the handler's view.
+	errColumnHasCards = fmt.Errorf("%w: cannot delete a column that still has cards", errBadInput)
 )
 
 // writeError maps domain errors to HTTP responses.

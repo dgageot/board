@@ -301,17 +301,53 @@ func TestSeedColumnsIsIdempotent(t *testing.T) {
 	assert.Len(t, got, 1)
 }
 
-func TestUpdateColumnPrompt(t *testing.T) {
+func TestReplaceColumns(t *testing.T) {
 	store := openTestStore(t)
 
 	require.NoError(t, store.SeedColumns([]Column{
 		{ID: "a", Name: "A", Emoji: "🅰️", Prompt: "old"},
+		{ID: "b", Name: "B", Emoji: "🅱️", Prompt: "p"},
 	}))
 
-	require.NoError(t, store.UpdateColumnPrompt("a", "new prompt"))
+	// Rename a, drop b, add c, and reorder: c before a.
+	require.NoError(t, store.ReplaceColumns([]Column{
+		{ID: "c", Name: "C", Emoji: "©️", Prompt: "do C"},
+		{ID: "a", Name: "Renamed", Emoji: "🔨", Prompt: "new prompt"},
+	}))
 
 	cols, err := store.ListColumns()
 	require.NoError(t, err)
-	require.Len(t, cols, 1)
-	assert.Equal(t, "new prompt", cols[0].Prompt)
+	require.Len(t, cols, 2)
+	assert.Equal(t, "c", cols[0].ID)
+	assert.Equal(t, "do C", cols[0].Prompt)
+	assert.Equal(t, "a", cols[1].ID)
+	assert.Equal(t, "Renamed", cols[1].Name)
+	assert.Equal(t, "new prompt", cols[1].Prompt)
+}
+
+func TestReplaceColumnsRejectsEmpty(t *testing.T) {
+	store := openTestStore(t)
+
+	require.ErrorIs(t, store.ReplaceColumns(nil), errBadInput)
+}
+
+func TestReplaceColumnsRejectsDeletingColumnWithCards(t *testing.T) {
+	store := openTestStore(t)
+
+	require.NoError(t, store.SeedColumns([]Column{
+		{ID: "a", Name: "A", Emoji: "🅰️", Prompt: ""},
+		{ID: "b", Name: "B", Emoji: "🅱️", Prompt: ""},
+	}))
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "c1", Title: "t", Column: "b", Status: StatusWaiting,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s",
+	}))
+
+	err := store.ReplaceColumns([]Column{{ID: "a", Name: "A", Emoji: "🅰️", Prompt: ""}})
+	require.ErrorIs(t, err, errColumnHasCards)
+
+	// The rejected replace must not be persisted.
+	cols, err := store.ListColumns()
+	require.NoError(t, err)
+	assert.Len(t, cols, 2)
 }

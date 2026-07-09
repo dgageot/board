@@ -826,30 +826,108 @@ dialog.dialog-large {
   gap: 0 16px;
 }
 
-/* Column prompt editor */
-.column-prompt-item {
-  margin-bottom: 14px;
+/* Column editor */
+.column-edit-item {
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 76%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
 
-  & .column-prompt-name {
-    font-size: 12px;
-    font-weight: 800;
-    margin-bottom: 6px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
+  &:hover {
+    border-color: var(--border-strong);
+  }
+
+  &.dragging {
+    opacity: 0.6;
+    border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+    box-shadow: var(--shadow-glow);
+  }
+
+  & .column-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  & .column-drag {
+    color: var(--text-subtle);
+    cursor: grab;
+    font-size: 14px;
+    line-height: 1;
+    user-select: none;
+    flex-shrink: 0;
+
+    &:active {
+      cursor: grabbing;
+    }
+  }
+
+  & input,
+  & textarea {
+    padding: 8px 10px;
+    background: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+  }
+
+  & .col-emoji {
+    width: 46px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  & .col-name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+  }
+
+  & .col-delete {
+    flex-shrink: 0;
   }
 
   & textarea {
     display: block;
     width: 100%;
-    padding: 10px 12px;
-    background: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    font-size: 13px;
     resize: vertical;
   }
+}
+
+/* Columns dialog: cap height and scroll only the column list so the header
+   and actions stay visible. Scoped to [open] like #projects-dialog. */
+#columns-dialog[open] {
+  max-height: min(86vh, 760px);
+  display: flex;
+  flex-direction: column;
+
+  & .dialog-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  & #columns-list {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    margin: 0 -6px;
+    padding: 0 6px;
+  }
+
+  & .dialog-actions {
+    flex-shrink: 0;
+  }
+}
+
+/* Keep "Add Column" on the left, away from the Save action. */
+#col-add {
+  margin-right: auto;
 }
 
 /* Project list in dialog */

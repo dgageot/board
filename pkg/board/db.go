@@ -376,7 +376,42 @@ func (s *SQLiteStore) SeedColumns(cols []Column) error {
 	})
 }
 
-func (s *SQLiteStore) UpdateColumnPrompt(id, prompt string) error {
-	_, err := s.db.Exec("UPDATE columns SET prompt = ? WHERE id = ?", prompt, id)
-	return err
+// ReplaceColumns atomically replaces the whole column set with cols, in
+// order. It is rejected with errColumnHasCards when a card still sits in a
+// column absent from cols; the check runs inside the transaction so a
+// concurrent card move cannot slip past it.
+func (s *SQLiteStore) ReplaceColumns(cols []Column) error {
+	if len(cols) == 0 {
+		return fmt.Errorf("%w: at least one column required", errBadInput)
+	}
+	ids := make([]string, len(cols))
+	for i, c := range cols {
+		ids[i] = c.ID
+	}
+	query, args, err := sqlx.In("SELECT COUNT(*) FROM cards WHERE col NOT IN (?)", ids)
+	if err != nil {
+		return err
+	}
+
+	return runInTx(s.db, func(tx *sqlx.Tx) error {
+		var orphaned int
+		if err := tx.Get(&orphaned, query, args...); err != nil {
+			return err
+		}
+		if orphaned > 0 {
+			return errColumnHasCards
+		}
+		if _, err := tx.Exec("DELETE FROM columns"); err != nil {
+			return err
+		}
+		for i, c := range cols {
+			if _, err := tx.Exec(
+				"INSERT INTO columns (id, name, emoji, prompt, pos) VALUES (?, ?, ?, ?, ?)",
+				c.ID, c.Name, c.Emoji, c.Prompt, i,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
