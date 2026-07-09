@@ -235,7 +235,7 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 			log.Printf("card %s: control plane answered", cardID)
 		}
 
-		c.setTitleFromSnapshot(card, snap)
+		c.setTitleFromSnapshot(cardID, snap)
 		c.setCost(cardID, snap.Cost)
 		// Look up the card's PR by worktree HEAD off the watcher loop: it shells
 		// out to `gh` (a network call), which must not block event processing.
@@ -375,8 +375,10 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 						setStatus(StatusWaiting)
 					}
 					// A turn just finished: the event stream carries neither the
-					// session's cost nor any PR the agent opened, so re-snapshot
-					// and mirror both onto the card. Only for live turns —
+					// session's cost nor any PR the agent opened, and a
+					// session_title emitted mid-turn may have been dropped
+					// (delivery is best-effort), so re-snapshot and mirror them
+					// onto the card. Only for live turns —
 					// replayed history is already reflected in the snapshot read
 					// at the loop top.
 					if !replaying {
@@ -420,9 +422,9 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 // snapshot's streaming flag is deliberately ignored: it is unreliable for
 // attached sessions (see watch), so running/waiting is driven entirely by the
 // stream_started/stream_stopped events.
-func (c *Controller) setTitleFromSnapshot(card *Card, snap agent.Snapshot) {
+func (c *Controller) setTitleFromSnapshot(cardID string, snap agent.Snapshot) {
 	if snap.Title != "" {
-		c.setTitle(card.ID, snap.Title)
+		c.setTitle(cardID, snap.Title)
 	}
 }
 
@@ -466,16 +468,18 @@ func (c *Controller) setCost(cardID string, cost float64) {
 }
 
 // refreshFromSnapshot re-reads the session snapshot and mirrors the fields the
-// event stream does not carry — the cumulative cost, and any pull request the
-// agent opened — onto the card. It is called when a turn finishes. Failures
-// are ignored: the next loop-top snapshot will reconcile, and a transient
-// control-plane hiccup must not stop the watcher. It runs in its own goroutine
-// off the watcher's event loop; the passed context (the watcher's) bounds and
-// cancels the work.
+// event stream does not carry reliably — the title (whose session_title event
+// is delivered best-effort and may be dropped), the cumulative cost, and any
+// pull request the agent opened — onto the card. It is called when a turn
+// finishes. Failures are ignored: the next loop-top snapshot will reconcile,
+// and a transient control-plane hiccup must not stop the watcher. It runs in
+// its own goroutine off the watcher's event loop; the passed context (the
+// watcher's) bounds and cancels the work.
 func (c *Controller) refreshFromSnapshot(ctx context.Context, cardID string, client sessionClient) {
 	sctx, scancel := context.WithTimeout(ctx, snapshotTimeout)
 	defer scancel()
 	if snap, err := client.Snapshot(sctx); err == nil {
+		c.setTitleFromSnapshot(cardID, snap)
 		c.setCost(cardID, snap.Cost)
 	}
 	c.refreshPRURL(ctx, cardID)

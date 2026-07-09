@@ -70,6 +70,10 @@ type fakeClient struct {
 	followErr    error
 	followKey    string
 	followMsg    string
+	// onStream, when set, runs once at the start of the first StreamEvents
+	// call, before any event is delivered. Tests use it to change the
+	// snapshot after the watcher's loop-top read.
+	onStream func()
 }
 
 func (f *fakeClient) Snapshot(context.Context) (agent.Snapshot, error) {
@@ -83,7 +87,12 @@ func (f *fakeClient) StreamEvents(ctx context.Context, since uint64, onEvent fun
 	f.gotSince = since
 	f.streamCalled = true
 	evs := append([]agent.Event(nil), f.events...)
+	onStream := f.onStream
+	f.onStream = nil
 	f.mu.Unlock()
+	if onStream != nil {
+		onStream()
+	}
 	for _, ev := range evs {
 		if !onEvent(ev) {
 			return nil
@@ -208,6 +217,36 @@ func TestControllerEventsDriveStatusAndTitle(t *testing.T) {
 	require.Eventually(t, func() bool {
 		card, err := store.GetCard("c1")
 		return err == nil && card.Title == "Generated" && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+}
+
+// A session_title emitted mid-turn can be dropped: event delivery is
+// best-effort and a drop never reaches the replay buffer either. The turn-end
+// re-snapshot must heal the title, exactly like the cost.
+func TestControllerTurnEndRefreshesTitle(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard())) // title "old"
+
+	client := &fakeClient{
+		// The session_title event for the rename was dropped: only the
+		// stream start/stop pair is seen.
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted},
+			{Type: agent.EventStreamStopped, Reason: agent.ReasonNormal},
+		},
+	}
+	// The rename happens after the watcher's loop-top snapshot read.
+	client.onStream = func() {
+		client.mu.Lock()
+		client.snap.Title = "Renamed"
+		client.mu.Unlock()
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Title == "Renamed"
 	}, time.Second, 5*time.Millisecond)
 }
 
