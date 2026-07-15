@@ -78,6 +78,11 @@ const errCodeUnknownSession = "unknown_session"
 type Event struct {
 	Type  string `json:"type"`
 	Title string `json:"title"`
+	// SessionID identifies the session the event belongs to: the watched
+	// root session, or a sub-agent/skill sub-session whose events are
+	// forwarded onto the root's stream stamped with their own id. Empty on
+	// agents that predate the field.
+	SessionID string `json:"session_id"`
 	// Reason classifies how a stream ended (stream_stopped only): "normal",
 	// "error", "canceled", "hook_blocked"... It is authoritative for the
 	// turn's outcome, unlike mid-turn error events which a parent agent may

@@ -498,6 +498,90 @@ func TestControllerNestedStreamsStayRunning(t *testing.T) {
 	assert.Equal(t, StatusRunning, card.Status)
 }
 
+// Sub-agent and skill sub-sessions forward their stream events onto the root
+// session's stream stamped with their own session id, and delivery is
+// best-effort. When a sub-session's stream_started is dropped, its
+// stream_stopped must not close the root turn and flash the card green while
+// the parent is still working: only root-session stream events drive the
+// running/waiting flip.
+func TestControllerDroppedSubSessionStartStaysRunning(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard())) // AgentSession "sess-1"
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted, SessionID: "sess-1"}, // parent turn
+			// The sub-session's stream_started was dropped; only its stop
+			// arrives. It must not flip the card to waiting.
+			{Type: agent.EventStreamStopped, SessionID: "sub-9", Reason: agent.ReasonNormal},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
+
+	time.Sleep(100 * time.Millisecond) // let the sub-session stop be processed
+	card, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, StatusRunning, card.Status, "an orphan sub-session stop must not turn the card green")
+}
+
+// The root session's own stop still ends the turn when sub-session streams
+// carry their own ids: the card flips to waiting on the root stop, not on any
+// sub-session stop.
+func TestControllerRootStopEndsTurnWithSessionIDs(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard())) // AgentSession "sess-1"
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted, SessionID: "sess-1"},
+			{Type: agent.EventStreamStarted, SessionID: "sub-9"},
+			{Type: agent.EventStreamStopped, SessionID: "sub-9", Reason: agent.ReasonNormal},
+			{Type: agent.EventStreamStopped, SessionID: "sess-1", Reason: agent.ReasonNormal},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusWaiting
+	}, time.Second, 5*time.Millisecond)
+}
+
+// A turn that resumes from /pause and launches a sub-session whose
+// stream_started is dropped: the sub-session's foreign stop is still activity
+// after runtime_paused, so it must flip the card back to running — the parent
+// turn is still open — not leave it stuck paused.
+func TestControllerSubSessionStopAfterPauseResumesRunning(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard())) // AgentSession "sess-1"
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted, SessionID: "sess-1"},
+			{Type: agent.EventRuntimePaused, SessionID: "sess-1"},
+			// Resumed: a sub-session ran, but its stream_started was dropped.
+			{Type: agent.EventStreamStopped, SessionID: "sub-9", Reason: agent.ReasonNormal},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
+}
+
 // A sub-agent's failure is not turn-fatal: the parent captures the error and
 // finishes the turn normally. The mid-turn error event turns the card red, but
 // the outermost stop's "normal" reason is authoritative and must clear it —

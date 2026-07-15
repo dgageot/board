@@ -120,7 +120,7 @@ func TestStreamEventsParsesDataLinesAndStops(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "10", r.URL.Query().Get("since"))
 		fmt.Fprint(w,
-			"id: 11\ndata: {\"type\":\"stream_started\"}\n\n"+
+			"id: 11\ndata: {\"type\":\"stream_started\",\"session_id\":\"sess-1\"}\n\n"+
 				"id: 12\ndata: {\"type\":\"session_title\",\"title\":\"My Task\"}\n\n"+
 				"id: 13\ndata: {\"type\":\"stream_stopped\"}\n\n")
 	})
@@ -134,6 +134,7 @@ func TestStreamEventsParsesDataLinesAndStops(t *testing.T) {
 
 	require.Len(t, got, 2)
 	assert.Equal(t, EventStreamStarted, got[0].Type)
+	assert.Equal(t, "sess-1", got[0].SessionID, "the event's session_id is decoded")
 	assert.Equal(t, uint64(11), got[0].Seq, "the SSE id line is the event's seq")
 	assert.Equal(t, EventSessionTitle, got[1].Type)
 	assert.Equal(t, "My Task", got[1].Title)

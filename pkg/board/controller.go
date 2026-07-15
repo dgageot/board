@@ -277,21 +277,29 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		// snapshot's last seq — is still seen and keeps the card running.
 		//
 		// A turn can spawn nested streams: every sub-agent (transferred task)
-		// and skill emits its own stream_started/stream_stopped pair. The depth
-		// keeps the card running until the outermost stream stops, instead of
-		// flipping to waiting the moment an inner sub-agent finishes while the
-		// parent is still working. Replayed orphan stops, whose start was
-		// evicted from the buffer, are clamped at zero.
+		// and skill emits its own stream_started/stream_stopped pair onto the
+		// root's stream, stamped with the sub-session's own id. Only the root
+		// session's events drive the depth: the root stream brackets the whole
+		// turn (the parent blocks on its sub-sessions), so sub-session events
+		// are ignored — a dropped sub-session start can then no longer let the
+		// matching stop zero the depth and flash the card green while the
+		// parent is still working. Events without a session id (agents that
+		// predate the field) all count, falling back to pure depth counting.
+		// Replayed orphan stops, whose start was evicted from the buffer, are
+		// clamped at zero.
 		//
 		// Delivery of stream events is best-effort: the agent emits
 		// stream_stopped non-blockingly during teardown, and its TUI drops
 		// events for slow control-plane subscribers before they reach the
-		// replay buffer. A dropped start or stop therefore skews the depth for
-		// good — reconnecting and replaying cannot recover it. user_message is
-		// the recovery point: the runtime emits it only for real user turns
+		// replay buffer. A dropped root start or stop therefore skews the depth
+		// for good — reconnecting and replaying cannot recover it. user_message
+		// is the recovery point: the runtime emits it only for real user turns
 		// (never for sub-agent or skill sub-sessions), right before the turn's
 		// outermost stream_started, so it resets the depth the same way the
 		// agent's own TUI zeroes its stream depth on every submit.
+		rootStream := func(ev agent.Event) bool {
+			return ev.SessionID == "" || ev.SessionID == card.AgentSession
+		}
 		depth := 0
 		// failed marks that the current turn emitted an error event. The card is
 		// turned red the moment that event arrives — it is delivered reliably,
@@ -351,13 +359,24 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 				failed = false
 				paused = false
 				c.setExpectTurn(cardID, false) // the expected turn arrived
-				depth++
+				if rootStream(ev) {
+					depth++
+				}
 				setStatus(StatusRunning)
 			case agent.EventError:
 				failed = true
 				paused = false
 				setStatus(StatusError)
 			case agent.EventStreamStopped:
+				if !rootStream(ev) {
+					// A sub-session finished; the parent turn is still open.
+					// Like any other event, it proves a paused session resumed.
+					if paused {
+						paused = false
+						setStatus(StatusRunning)
+					}
+					break
+				}
 				paused = false
 				if depth > 0 {
 					depth--
