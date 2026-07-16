@@ -6,23 +6,32 @@ linters:
     - asasalint
     - asciicheck
     - bidichk
+    - bodyclose
+    - canonicalheader
     - containedctx
     - copyloopvar
     - decorder
     - depguard
     - dogsled
+    - dupword
     - durationcheck
+    - embeddedstructfieldcheck
     - errcheck
+    - errchkjson
     - errname
     - errorlint
+    - exhaustive
     - exptostd
     - fatcontext
     - forbidigo
+    - forcetypeassert
     - ginkgolinter
     - gocheckcompilerdirectives
     - gochecknoinits
     - gochecksumtype
     - gocritic
+    - godoclint
+    - godot
     - gomoddirectives
     - gomodguard_v2
     - goprintffuncname
@@ -35,13 +44,17 @@ linters:
     - intrange
     - iotamixing
     - loggercheck
+    - makezero
     - misspell
     - mirror
     - modernize
+    - musttag
     - nakedret
+    - nestif
     - nolintlint
     - nosprintfhostport
     - nilnesserr
+    - nilnil
     - perfsprint
     - predeclared
     - reassign
@@ -49,10 +62,14 @@ linters:
     - revive
     - rowserrcheck
     - sloglint
+    - spancheck
+    - sqlclosecheck
     - staticcheck
+    - tagalign
     - testableexamples
     - testifylint
     - thelper
+    - tparallel
     - unconvert
     - unparam
     - unused

@@ -175,7 +175,11 @@ func TestStreamEventsIdleWatchdogAbortsSilentStream(t *testing.T) {
 	t.Cleanup(func() { streamIdleTimeout = old })
 
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		f := w.(http.Flusher)
+		f, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("response writer is not a flusher")
+			return
+		}
 		fmt.Fprint(w, ": ping\n\n")
 		fmt.Fprint(w, "data: {\"type\":\"stream_started\"}\n\n")
 		f.Flush()
@@ -202,7 +206,11 @@ func TestStreamEventsNoHeartbeatNoWatchdog(t *testing.T) {
 	t.Cleanup(func() { streamIdleTimeout = old })
 
 	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		f := w.(http.Flusher)
+		f, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("response writer is not a flusher")
+			return
+		}
 		fmt.Fprint(w, "data: {\"type\":\"stream_started\"}\n\n")
 		f.Flush()
 		time.Sleep(120 * time.Millisecond) // longer than the idle timeout

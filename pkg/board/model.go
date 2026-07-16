@@ -9,10 +9,10 @@ import (
 
 // Column represents a kanban column with a pre-defined prompt.
 type Column struct {
-	ID     string `json:"id" db:"id"`
-	Name   string `json:"name" db:"name"`
-	Emoji  string `json:"emoji" db:"emoji"`
-	Prompt string `json:"prompt" db:"prompt"`
+	ID     string `db:"id"     json:"id"`
+	Name   string `db:"name"   json:"name"`
+	Emoji  string `db:"emoji"  json:"emoji"`
+	Prompt string `db:"prompt" json:"prompt"`
 }
 
 var defaultColumns = []Column{
@@ -50,37 +50,37 @@ func (s CardStatus) Busy() bool {
 
 // Card represents a task card on the board.
 type Card struct {
-	ID       string     `json:"id" db:"id"`
-	Title    string     `json:"title" db:"title"`
-	Column   string     `json:"column" db:"col"`
-	Status   CardStatus `json:"status" db:"status"`
-	Project  string     `json:"project" db:"project"`
-	Agent    string     `json:"agent" db:"agent"`
-	RepoPath string     `json:"repoPath" db:"repo_path"`
-	Branch   string     `json:"branch" db:"branch"`
-	Worktree string     `json:"worktree" db:"worktree"`
-	Session  string     `json:"session" db:"session"`
+	ID       string     `db:"id"        json:"id"`
+	Title    string     `db:"title"     json:"title"`
+	Column   string     `db:"col"       json:"column"`
+	Status   CardStatus `db:"status"    json:"status"`
+	Project  string     `db:"project"   json:"project"`
+	Agent    string     `db:"agent"     json:"agent"`
+	RepoPath string     `db:"repo_path" json:"repoPath"`
+	Branch   string     `db:"branch"    json:"branch"`
+	Worktree string     `db:"worktree"  json:"worktree"`
+	Session  string     `db:"session"   json:"session"`
 	// PRURL is the URL of the pull request opened for this card's branch,
 	// discovered once the Push column's turn finishes. Empty until a PR
 	// exists; the frontend renders it as a link on the card.
-	PRURL string `json:"prUrl" db:"pr_url"`
+	PRURL string `db:"pr_url" json:"prUrl"`
 	// AgentSession is the docker-agent conversation ID the card owns. It is
 	// passed to `docker agent run --session` on every launch, so a session
 	// recreated after the agent (or tmux) dies resumes the same conversation
 	// instead of starting over.
-	AgentSession string `json:"agentSession" db:"agent_session"`
+	AgentSession string `db:"agent_session" json:"agentSession"`
 	// Cost is the session's cumulative cost in US dollars, mirrored from the
 	// agent's control plane by the watcher (summed from per-message costs).
-	Cost float64 `json:"cost" db:"cost"`
+	Cost float64 `db:"cost" json:"cost"`
 }
 
 // Project represents a saved project config.
 type Project struct {
-	ID       string `json:"id" db:"id"`
-	Name     string `json:"name" db:"name"`
-	RepoPath string `json:"repoPath" db:"repo_path"`
-	Agent    string `json:"agent" db:"agent"`
-	Pos      int    `json:"pos" db:"pos"`
+	ID       string `db:"id"        json:"id"`
+	Name     string `db:"name"      json:"name"`
+	RepoPath string `db:"repo_path" json:"repoPath"`
+	Agent    string `db:"agent"     json:"agent"`
+	Pos      int    `db:"pos"       json:"pos"`
 }
 
 // sessionPrefix is used for all tmux sessions created by the board.

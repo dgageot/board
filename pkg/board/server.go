@@ -160,7 +160,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 func writeJSONStatus(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v) //nolint:errchkjson // status already written, nothing to report
 }
 
 // decodeJSON parses the request body and writes a 400 on failure.
