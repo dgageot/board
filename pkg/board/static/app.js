@@ -518,6 +518,22 @@ document.getElementById("terminal-vscode").addEventListener("click", async () =>
   }
 });
 
+// Copy the full card title shown in the terminal header to the clipboard.
+document.getElementById("terminal-copy-title").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const title = document.getElementById("terminal-title").textContent;
+  try {
+    await navigator.clipboard.writeText(title);
+  } catch {
+    return; // clipboard unavailable (e.g. insecure context)
+  }
+  // Brief visual confirmation.
+  btn.textContent = "\u2713";
+  setTimeout(() => {
+    btn.textContent = "\ud83d\udccb";
+  }, 1200);
+});
+
 // Send a byte sequence to the agent if the terminal socket is live.
 function sendToAgent(data) {
   if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
