@@ -934,6 +934,8 @@ async function openDiffDialog(cardId, title) {
   const dialog = document.getElementById("diff-dialog");
   const container = document.getElementById("diff-container");
   document.getElementById("diff-title").textContent = `📄 ${title}`;
+  document.getElementById("diff-project").textContent =
+    cards.find((c) => c.id === cardId)?.project || "";
   container.innerHTML = `<div class="diff-loading">Loading diff…</div>`;
   dialog.showModal();
 
