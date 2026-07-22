@@ -101,6 +101,29 @@ function connectSSE() {
   };
 }
 
+// --- Two-step buttons ---
+
+// armButton implements two-step (two-click) confirmation: the first click
+// arms the button by appending " ?" to its label and returns false; the
+// second click returns true so the caller performs the action. Losing focus
+// disarms the button, and any re-render replaces it, which also disarms.
+function armButton(btn) {
+  if (btn.dataset.armed) {
+    disarmButton(btn);
+    return true;
+  }
+  btn.dataset.armed = "true";
+  btn.textContent += " ?";
+  btn.addEventListener("blur", () => disarmButton(btn), { once: true });
+  return false;
+}
+
+function disarmButton(btn) {
+  if (!btn.dataset.armed) return;
+  delete btn.dataset.armed;
+  btn.textContent = btn.textContent.replace(/ \?$/, "");
+}
+
 // --- Render ---
 
 // Interpolate a color from orange (#e3873d) to green (#3fb950) based on t in [0,1].
@@ -200,9 +223,8 @@ function renderBoard() {
     const clearBtn = colEl.querySelector(".btn-clear-column");
     if (clearBtn) {
       clearBtn.addEventListener("click", async () => {
-        const count = colCards.length;
-        if (count === 0) return;
-        if (!confirm(`Delete all ${count} card${count !== 1 ? "s" : ""} and their worktrees?`)) return;
+        if (colCards.length === 0) return;
+        if (!armButton(clearBtn)) return;
         try {
           await API.clearColumn(col.id);
         } catch (err) {
@@ -372,9 +394,8 @@ async function handleCardAction(e) {
     } else if (action === "vscode") {
       await API.openVSCode(id);
     } else if (action === "delete") {
-      if (confirm("Delete this card and its worktree?")) {
-        await API.deleteCard(id);
-      }
+      if (!armButton(btn)) return;
+      await API.deleteCard(id);
     }
   } catch (err) {
     alert(err.message);
