@@ -195,8 +195,8 @@ func tableExists(db *sqlx.DB, name string) bool {
 // --- Cards ---
 
 const (
-	cardColumns     = "id, title, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost, pr_url"
-	cardNamedValues = ":id, :title, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost, :pr_url"
+	cardColumns     = "id, title, prompt, title_generated, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost, pr_url"
+	cardNamedValues = ":id, :title, :prompt, :title_generated, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost, :pr_url"
 	insertCardSQL   = "INSERT INTO cards (" + cardColumns + ") VALUES (" + cardNamedValues + ")"
 )
 
@@ -250,9 +250,11 @@ func (s *SQLiteStore) UpdateCardStatus(id string, status CardStatus) error {
 
 // UpdateCardTitle updates only the title column of a card. Same rationale as
 // [SQLiteStore.UpdateCardStatus]: the controller sets the title from a
-// session_title event without reverting concurrent edits.
+// session_title event without reverting concurrent edits. It also marks the
+// title as agent-generated, i.e. no longer the placeholder derived from the
+// prompt.
 func (s *SQLiteStore) UpdateCardTitle(id, title string) error {
-	_, err := s.db.Exec("UPDATE cards SET title = ? WHERE id = ?", title, id)
+	_, err := s.db.Exec("UPDATE cards SET title = ?, title_generated = 1 WHERE id = ?", title, id)
 	return err
 }
 

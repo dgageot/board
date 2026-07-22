@@ -758,17 +758,20 @@ dialog {
   text-overflow: ellipsis;
 }
 
-/* Small icon button that copies the terminal title to the clipboard. */
+/* Small icon button (GitHub-style) that copies the card's full title or
+   prompt to the clipboard. */
 .btn-copy-title {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-muted);
-  font-size: 13px;
   cursor: pointer;
   width: 26px;
   height: 26px;
-  border-radius: 999px;
+  border-radius: 6px;
   line-height: 1;
   transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
 
@@ -776,6 +779,11 @@ dialog {
     color: var(--text);
     background: var(--surface-hover);
     border-color: var(--border);
+  }
+
+  &.copied,
+  &.copied:hover {
+    color: var(--success);
   }
 }
 

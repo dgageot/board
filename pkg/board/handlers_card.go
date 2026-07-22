@@ -105,6 +105,7 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 	card = &Card{
 		ID:           newID(),
 		Title:        placeholderTitle(prompt),
+		Prompt:       prompt,
 		Status:       StatusStarting,
 		Project:      name,
 		Agent:        agent,

@@ -24,7 +24,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 	version, err := currentVersion(db)
 	require.NoError(t, err)
-	assert.Equal(t, 6, version)
+	assert.Equal(t, 7, version)
 }
 
 func TestMigrationVersion(t *testing.T) {
@@ -58,6 +58,7 @@ func TestInsertAndGetCard(t *testing.T) {
 	card := &Card{
 		ID:       "card-1",
 		Title:    "Fix bug",
+		Prompt:   "Fix the bug in the login flow",
 		Column:   "dev",
 		Status:   StatusRunning,
 		Agent:    "/path/to/agent",
@@ -71,6 +72,19 @@ func TestInsertAndGetCard(t *testing.T) {
 	got, err := store.GetCard("card-1")
 	require.NoError(t, err)
 	assert.Equal(t, card, got)
+}
+
+func TestUpdateCardTitleMarksTitleGenerated(t *testing.T) {
+	store := openTestStore(t)
+
+	require.NoError(t, store.InsertCard(&Card{ID: "card-1", Title: "Fix the bug in\u2026", Prompt: "Fix the bug in the login flow"}))
+	require.NoError(t, store.UpdateCardTitle("card-1", "Fix login bug"))
+
+	got, err := store.GetCard("card-1")
+	require.NoError(t, err)
+	assert.Equal(t, "Fix login bug", got.Title)
+	assert.True(t, got.TitleGenerated)
+	assert.Equal(t, "Fix the bug in the login flow", got.Prompt)
 }
 
 func TestGetCardNotFound(t *testing.T) {

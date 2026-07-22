@@ -50,16 +50,24 @@ func (s CardStatus) Busy() bool {
 
 // Card represents a task card on the board.
 type Card struct {
-	ID       string     `db:"id"        json:"id"`
-	Title    string     `db:"title"     json:"title"`
-	Column   string     `db:"col"       json:"column"`
-	Status   CardStatus `db:"status"    json:"status"`
-	Project  string     `db:"project"   json:"project"`
-	Agent    string     `db:"agent"     json:"agent"`
-	RepoPath string     `db:"repo_path" json:"repoPath"`
-	Branch   string     `db:"branch"    json:"branch"`
-	Worktree string     `db:"worktree"  json:"worktree"`
-	Session  string     `db:"session"   json:"session"`
+	ID    string `db:"id"    json:"id"`
+	Title string `db:"title" json:"title"`
+	// Prompt is the full question the card was created with. The title may be
+	// a placeholder truncated from it, so the prompt is kept verbatim (e.g.
+	// for copying the full text from the UI).
+	Prompt string `db:"prompt" json:"prompt"`
+	// TitleGenerated reports whether the agent has produced a real title (via
+	// its session_title event). False while the title is still the
+	// placeholder derived from the prompt.
+	TitleGenerated bool       `db:"title_generated" json:"titleGenerated"`
+	Column         string     `db:"col"             json:"column"`
+	Status         CardStatus `db:"status"          json:"status"`
+	Project        string     `db:"project"         json:"project"`
+	Agent          string     `db:"agent"           json:"agent"`
+	RepoPath       string     `db:"repo_path"       json:"repoPath"`
+	Branch         string     `db:"branch"          json:"branch"`
+	Worktree       string     `db:"worktree"        json:"worktree"`
+	Session        string     `db:"session"         json:"session"`
 	// PRURL is the URL of the pull request opened for this card's branch,
 	// discovered once the Push column's turn finishes. Empty until a PR
 	// exists; the frontend renders it as a link on the card.

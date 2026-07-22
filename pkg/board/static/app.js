@@ -518,20 +518,35 @@ document.getElementById("terminal-vscode").addEventListener("click", async () =>
   }
 });
 
-// Copy the full card title shown in the terminal header to the clipboard.
-document.getElementById("terminal-copy-title").addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  const title = document.getElementById("terminal-title").textContent;
+// Copy the card's full text to the clipboard: the full title once the agent
+// has generated one, otherwise the full prompt (the placeholder title is a
+// truncated version of it). GitHub-style icons: copy at rest, a green check
+// as brief confirmation.
+const COPY_ICON_SVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path></svg>`;
+const CHECK_ICON_SVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path></svg>`;
+
+const copyTitleBtn = document.getElementById("terminal-copy-title");
+copyTitleBtn.innerHTML = COPY_ICON_SVG;
+
+copyTitleBtn.addEventListener("click", async () => {
+  const card = cards.find((c) => c.id === activeCardId);
+  // Prefer the full prompt while the title is still the truncated
+  // placeholder; fall back to the displayed title for cards predating the
+  // prompt column.
+  const text =
+    (card && (card.titleGenerated ? card.title : card.prompt || card.title)) ||
+    document.getElementById("terminal-title").textContent;
   try {
-    await navigator.clipboard.writeText(title);
+    await navigator.clipboard.writeText(text);
   } catch {
     return; // clipboard unavailable (e.g. insecure context)
   }
-  // Brief visual confirmation.
-  btn.textContent = "\u2713";
+  copyTitleBtn.innerHTML = CHECK_ICON_SVG;
+  copyTitleBtn.classList.add("copied");
   setTimeout(() => {
-    btn.textContent = "\ud83d\udccb";
-  }, 1200);
+    copyTitleBtn.innerHTML = COPY_ICON_SVG;
+    copyTitleBtn.classList.remove("copied");
+  }, 1500);
 });
 
 // Send a byte sequence to the agent if the terminal socket is live.
