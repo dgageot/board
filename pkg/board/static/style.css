@@ -393,6 +393,14 @@ main#board::-webkit-scrollbar-thumb,
     transform: translateY(-1px) scale(1.04);
     filter: brightness(1.06);
   }
+
+  /* Armed (two-step confirmation): solid danger fill and room for the " ?". */
+  &[data-armed] {
+    width: auto;
+    padding: 0 10px;
+    background: var(--danger);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 40%, transparent);
+  }
 }
 
 /* Card */
@@ -593,6 +601,15 @@ main#board::-webkit-scrollbar-thumb,
         color: var(--danger);
         border-color: color-mix(in srgb, var(--danger) 42%, transparent);
         background: color-mix(in srgb, var(--danger) 10%, transparent);
+      }
+
+      /* Armed (two-step confirmation): fill with the danger color that
+         normally only tints the border, so the pending delete is obvious. */
+      &[data-armed],
+      &[data-armed]:hover {
+        color: #fff;
+        background: var(--danger);
+        border-color: var(--danger);
       }
     }
   }

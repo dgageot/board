@@ -395,7 +395,16 @@ async function handleCardAction(e) {
       await API.openVSCode(id);
     } else if (action === "delete") {
       if (!armButton(btn)) return;
-      await API.deleteCard(id);
+      // Optimistic removal: the card disappears on the confirming click, not
+      // when the server finishes deleting. A failed delete restores it.
+      btn.closest(".card")?.remove();
+      cards = cards.filter((c) => c.id !== id);
+      try {
+        await API.deleteCard(id);
+      } catch (err) {
+        alert(err.message);
+        await refresh();
+      }
     }
   } catch (err) {
     alert(err.message);
