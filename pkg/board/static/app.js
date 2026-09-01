@@ -47,6 +47,7 @@ const API = {
   listCards: () => api("/cards"),
   createCard: (data) => api("/cards", { method: "POST", body: JSON.stringify(data) }),
   jumpCard: (id) => api(`/cards/${id}/jump`, { method: "POST" }),
+  coachCard: (id) => api(`/cards/${id}/coach`, { method: "POST" }),
   deleteCard: (id) => api(`/cards/${id}`, { method: "DELETE" }),
   moveCard: (id, column) => api(`/cards/${id}/move`, { method: "POST", body: JSON.stringify({ column }) }),
   diffCard: (id) => api(`/cards/${id}/diff`),
@@ -425,7 +426,9 @@ async function openTerminal(sessionName, title, cardId, project) {
   activeCardId = cardId;
 
   closeTerminal();
-  dialog.showModal();
+  // The dialog may already be open when switching terminals in place (e.g. the
+  // agent's session to its coach): showModal() on an open dialog throws.
+  if (!dialog.open) dialog.showModal();
 
   await ghosttyReady;
 
@@ -545,6 +548,27 @@ document.getElementById("terminal-vscode").addEventListener("click", async () =>
     await API.openVSCode(activeCardId);
   } catch (err) {
     alert(err.message);
+  }
+});
+
+// The harness coach reviews the card's session and suggests how to improve the
+// agent config, its tools and the column prompts. The board runs it as a
+// second agent session, which we attach the terminal to; a coach already
+// running for the card is reattached, so its answers are not lost.
+const coachBtn = document.getElementById("terminal-coach");
+
+coachBtn.addEventListener("click", async () => {
+  if (!activeCardId) return;
+  const cardId = activeCardId;
+  const card = cards.find((c) => c.id === cardId);
+  coachBtn.disabled = true;
+  try {
+    const info = await API.coachCard(cardId);
+    await openTerminal(info.session, `🎓 ${card?.title || "Coach"}`, cardId, card?.project || "");
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    coachBtn.disabled = false;
   }
 });
 

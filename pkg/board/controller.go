@@ -18,6 +18,7 @@ import (
 // It is an interface so tests can inject a fake without real sockets.
 type sessionClient interface {
 	Snapshot(ctx context.Context) (agent.Snapshot, error)
+	Transcript(ctx context.Context) ([]byte, error)
 	StreamEvents(ctx context.Context, since uint64, onEvent func(agent.Event) bool) error
 	Followup(ctx context.Context, idempotencyKey, message string) (bool, error)
 }
@@ -526,6 +527,15 @@ func (c *Controller) refreshPRURL(ctx context.Context, cardID string) {
 	if c.store.UpdateCardPRURL(cardID, prURL) == nil {
 		c.onChanged()
 	}
+}
+
+// Transcript reads the card session's whole conversation from its control
+// plane, as raw JSON. It is staged on disk for the harness coach to review.
+func (c *Controller) Transcript(ctx context.Context, card *Card) ([]byte, error) {
+	client := c.clientFor(socketPath(card.AgentSession), card.AgentSession)
+	ctx, cancel := context.WithTimeout(ctx, snapshotTimeout)
+	defer cancel()
+	return client.Transcript(ctx)
 }
 
 // Ready reports whether the card's agent control plane answers, i.e. the agent

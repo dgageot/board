@@ -160,16 +160,19 @@ func (c *Client) endpoint(name string) string {
 	return c.sessionURL() + "/" + name
 }
 
-// Snapshot reads the session's full state and the stream position it
-// corresponds to.
-func (c *Client) Snapshot(ctx context.Context) (Snapshot, error) {
+// getSnapshot issues GET /snapshot and validates the response status. On
+// success the caller owns the response and must close its body.
+func (c *Client) getSnapshot(ctx context.Context) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint("snapshot"), http.NoBody)
 	if err != nil {
-		return Snapshot{}, err
+		return nil, err
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return Snapshot{}, err
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusOK {
+		return resp, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
@@ -183,13 +186,21 @@ func (c *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 			Code string `json:"code"`
 		}
 		if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&apiErr) == nil && apiErr.Code == errCodeUnknownSession {
-			return Snapshot{}, fmt.Errorf("snapshot: %s: session not known yet", resp.Status)
+			return nil, fmt.Errorf("snapshot: %s: session not known yet", resp.Status)
 		}
-		return Snapshot{}, fmt.Errorf("snapshot: %s: %w", resp.Status, ErrUnsupported)
+		return nil, fmt.Errorf("snapshot: %s: %w", resp.Status, ErrUnsupported)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return Snapshot{}, fmt.Errorf("snapshot: %s", resp.Status)
+	return nil, fmt.Errorf("snapshot: %s", resp.Status)
+}
+
+// Snapshot reads the session's full state and the stream position it
+// corresponds to.
+func (c *Client) Snapshot(ctx context.Context) (Snapshot, error) {
+	resp, err := c.getSnapshot(ctx)
+	if err != nil {
+		return Snapshot{}, err
 	}
+	defer func() { _ = resp.Body.Close() }()
 	var wire snapshotWire
 	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
 		return Snapshot{}, fmt.Errorf("decode snapshot: %w", err)
@@ -208,6 +219,24 @@ func (c *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 		}
 	}
 	return snap, nil
+}
+
+// Transcript returns the session snapshot as raw JSON: the whole conversation
+// (messages with role, content, tool calls, model and cost) as the control
+// plane serves it. The board never parses it — it stages it on disk for the
+// harness coach to skim — so it is passed through verbatim rather than decoded
+// into a shape the board would have to keep in sync with the runtime.
+func (c *Client) Transcript(ctx context.Context) ([]byte, error) {
+	resp, err := c.getSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read snapshot: %w", err)
+	}
+	return body, nil
 }
 
 // Followup enqueues a message to run after the current turn. A non-empty

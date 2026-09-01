@@ -75,6 +75,31 @@ func TestSnapshotUnknownSessionIsNotUnsupported(t *testing.T) {
 	require.NotErrorIs(t, err, ErrUnsupported)
 }
 
+// Transcript hands the snapshot body through untouched: the coach reads the
+// whole conversation, which the board itself never parses.
+func TestTranscriptReturnsRawSnapshot(t *testing.T) {
+	const body = `{"title":"Hello","messages":[{"agent_name":"root","message":{"role":"user","content":"hi"}}]}`
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/sessions/sess-1/snapshot", r.URL.Path)
+		_, _ = io.WriteString(w, body)
+	})
+
+	got, err := c.Transcript(t.Context())
+	require.NoError(t, err)
+	assert.JSONEq(t, body, string(got))
+}
+
+// A missing session must surface as an error, not as an empty transcript the
+// coach would then review.
+func TestTranscriptFailsOnBadStatus(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	_, err := c.Transcript(t.Context())
+	require.ErrorIs(t, err, ErrUnsupported)
+}
+
 func TestFollowupSendsMessageAndIdempotencyKey(t *testing.T) {
 	var gotKey, gotBody string
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {

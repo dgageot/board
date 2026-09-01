@@ -273,10 +273,12 @@ func (b *Board) handlePRStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteCardResources stops watching the card and cleans up its session and
-// worktree.
+// worktree. The harness coach started for the card, if any, is killed too: it
+// only exists to review that card.
 func (b *Board) deleteCardResources(card *Card) {
 	b.controller.Stop(card.ID)
 	_ = b.sessions.KillSession(card.Session)
+	_ = b.sessions.KillSession(coachSessionName(card.ID))
 	git.RemoveWorktree(card.RepoPath, card.Worktree, card.Branch)
 }
 

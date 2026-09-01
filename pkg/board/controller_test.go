@@ -26,17 +26,17 @@ type fakeSessionManager struct {
 }
 
 type newSessionCall struct {
-	name, workDir, sessionID, listenSocket, worktreeName, worktreeBase, prompt string
+	name, workDir, agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt string
 }
 
 func newFakeSessionManager() *fakeSessionManager {
 	return &fakeSessionManager{alive: true}
 }
 
-func (f *fakeSessionManager) NewSession(name, workDir, _, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) error {
+func (f *fakeSessionManager) NewSession(name, workDir, agentConfig, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.created = append(f.created, newSessionCall{name, workDir, sessionID, listenSocket, worktreeName, worktreeBase, prompt})
+	f.created = append(f.created, newSessionCall{name, workDir, agentConfig, sessionID, listenSocket, worktreeName, worktreeBase, prompt})
 	return nil
 }
 
@@ -61,15 +61,17 @@ func (f *fakeSessionManager) calls() []newSessionCall {
 
 // fakeClient is a scripted control-plane client.
 type fakeClient struct {
-	mu           sync.Mutex
-	snapErr      error
-	snap         agent.Snapshot
-	events       []agent.Event
-	gotSince     uint64
-	streamCalled bool
-	followErr    error
-	followKey    string
-	followMsg    string
+	mu            sync.Mutex
+	snapErr       error
+	snap          agent.Snapshot
+	transcript    []byte
+	transcriptErr error
+	events        []agent.Event
+	gotSince      uint64
+	streamCalled  bool
+	followErr     error
+	followKey     string
+	followMsg     string
 	// onStream, when set, runs once at the start of the first StreamEvents
 	// call, before any event is delivered. Tests use it to change the
 	// snapshot after the watcher's loop-top read.
@@ -80,6 +82,12 @@ func (f *fakeClient) Snapshot(context.Context) (agent.Snapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.snap, f.snapErr
+}
+
+func (f *fakeClient) Transcript(context.Context) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.transcript, f.transcriptErr
 }
 
 func (f *fakeClient) StreamEvents(ctx context.Context, since uint64, onEvent func(agent.Event) bool) error {

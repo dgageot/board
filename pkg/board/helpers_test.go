@@ -50,6 +50,10 @@ func (noopSessionClient) Snapshot(context.Context) (agent.Snapshot, error) {
 	return agent.Snapshot{}, errors.New("no control plane in tests")
 }
 
+func (noopSessionClient) Transcript(context.Context) ([]byte, error) {
+	return nil, errors.New("no control plane in tests")
+}
+
 func (noopSessionClient) StreamEvents(context.Context, uint64, func(agent.Event) bool) error {
 	return errors.New("no control plane in tests")
 }
