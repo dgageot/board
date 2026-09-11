@@ -279,29 +279,25 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		//
 		// A turn can spawn nested streams: every sub-agent (transferred task)
 		// and skill emits its own stream_started/stream_stopped pair onto the
-		// root's stream, stamped with the sub-session's own id. Only the root
-		// session's events drive the depth: the root stream brackets the whole
-		// turn (the parent blocks on its sub-sessions), so sub-session events
-		// are ignored — a dropped sub-session start can then no longer let the
-		// matching stop zero the depth and flash the card green while the
-		// parent is still working. Events without a session id (agents that
-		// predate the field) all count, falling back to pure depth counting.
+		// root's event stream, stamped with that tab's session id. Track every
+		// session independently: the card is working while any tab has an open
+		// stream. Counting per session also makes a stop whose matching start was
+		// dropped harmless instead of letting it close some other tab's stream.
+		// Older agents omit session ids, so their events share a legacy depth.
 		// Replayed orphan stops, whose start was evicted from the buffer, are
 		// clamped at zero.
 		//
 		// Delivery of stream events is best-effort: the agent emits
 		// stream_stopped non-blockingly during teardown, and its TUI drops
 		// events for slow control-plane subscribers before they reach the
-		// replay buffer. A dropped root start or stop therefore skews the depth
-		// for good — reconnecting and replaying cannot recover it. user_message
-		// is the recovery point: the runtime emits it only for real user turns
-		// (never for sub-agent or skill sub-sessions), right before the turn's
-		// outermost stream_started, so it resets the depth the same way the
-		// agent's own TUI zeroes its stream depth on every submit.
-		rootStream := func(ev agent.Event) bool {
-			return ev.SessionID == "" || ev.SessionID == card.AgentSession
-		}
-		depth := 0
+		// replay buffer. A dropped start or stop therefore skews a session's
+		// count for good — reconnecting and replaying cannot recover it.
+		// user_message is the recovery point for the session that emitted it:
+		// the runtime sends it right before that session's outermost
+		// stream_started, so it resets that session's count without disturbing
+		// other tabs. Older agents omit session ids, so their shared legacy
+		// count is reset as a whole.
+		depthBySession := make(map[string]int)
 		// failed marks that the current turn emitted an error event. The card is
 		// turned red the moment that event arrives — it is delivered reliably,
 		// while the stream_stopped that follows is best-effort and may be dropped,
@@ -351,38 +347,30 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 				exited = true
 				return false
 			case agent.EventUserMessage:
-				// A new user turn begins: any leftover depth is drift from
-				// dropped stream events. Resync here so one lost stop cannot
-				// leave the card stuck running forever.
-				depth = 0
+				// A new turn heals drift only for its own tab; another tab may
+				// still be working. Legacy untagged events all share one bucket.
+				delete(depthBySession, ev.SessionID)
 				failed = false
 			case agent.EventStreamStarted:
 				failed = false
 				paused = false
 				c.setExpectTurn(cardID, false) // the expected turn arrived
-				if rootStream(ev) {
-					depth++
-				}
+				depthBySession[ev.SessionID]++
 				setStatus(StatusRunning)
 			case agent.EventError:
 				failed = true
 				paused = false
 				setStatus(StatusError)
 			case agent.EventStreamStopped:
-				if !rootStream(ev) {
-					// A sub-session finished; the parent turn is still open.
-					// Like any other event, it proves a paused session resumed.
-					if paused {
-						paused = false
-						setStatus(StatusRunning)
-					}
-					break
-				}
+				wasPaused := paused
 				paused = false
-				if depth > 0 {
-					depth--
+				if depthBySession[ev.SessionID] > 0 {
+					depthBySession[ev.SessionID]--
+					if depthBySession[ev.SessionID] == 0 {
+						delete(depthBySession, ev.SessionID)
+					}
 				}
-				if depth == 0 {
+				if len(depthBySession) == 0 {
 					// The outermost stream ended: a "normal" reason means the
 					// turn completed even if a nested sub-agent errored along
 					// the way, so the sticky error is cleared. Any other reason
@@ -404,6 +392,8 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 					if !replaying {
 						go c.refreshFromSnapshot(ctx, cardID, client)
 					}
+				} else if wasPaused {
+					setStatus(StatusRunning)
 				}
 			case agent.EventRuntimePaused:
 				paused = true

@@ -506,12 +506,68 @@ func TestControllerNestedStreamsStayRunning(t *testing.T) {
 	assert.Equal(t, StatusRunning, card.Status)
 }
 
+// Tabs can run independently. Finishing one tab must not turn the card green
+// while another tab still has an open stream.
+func TestControllerAnyWorkingTabKeepsCardRunning(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted, SessionID: "sess-1"},
+			{Type: agent.EventStreamStarted, SessionID: "tab-2"},
+			{Type: agent.EventStreamStopped, SessionID: "sess-1", Reason: agent.ReasonNormal},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
+
+	time.Sleep(100 * time.Millisecond)
+	card, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, StatusRunning, card.Status, "a card stays orange while any tab is working")
+}
+
+// A new turn resynchronizes only its own tab. It must not erase an open stream
+// in another tab and let that tab's work appear done.
+func TestControllerUserMessageDoesNotClearAnotherWorkingTab(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap: agent.Snapshot{Streaming: false},
+		events: []agent.Event{
+			{Type: agent.EventStreamStarted, SessionID: "sess-1"},
+			{Type: agent.EventUserMessage, SessionID: "tab-2"},
+			{Type: agent.EventStreamStarted, SessionID: "tab-2"},
+			{Type: agent.EventStreamStopped, SessionID: "tab-2", Reason: agent.ReasonNormal},
+		},
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
+
+	time.Sleep(100 * time.Millisecond)
+	card, err := store.GetCard("c1")
+	require.NoError(t, err)
+	assert.Equal(t, StatusRunning, card.Status, "another tab's new turn must not clear ongoing work")
+}
+
 // Sub-agent and skill sub-sessions forward their stream events onto the root
 // session's stream stamped with their own session id, and delivery is
 // best-effort. When a sub-session's stream_started is dropped, its
-// stream_stopped must not close the root turn and flash the card green while
-// the parent is still working: only root-session stream events drive the
-// running/waiting flip.
+// stream_stopped must not close a different session and flash the card green
+// while that session is still working.
 func TestControllerDroppedSubSessionStartStaysRunning(t *testing.T) {
 	store := openTestStore(t)
 	require.NoError(t, store.InsertCard(devCard())) // AgentSession "sess-1"
