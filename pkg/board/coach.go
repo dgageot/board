@@ -9,6 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"text/template"
+	"time"
+
+	"github.com/dgageot/board/pkg/agent"
 )
 
 // coachAgentConfig is the agent the board runs to review a card's session: a
@@ -75,6 +78,7 @@ func (b *Board) handleCoachCard(w http.ResponseWriter, r *http.Request) {
 func (b *Board) startCoach(ctx context.Context, card *Card) (string, error) {
 	name := coachSessionName(card.ID)
 	if alive, err := b.sessions.Alive(name); err == nil && alive {
+		b.watchCoach(card)
 		return name, nil
 	}
 
@@ -115,9 +119,137 @@ func (b *Board) startCoach(ctx context.Context, card *Card) (string, error) {
 	if err := b.sessions.NewSession(name, card.Worktree, agentConfig, agentSession, socket, "", "", prompt); err != nil {
 		return "", fmt.Errorf("coach session: %w", err)
 	}
-	b.broadcast()
+	b.setCoachRunning(card.ID, true)
+	b.watchCoach(card)
 
 	return name, nil
+}
+
+// watchCoach follows the coach's root turn and clears the card indicator as
+// soon as that turn stops. The tmux session intentionally remains alive so the
+// user can read the report and ask follow-up questions.
+func (b *Board) watchCoach(card *Card) {
+	b.mu.Lock()
+	if _, ok := b.watching[card.ID]; ok {
+		b.mu.Unlock()
+		return
+	}
+	b.watching[card.ID] = struct{}{}
+	b.mu.Unlock()
+
+	go func() {
+		ctx, cancelWatch := context.WithCancel(context.Background())
+		defer cancelWatch()
+		go func() {
+			select {
+			case <-b.done:
+				cancelWatch()
+			case <-ctx.Done():
+			}
+		}()
+		defer func() {
+			b.mu.Lock()
+			delete(b.watching, card.ID)
+			b.mu.Unlock()
+		}()
+
+		client := b.controller.clientFor(socketPath(coachAgentSessionID(card.AgentSession)), coachAgentSessionID(card.AgentSession))
+		for ctx.Err() == nil {
+			snapshotCtx, snapshotCancel := context.WithTimeout(ctx, 2*time.Second)
+			snap, err := client.Snapshot(snapshotCtx)
+			snapshotCancel()
+			if err != nil {
+				if alive, aliveErr := b.sessions.Alive(coachSessionName(card.ID)); aliveErr == nil && !alive {
+					b.setCoachRunning(card.ID, false)
+					return
+				}
+				if !waitForCoachRetry(ctx) {
+					return
+				}
+				continue
+			}
+
+			streamCtx, cancel := context.WithCancel(ctx)
+			done := false
+			depth := 0
+			replaying := snap.LastEventSeq > 0
+			err = client.StreamEvents(streamCtx, 0, func(ev agent.Event) bool {
+				if ev.SessionID != "" && ev.SessionID != coachAgentSessionID(card.AgentSession) {
+					return true
+				}
+				switch ev.Type {
+				case agent.EventStreamStarted:
+					depth++
+					if !replaying {
+						b.setCoachRunning(card.ID, true)
+					}
+				case agent.EventStreamStopped:
+					if depth > 0 {
+						depth--
+					}
+					if !replaying && depth == 0 {
+						done = true
+						b.setCoachRunning(card.ID, false)
+						return false
+					}
+				case agent.EventSessionExited:
+					done = true
+					b.setCoachRunning(card.ID, false)
+					return false
+				}
+				if replaying && (ev.Seq == 0 || ev.Seq >= snap.LastEventSeq) {
+					replaying = false
+					if depth == 0 {
+						done = true
+						b.setCoachRunning(card.ID, false)
+						return false
+					}
+					b.setCoachRunning(card.ID, true)
+				}
+				return true
+			})
+			cancel()
+			if done || ctx.Err() != nil {
+				return
+			}
+			if err != nil {
+				if alive, aliveErr := b.sessions.Alive(coachSessionName(card.ID)); aliveErr == nil && !alive {
+					b.setCoachRunning(card.ID, false)
+					return
+				}
+			}
+			if !waitForCoachRetry(ctx) {
+				return
+			}
+		}
+	}()
+}
+
+func waitForCoachRetry(ctx context.Context) bool {
+	timer := time.NewTimer(500 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func (b *Board) setCoachRunning(cardID string, running bool) {
+	b.mu.Lock()
+	changed := b.coaches[cardID] != running
+	b.coaches[cardID] = running
+	b.mu.Unlock()
+	if changed {
+		b.broadcast()
+	}
+}
+
+func (b *Board) coachRunning(cardID string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.coaches[cardID]
 }
 
 // coachAgentConfigPath returns the path of the agent config the coach runs.

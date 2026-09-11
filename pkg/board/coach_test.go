@@ -6,9 +6,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dgageot/board/pkg/agent"
 )
 
 // coachTest is a board whose tmux and control-plane calls are fakes, with one
@@ -81,6 +84,21 @@ func TestStartCoachLaunchesSessionInTheWorktree(t *testing.T) {
 
 // The embedded coach config is staged on disk so `docker agent run` can load
 // it: a board that ships its own coach must not depend on a user file.
+func TestCoachIndicatorStopsWhenTurnFinishes(t *testing.T) {
+	ct := newCoachTest(t)
+	ct.client.snap = agent.Snapshot{LastEventSeq: 1}
+	ct.client.events = []agent.Event{
+		{Type: agent.EventStreamStarted, SessionID: coachAgentSessionID(ct.card.AgentSession), Seq: 1},
+		{Type: agent.EventStreamStopped, SessionID: coachAgentSessionID(ct.card.AgentSession), Reason: agent.ReasonNormal, Seq: 2},
+	}
+
+	_, err := ct.board.startCoach(t.Context(), ct.card)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return !ct.board.coachRunning(ct.card.ID)
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestStartCoachStagesEmbeddedConfig(t *testing.T) {
 	ct := newCoachTest(t)
 

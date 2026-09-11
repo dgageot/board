@@ -216,6 +216,7 @@ func TestHandleListCardsEmpty(t *testing.T) {
 func TestHandleListCardsIncludesCoachStatus(t *testing.T) {
 	b, store := newTestBoard(t)
 	require.NoError(t, store.InsertCard(&Card{ID: "c1", Title: "T", Column: "dev"}))
+	b.setCoachRunning("c1", true)
 
 	rec := httptest.NewRecorder()
 	b.handleListCards(rec, httptest.NewRequest(http.MethodGet, "/api/cards", http.NoBody))

@@ -10,20 +10,26 @@ import (
 
 // Board holds the application state.
 type Board struct {
+	done       <-chan struct{}
 	config     Config
 	store      Store
 	sessions   SessionManager
 	controller *Controller
 	mu         sync.RWMutex
 	clients    map[chan struct{}]struct{}
+	coaches    map[string]bool
+	watching   map[string]struct{}
 }
 
 func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionManager) (*Board, error) {
 	b := &Board{
+		done:     ctx.Done(),
 		config:   cfg,
 		store:    store,
 		sessions: sessions,
 		clients:  make(map[chan struct{}]struct{}),
+		coaches:  make(map[string]bool),
+		watching: make(map[string]struct{}),
 	}
 
 	b.controller = newController(ctx, store, sessions, b.broadcast)

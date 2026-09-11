@@ -42,8 +42,7 @@ func (b *Board) handleListCards(w http.ResponseWriter, _ *http.Request) {
 
 	response := make([]cardResponse, 0, len(cards))
 	for _, card := range cards {
-		coachRunning, _ := b.sessions.Alive(coachSessionName(card.ID))
-		response = append(response, cardResponse{Card: card, CoachRunning: coachRunning})
+		response = append(response, cardResponse{Card: card, CoachRunning: b.coachRunning(card.ID)})
 	}
 	writeJSON(w, response)
 }
