@@ -28,6 +28,86 @@ function isDark() {
   return document.documentElement.getAttribute("data-theme") !== "light";
 }
 
+// --- Sound notifications ---
+
+const soundPreferenceKey = "sound-notifications";
+let soundNotificationsEnabled = localStorage.getItem(soundPreferenceKey) === "true";
+let audioContext = null;
+let knownCardStatuses = null;
+
+function updateSoundButton() {
+  const button = document.getElementById("btn-sound");
+  button.textContent = soundNotificationsEnabled ? "🔔" : "🔕";
+  button.title = soundNotificationsEnabled
+    ? "Disable sound notifications"
+    : "Play a sound when a card becomes ready";
+  button.setAttribute("aria-pressed", String(soundNotificationsEnabled));
+}
+
+function getAudioContext() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return null;
+  audioContext ??= new AudioContext();
+  return audioContext;
+}
+
+// Play a short, quiet two-note chime without requiring an audio asset.
+function playReadySound() {
+  if (!soundNotificationsEnabled) return;
+  const context = getAudioContext();
+  if (!context) return;
+
+  const play = () => {
+    const start = context.currentTime;
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.06, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.32);
+    gain.connect(context.destination);
+
+    for (const [frequency, offset] of [[660, 0], [880, 0.09]]) {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency;
+      oscillator.connect(gain);
+      oscillator.start(start + offset);
+      oscillator.stop(start + 0.32);
+    }
+  };
+
+  if (context.state !== "running") return;
+  play();
+}
+
+function notifyCardsThatBecameReady(nextCards) {
+  if (knownCardStatuses !== null) {
+    const becameReady = nextCards.some((card) =>
+      card.status === "waiting" &&
+      knownCardStatuses.has(card.id) &&
+      knownCardStatuses.get(card.id) !== "waiting"
+    );
+    if (becameReady) playReadySound();
+  }
+  knownCardStatuses = new Map(nextCards.map((card) => [card.id, card.status]));
+}
+
+updateSoundButton();
+
+document.getElementById("btn-sound").addEventListener("click", () => {
+  soundNotificationsEnabled = !soundNotificationsEnabled;
+  localStorage.setItem(soundPreferenceKey, String(soundNotificationsEnabled));
+  if (soundNotificationsEnabled) getAudioContext()?.resume().catch(() => {});
+  updateSoundButton();
+});
+
+// A persisted preference still needs one browser-approved user gesture before
+// Web Audio can play. Do not queue old notifications while audio is blocked.
+function unlockNotificationAudio() {
+  if (soundNotificationsEnabled) getAudioContext()?.resume().catch(() => {});
+}
+document.addEventListener("pointerdown", unlockNotificationAudio, { once: true });
+document.addEventListener("keydown", unlockNotificationAudio, { once: true });
+
 // --- API ---
 
 async function api(path, opts = {}) {
@@ -71,13 +151,20 @@ let projects = [];
 let columns = [];
 let draggedCard = null;
 let homeDir = "";
+let refreshSequence = 0;
 
 async function refresh() {
-  [cards, projects, columns] = await Promise.all([
+  const sequence = ++refreshSequence;
+  const [nextCards, nextProjects, nextColumns] = await Promise.all([
     API.listCards(),
     API.listProjects(),
     API.listColumns(),
   ]);
+  if (sequence !== refreshSequence) return;
+  notifyCardsThatBecameReady(nextCards);
+  cards = nextCards;
+  projects = nextProjects;
+  columns = nextColumns;
   renderBoard();
 }
 

@@ -19,6 +19,19 @@ func testHandler(t *testing.T) http.Handler {
 	return handler
 }
 
+func TestStaticUIHasSoundNotificationsDisabledByDefault(t *testing.T) {
+	handler := testHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8077/", http.NoBody)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `id="btn-sound"`)
+	assert.Contains(t, rec.Body.String(), `aria-pressed="false"`)
+	assert.Contains(t, rec.Body.String(), `>🔕</button>`)
+}
+
 func TestWriteJSONStatusSetsContentType(t *testing.T) {
 	rec := httptest.NewRecorder()
 	writeJSONStatus(rec, http.StatusCreated, map[string]string{"a": "b"})

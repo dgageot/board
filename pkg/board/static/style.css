@@ -218,6 +218,11 @@ a {
   font-size: 11px;
 }
 
+.btn-icon {
+  width: 36px;
+  padding: 8px;
+}
+
 .btn-danger {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 42%, transparent);
