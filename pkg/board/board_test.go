@@ -260,6 +260,26 @@ func TestHandleListCardsIncludesCompletedCoachStatus(t *testing.T) {
 	assert.False(t, cards[0].CoachRunning)
 }
 
+func TestHandleListCardsKeepsCompletedCoachStatusAfterRestart(t *testing.T) {
+	b, store := newTestBoard(t)
+	require.NoError(t, store.InsertCard(&Card{ID: "c1", Title: "T", Column: "dev"}))
+	b.setCoachRunning("c1", true)
+	b.setCoachRunning("c1", false)
+
+	restarted, err := newBoard(t.Context(), Config{ListenAddr: ":0"}, store, noopSessionManager{})
+	require.NoError(t, err)
+	restarted.controller.clientFor = func(string, string) sessionClient { return noopSessionClient{} }
+
+	rec := httptest.NewRecorder()
+	restarted.handleListCards(rec, httptest.NewRequest(http.MethodGet, "/api/cards", http.NoBody))
+
+	var cards []cardResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&cards))
+	require.Len(t, cards, 1)
+	assert.True(t, cards[0].CoachRan)
+	assert.False(t, cards[0].CoachRunning)
+}
+
 func TestHandleJumpCard(t *testing.T) {
 	b, store := newTestBoard(t)
 

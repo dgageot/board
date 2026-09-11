@@ -130,8 +130,9 @@ func TestStartCoachReattachesToRunningCoach(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, coachSessionName(ct.card.ID), session)
 	assert.Empty(t, ct.sessions.calls(), "no second coach is started")
-	ran, _ := ct.board.coachStatus(ct.card.ID)
-	assert.True(t, ran)
+	stored, err := ct.board.store.GetCard(ct.card.ID)
+	require.NoError(t, err)
+	assert.True(t, stored.CoachRan)
 
 	_, err = os.Stat(coachTranscriptPath(ct.card.AgentSession))
 	assert.ErrorIs(t, err, os.ErrNotExist, "no transcript is re-exported")

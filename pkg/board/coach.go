@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -238,33 +239,29 @@ func waitForCoachRetry(ctx context.Context) bool {
 }
 
 func (b *Board) markCoachRan(cardID string) {
-	b.mu.Lock()
-	b.coached[cardID] = true
-	b.mu.Unlock()
+	if err := b.store.MarkCardCoached(cardID); err != nil {
+		log.Printf("card %s: mark coach as run: %v", cardID, err)
+	}
 }
 
 func (b *Board) setCoachRunning(cardID string, running bool) {
 	b.mu.Lock()
 	changed := b.coaches[cardID] != running
 	b.coaches[cardID] = running
-	if running {
-		b.coached[cardID] = true
-	}
 	b.mu.Unlock()
-	if changed {
-		b.broadcast()
+	if !changed {
+		return
 	}
+	if running {
+		b.markCoachRan(cardID)
+	}
+	b.broadcast()
 }
 
 func (b *Board) coachRunning(cardID string) bool {
-	_, running := b.coachStatus(cardID)
-	return running
-}
-
-func (b *Board) coachStatus(cardID string) (ran, running bool) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.coached[cardID], b.coaches[cardID]
+	return b.coaches[cardID]
 }
 
 // coachAgentConfigPath returns the path of the agent config the coach runs.

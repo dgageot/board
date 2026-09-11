@@ -72,6 +72,9 @@ type Card struct {
 	// discovered once the Push column's turn finishes. Empty until a PR
 	// exists; the frontend renders it as a link on the card.
 	PRURL string `db:"pr_url" json:"prUrl"`
+	// CoachRan records durably that a coach has run for the card. Live coach
+	// activity is process-local (see cardResponse.CoachRunning).
+	CoachRan bool `db:"coach_ran" json:"-"`
 	// AgentSession is the docker-agent conversation ID the card owns. It is
 	// passed to `docker agent run --session` on every launch, so a session
 	// recreated after the agent (or tmux) dies resumes the same conversation

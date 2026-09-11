@@ -24,7 +24,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 	version, err := currentVersion(db)
 	require.NoError(t, err)
-	assert.Equal(t, 7, version)
+	assert.Equal(t, 8, version)
 }
 
 func TestMigrationVersion(t *testing.T) {
@@ -195,6 +195,24 @@ func TestMoveCardMovesToEnd(t *testing.T) {
 	assert.Equal(t, "c", cards[1].ID)
 	assert.Equal(t, "a", cards[2].ID)
 	assert.Equal(t, "review", cards[2].Column)
+}
+
+func TestMoveCardPreservesCoachHistory(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.SeedColumns(defaultColumns))
+	require.NoError(t, store.InsertCard(&Card{
+		ID: "a", Title: "a", Column: "dev", Status: StatusWaiting,
+		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt", Session: "s",
+	}))
+	require.NoError(t, store.MarkCardCoached("a"))
+
+	moved, err := store.MoveCard("a", "review", false)
+	require.NoError(t, err)
+	assert.True(t, moved.CoachRan)
+
+	card, err := store.GetCard("a")
+	require.NoError(t, err)
+	assert.True(t, card.CoachRan)
 }
 
 // The running check is part of the move transaction: a running card must be

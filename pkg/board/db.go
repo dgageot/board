@@ -195,8 +195,8 @@ func tableExists(db *sqlx.DB, name string) bool {
 // --- Cards ---
 
 const (
-	cardColumns     = "id, title, prompt, title_generated, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost, pr_url"
-	cardNamedValues = ":id, :title, :prompt, :title_generated, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost, :pr_url"
+	cardColumns     = "id, title, prompt, title_generated, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost, pr_url, coach_ran"
+	cardNamedValues = ":id, :title, :prompt, :title_generated, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost, :pr_url, :coach_ran"
 	insertCardSQL   = "INSERT INTO cards (" + cardColumns + ") VALUES (" + cardNamedValues + ")"
 )
 
@@ -271,6 +271,11 @@ func (s *SQLiteStore) UpdateCardCost(id string, cost float64) error {
 // request without reverting concurrent edits.
 func (s *SQLiteStore) UpdateCardPRURL(id, prURL string) error {
 	_, err := s.db.Exec("UPDATE cards SET pr_url = ? WHERE id = ?", prURL, id)
+	return err
+}
+
+func (s *SQLiteStore) MarkCardCoached(id string) error {
+	_, err := s.db.Exec("UPDATE cards SET coach_ran = 1 WHERE id = ?", id)
 	return err
 }
 

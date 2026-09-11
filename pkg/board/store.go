@@ -27,6 +27,8 @@ type Store interface {
 	// controller when it discovers the pull request opened for a Push-column
 	// card, without clobbering concurrent edits.
 	UpdateCardPRURL(id, prURL string) error
+	// MarkCardCoached durably records that a coach has run for the card.
+	MarkCardCoached(id string) error
 	DeleteCard(id string) error
 	ListCardsByColumn(column string) ([]*Card, error)
 	// MoveCard atomically moves a card to the given column and re-inserts it
