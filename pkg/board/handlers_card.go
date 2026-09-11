@@ -30,6 +30,7 @@ func (b *Board) getCard(w http.ResponseWriter, r *http.Request) (*Card, bool) {
 type cardResponse struct {
 	*Card
 
+	CoachRan     bool `json:"coachRan"`
 	CoachRunning bool `json:"coachRunning"`
 }
 
@@ -42,7 +43,8 @@ func (b *Board) handleListCards(w http.ResponseWriter, _ *http.Request) {
 
 	response := make([]cardResponse, 0, len(cards))
 	for _, card := range cards {
-		response = append(response, cardResponse{Card: card, CoachRunning: b.coachRunning(card.ID)})
+		ran, running := b.coachStatus(card.ID)
+		response = append(response, cardResponse{Card: card, CoachRan: ran, CoachRunning: running})
 	}
 	writeJSON(w, response)
 }

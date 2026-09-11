@@ -383,7 +383,7 @@ const PR_APPROVED_SVG = `<svg class="card-pr-approved" viewBox="0 0 16 16" width
 
 function renderCard(card, colId) {
   const el = document.createElement("div");
-  el.className = `card card-${card.status}${card.coachRunning ? " card-coaching" : ""}`;
+  el.className = `card card-${card.status}`;
   el.dataset.cardId = card.id;
 
   el.draggable = true;
@@ -406,7 +406,12 @@ function renderCard(card, colId) {
     ? `<div class="card-meta">${costHtml}${prLink}</div>`
     : "";
 
+  const coachIcon = card.coachRan || card.coachRunning
+    ? `<span class="card-coach${card.coachRunning ? " card-coach-running" : ""}" title="Coach ${card.coachRunning ? "running" : "done"}" aria-label="Coach ${card.coachRunning ? "running" : "done"}">🎓</span>`
+    : "";
+
   el.innerHTML = `
+    ${coachIcon}
     <div class="card-title">${esc(card.title)}</div>
     ${metaHtml}
     <div class="card-actions">
@@ -664,7 +669,10 @@ coachBtn.addEventListener("click", async () => {
   try {
     const info = await API.coachCard(cardId);
     const coachedCard = cards.find((c) => c.id === cardId);
-    if (coachedCard) coachedCard.coachRunning = true;
+    if (coachedCard) {
+      coachedCard.coachRan = true;
+      coachedCard.coachRunning = true;
+    }
     renderBoard();
     scheduleCoachRefresh();
     await openTerminal(info.session, `🎓 ${card?.title || "Coach"}`, cardId, card?.project || "");

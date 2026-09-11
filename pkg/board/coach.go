@@ -78,6 +78,7 @@ func (b *Board) handleCoachCard(w http.ResponseWriter, r *http.Request) {
 func (b *Board) startCoach(ctx context.Context, card *Card) (string, error) {
 	name := coachSessionName(card.ID)
 	if alive, err := b.sessions.Alive(name); err == nil && alive {
+		b.markCoachRan(card.ID)
 		b.watchCoach(card)
 		return name, nil
 	}
@@ -236,10 +237,19 @@ func waitForCoachRetry(ctx context.Context) bool {
 	}
 }
 
+func (b *Board) markCoachRan(cardID string) {
+	b.mu.Lock()
+	b.coached[cardID] = true
+	b.mu.Unlock()
+}
+
 func (b *Board) setCoachRunning(cardID string, running bool) {
 	b.mu.Lock()
 	changed := b.coaches[cardID] != running
 	b.coaches[cardID] = running
+	if running {
+		b.coached[cardID] = true
+	}
 	b.mu.Unlock()
 	if changed {
 		b.broadcast()
@@ -247,9 +257,14 @@ func (b *Board) setCoachRunning(cardID string, running bool) {
 }
 
 func (b *Board) coachRunning(cardID string) bool {
+	_, running := b.coachStatus(cardID)
+	return running
+}
+
+func (b *Board) coachStatus(cardID string) (ran, running bool) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.coaches[cardID]
+	return b.coached[cardID], b.coaches[cardID]
 }
 
 // coachAgentConfigPath returns the path of the agent config the coach runs.

@@ -213,6 +213,20 @@ func TestHandleListCardsEmpty(t *testing.T) {
 	assert.Empty(t, cards)
 }
 
+func TestHandleListCardsExcludesCoachStatusBeforeRun(t *testing.T) {
+	b, store := newTestBoard(t)
+	require.NoError(t, store.InsertCard(&Card{ID: "c1", Title: "T", Column: "dev"}))
+
+	rec := httptest.NewRecorder()
+	b.handleListCards(rec, httptest.NewRequest(http.MethodGet, "/api/cards", http.NoBody))
+
+	var cards []cardResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&cards))
+	require.Len(t, cards, 1)
+	assert.False(t, cards[0].CoachRan)
+	assert.False(t, cards[0].CoachRunning)
+}
+
 func TestHandleListCardsIncludesCoachStatus(t *testing.T) {
 	b, store := newTestBoard(t)
 	require.NoError(t, store.InsertCard(&Card{ID: "c1", Title: "T", Column: "dev"}))
@@ -225,8 +239,25 @@ func TestHandleListCardsIncludesCoachStatus(t *testing.T) {
 	var cards []cardResponse
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&cards))
 	require.Len(t, cards, 1)
+	assert.True(t, cards[0].CoachRan)
 	assert.True(t, cards[0].CoachRunning)
 	assert.Equal(t, "c1", cards[0].ID)
+}
+
+func TestHandleListCardsIncludesCompletedCoachStatus(t *testing.T) {
+	b, store := newTestBoard(t)
+	require.NoError(t, store.InsertCard(&Card{ID: "c1", Title: "T", Column: "dev"}))
+	b.setCoachRunning("c1", true)
+	b.setCoachRunning("c1", false)
+
+	rec := httptest.NewRecorder()
+	b.handleListCards(rec, httptest.NewRequest(http.MethodGet, "/api/cards", http.NoBody))
+
+	var cards []cardResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&cards))
+	require.Len(t, cards, 1)
+	assert.True(t, cards[0].CoachRan)
+	assert.False(t, cards[0].CoachRunning)
 }
 
 func TestHandleJumpCard(t *testing.T) {
