@@ -115,6 +115,7 @@ func (b *Board) startCoach(ctx context.Context, card *Card) (string, error) {
 	if err := b.sessions.NewSession(name, card.Worktree, agentConfig, agentSession, socket, "", "", prompt); err != nil {
 		return "", fmt.Errorf("coach session: %w", err)
 	}
+	b.broadcast()
 
 	return name, nil
 }

@@ -27,13 +27,25 @@ func (b *Board) getCard(w http.ResponseWriter, r *http.Request) (*Card, bool) {
 	return card, true
 }
 
+type cardResponse struct {
+	*Card
+
+	CoachRunning bool `json:"coachRunning"`
+}
+
 func (b *Board) handleListCards(w http.ResponseWriter, _ *http.Request) {
 	cards, err := b.store.ListCards()
 	if err != nil {
 		writeError(w, fmt.Errorf("list cards: %w", err))
 		return
 	}
-	writeJSON(w, cards)
+
+	response := make([]cardResponse, 0, len(cards))
+	for _, card := range cards {
+		coachRunning, _ := b.sessions.Alive(coachSessionName(card.ID))
+		response = append(response, cardResponse{Card: card, CoachRunning: coachRunning})
+	}
+	writeJSON(w, response)
 }
 
 type createCardRequest struct {

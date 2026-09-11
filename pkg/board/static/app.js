@@ -152,6 +152,17 @@ let columns = [];
 let draggedCard = null;
 let homeDir = "";
 let refreshSequence = 0;
+let coachRefreshTimer = null;
+
+function scheduleCoachRefresh() {
+  clearTimeout(coachRefreshTimer);
+  coachRefreshTimer = null;
+  if (!cards.some((card) => card.coachRunning)) return;
+  coachRefreshTimer = setTimeout(() => {
+    coachRefreshTimer = null;
+    refresh().catch(() => {});
+  }, 2000);
+}
 
 async function refresh() {
   const sequence = ++refreshSequence;
@@ -166,6 +177,7 @@ async function refresh() {
   projects = nextProjects;
   columns = nextColumns;
   renderBoard();
+  scheduleCoachRefresh();
 }
 
 // Replace the home directory prefix with "~" for display.
@@ -371,7 +383,7 @@ const PR_APPROVED_SVG = `<svg class="card-pr-approved" viewBox="0 0 16 16" width
 
 function renderCard(card, colId) {
   const el = document.createElement("div");
-  el.className = `card card-${card.status}`;
+  el.className = `card card-${card.status}${card.coachRunning ? " card-coaching" : ""}`;
   el.dataset.cardId = card.id;
 
   el.draggable = true;
@@ -651,6 +663,10 @@ coachBtn.addEventListener("click", async () => {
   coachBtn.disabled = true;
   try {
     const info = await API.coachCard(cardId);
+    const coachedCard = cards.find((c) => c.id === cardId);
+    if (coachedCard) coachedCard.coachRunning = true;
+    renderBoard();
+    scheduleCoachRefresh();
     await openTerminal(info.session, `🎓 ${card?.title || "Coach"}`, cardId, card?.project || "");
   } catch (err) {
     alert(err.message);
