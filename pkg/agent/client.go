@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -57,6 +58,10 @@ const ReasonNormal = "normal"
 // reconnects. Servers that predate heartbeats never arm the watchdog, so
 // long-lived idle streams to older agents keep working.
 var streamIdleTimeout = 45 * time.Second
+
+// tabDiscoveryInterval limits the expensive session-list scan. Between scans,
+// the client polls only lightweight /status endpoints for known tabs.
+var tabDiscoveryInterval = 30 * time.Second
 
 // errStreamIdle reports a stream aborted by the idle watchdog.
 var errStreamIdle = errors.New("event stream idle: heartbeats stopped")
@@ -98,10 +103,9 @@ type Event struct {
 // state and find the stream position to resume from.
 type Snapshot struct {
 	Title string `json:"title"`
-	// Streaming reports whether the server holds a turn's streaming lock. It is
-	// always false for attached (--listen) sessions — turns run in the TUI, not
-	// through the server's RunSession — so the controller ignores it and derives
-	// the running state from stream_started/stream_stopped events instead.
+	// Streaming reports whether this top-level session is running a turn. It
+	// is used when aggregating independent TUI tabs; event ordering for the
+	// watched root session still comes from stream_started/stream_stopped.
 	Streaming    bool   `json:"streaming"`
 	LastEventSeq uint64 `json:"last_event_seq"`
 	// Cost is the session's cumulative cost in US dollars. Current agents
@@ -109,6 +113,11 @@ type Snapshot struct {
 	// for older ones it is summed from the per-message costs the runtime
 	// records on each assistant message (see decodeSnapshot).
 	Cost float64 `json:"-"`
+}
+
+type sessionSummary struct {
+	ID         string `json:"id"`
+	WorkingDir string `json:"working_dir"`
 }
 
 // snapshotWire mirrors the fields the board reads off GET /snapshot. Current
@@ -132,6 +141,10 @@ type Client struct {
 	http    *http.Client
 	base    string
 	session string
+
+	tabsMu       sync.Mutex
+	tabIDs       []string
+	tabsListedAt time.Time
 }
 
 // NewClient returns a client that reaches the control plane over the given
@@ -158,6 +171,87 @@ func (c *Client) sessionURL() string {
 
 func (c *Client) endpoint(name string) string {
 	return c.sessionURL() + "/" + name
+}
+
+// AnySessionStreaming reports whether any top-level session in workingDir is
+// currently running a turn. TUI tabs are separate control-plane sessions, so
+// watching only the card's original session cannot see their activity.
+func (c *Client) AnySessionStreaming(ctx context.Context, workingDir string) (bool, error) {
+	ids, err := c.tabSessionIDs(ctx, workingDir)
+	if err != nil {
+		return false, err
+	}
+	inspected := false
+	for _, id := range ids {
+		streaming, err := c.sessionStreaming(ctx, id)
+		if err != nil {
+			continue // a tab may close between discovery and the status probe
+		}
+		inspected = true
+		if streaming {
+			return true, nil
+		}
+	}
+	if !inspected {
+		return false, errors.New("no sessions could be inspected")
+	}
+	return false, nil
+}
+
+func (c *Client) tabSessionIDs(ctx context.Context, workingDir string) ([]string, error) {
+	c.tabsMu.Lock()
+	defer c.tabsMu.Unlock()
+	if c.tabIDs != nil && time.Since(c.tabsListedAt) < tabDiscoveryInterval {
+		return append([]string(nil), c.tabIDs...), nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/sessions", http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list sessions: %s", resp.Status)
+	}
+	var sessions []sessionSummary
+	if err := json.NewDecoder(resp.Body).Decode(&sessions); err != nil {
+		return nil, fmt.Errorf("decode sessions: %w", err)
+	}
+	c.tabIDs = c.tabIDs[:0]
+	for _, sess := range sessions {
+		if sess.WorkingDir == workingDir {
+			c.tabIDs = append(c.tabIDs, sess.ID)
+		}
+	}
+	c.tabsListedAt = time.Now()
+	return append([]string(nil), c.tabIDs...), nil
+}
+
+func (c *Client) sessionStreaming(ctx context.Context, id string) (bool, error) {
+	u := c.base + "/api/sessions/" + url.PathEscape(id) + "/status"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
+	if err != nil {
+		return false, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("session status: %s", resp.Status)
+	}
+	var status struct {
+		Streaming bool `json:"streaming"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return false, fmt.Errorf("decode session status: %w", err)
+	}
+	return status.Streaming, nil
 }
 
 // getSnapshot issues GET /snapshot and validates the response status. On

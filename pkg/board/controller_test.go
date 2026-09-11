@@ -72,6 +72,8 @@ type fakeClient struct {
 	followErr     error
 	followKey     string
 	followMsg     string
+	anyStreaming  bool
+	anyErr        error
 	// onStream, when set, runs once at the start of the first StreamEvents
 	// call, before any event is delivered. Tests use it to change the
 	// snapshot after the watcher's loop-top read.
@@ -111,6 +113,12 @@ func (f *fakeClient) StreamEvents(ctx context.Context, since uint64, onEvent fun
 	return ctx.Err()
 }
 
+func (f *fakeClient) AnySessionStreaming(context.Context, string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.anyStreaming, f.anyErr
+}
+
 func (f *fakeClient) Followup(_ context.Context, key, msg string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -135,6 +143,26 @@ func devCard() *Card {
 		Agent: "ag", RepoPath: "rp", Branch: "br", Worktree: "wt",
 		Session: "s1", AgentSession: "sess-1",
 	}
+}
+
+// TUI tabs are independent top-level control-plane sessions, not nested
+// events on the card's original session. The aggregate session probe must
+// therefore turn the card orange even when the root event stream is quiet.
+func TestControllerWorkingTabWithoutRootEventIsRunning(t *testing.T) {
+	store := openTestStore(t)
+	require.NoError(t, store.InsertCard(devCard()))
+
+	client := &fakeClient{
+		snap:         agent.Snapshot{Streaming: false},
+		anyStreaming: true,
+	}
+	c := newTestController(t, store, newFakeSessionManager(), client)
+	c.Start(devCard())
+
+	require.Eventually(t, func() bool {
+		card, err := store.GetCard("c1")
+		return err == nil && card.Status == StatusRunning
+	}, time.Second, 5*time.Millisecond)
 }
 
 func TestControllerSnapshotSetsTitle(t *testing.T) {

@@ -58,6 +58,10 @@ func (noopSessionClient) StreamEvents(context.Context, uint64, func(agent.Event)
 	return errors.New("no control plane in tests")
 }
 
+func (noopSessionClient) AnySessionStreaming(context.Context, string) (bool, error) {
+	return false, errors.New("no control plane in tests")
+}
+
 func (noopSessionClient) Followup(context.Context, string, string) (bool, error) {
 	return false, errors.New("no control plane in tests")
 }

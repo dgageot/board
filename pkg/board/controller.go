@@ -21,6 +21,7 @@ type sessionClient interface {
 	Transcript(ctx context.Context) ([]byte, error)
 	StreamEvents(ctx context.Context, since uint64, onEvent func(agent.Event) bool) error
 	Followup(ctx context.Context, idempotencyKey, message string) (bool, error)
+	AnySessionStreaming(ctx context.Context, workingDir string) (bool, error)
 }
 
 const (
@@ -38,6 +39,10 @@ const (
 	// reaches out to GitHub, so a stalled or unauthenticated CLI must not hang
 	// the lookup forever.
 	prLookupTimeout = 10 * time.Second
+	// tabProbeInterval controls how quickly activity in another TUI tab is
+	// reflected on the card. Tabs are separate control-plane sessions and do
+	// not appear on the original session's event stream.
+	tabProbeInterval = 500 * time.Millisecond
 	// expectTurnTimeout bounds how long an expected first turn may hold a
 	// card at "starting". If the launch prompt never runs (dropped, or
 	// canceled by a user attached to the TUI), the card falls back to waiting
@@ -269,10 +274,10 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 			}
 		}
 
-		// Derive the running state from the event stream, not snap.Streaming:
-		// for attached (--listen) sessions that flag is always false because
-		// turns run in the TUI, never through the server's RunSession (the only
-		// place its streaming lock is held). Tail from the start of the buffer
+		// Derive the root session's ordered state from its event stream. The
+		// snapshot flag is also used by the separate aggregate tab probe, but it
+		// cannot replace replay here because this stream carries errors, pauses,
+		// titles, and precise turn boundaries. Tail from the start of the buffer
 		// (since 0) so the whole backlog is replayed: a turn that began before
 		// this watcher connected — its stream_started already past the
 		// snapshot's last seq — is still seen and keeps the card running.
@@ -334,6 +339,9 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 				c.setStatus(cardID, status)
 			}
 		}
+
+		activityCtx, cancelActivity := context.WithCancel(streamCtx)
+		go c.watchTabActivity(activityCtx, cardID, card.Worktree, client)
 
 		exited := false
 		_ = client.StreamEvents(streamCtx, 0, func(ev agent.Event) bool {
@@ -415,6 +423,7 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 			}
 			return true
 		})
+		cancelActivity()
 		streamCancel()
 
 		if exited && ctx.Err() == nil {
@@ -428,10 +437,45 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 	}
 }
 
+// watchTabActivity supplements the original session's event stream with the
+// live state of sibling TUI tabs. Tabs have independent session IDs and event
+// streams, but all share the card's worktree. Only transitions observed by
+// this probe are applied, so root-session error and pause states remain owned
+// by the event stream.
+func (c *Controller) watchTabActivity(ctx context.Context, cardID, worktree string, client sessionClient) {
+	wasStreaming := false
+	for {
+		probeCtx, cancel := context.WithTimeout(ctx, snapshotTimeout)
+		streaming, err := client.AnySessionStreaming(probeCtx, worktree)
+		cancel()
+		if err == nil {
+			c.applyTabActivity(cardID, streaming, wasStreaming)
+			wasStreaming = streaming
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(tabProbeInterval):
+		}
+	}
+}
+
+func (c *Controller) applyTabActivity(cardID string, streaming, wasStreaming bool) {
+	card, err := c.store.GetCard(cardID)
+	if err != nil {
+		return
+	}
+	if streaming && card.Status == StatusWaiting {
+		c.setStatus(cardID, StatusRunning)
+	} else if !streaming && wasStreaming && card.Status == StatusRunning {
+		c.setStatus(cardID, StatusWaiting)
+	}
+}
+
 // setTitleFromSnapshot mirrors a fresh snapshot's title into the card. The
-// snapshot's streaming flag is deliberately ignored: it is unreliable for
-// attached sessions (see watch), so running/waiting is driven entirely by the
-// stream_started/stream_stopped events.
+// root session's state is event-driven for ordering and replay; snapshot's
+// streaming flag is consumed only by the independent aggregate tab probe.
 func (c *Controller) setTitleFromSnapshot(cardID string, snap agent.Snapshot) {
 	if snap.Title != "" {
 		c.setTitle(cardID, snap.Title)

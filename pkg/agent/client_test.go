@@ -20,6 +20,44 @@ func testClient(t *testing.T, handler http.HandlerFunc) *Client {
 	return newClient(srv.Client(), srv.URL, "sess-1")
 }
 
+func TestAnySessionStreaming(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/sessions":
+			fmt.Fprint(w, `[{"id":"sess-1","working_dir":"/work"},{"id":"tab-2","working_dir":"/work"},{"id":"other","working_dir":"/other"}]`)
+		case "/api/sessions/sess-1/status":
+			fmt.Fprint(w, `{"streaming":false}`)
+		case "/api/sessions/tab-2/status":
+			fmt.Fprint(w, `{"streaming":true}`)
+		default:
+			http.Error(w, "unexpected "+r.URL.Path, http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c := newClient(srv.Client(), srv.URL, "sess-1")
+	streaming, err := c.AnySessionStreaming(t.Context(), "/work")
+	require.NoError(t, err)
+	assert.True(t, streaming)
+}
+
+func TestAnySessionStreamingIgnoresClosedTab(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/sessions":
+			fmt.Fprint(w, `[{"id":"closed","working_dir":"/work"},{"id":"sess-1","working_dir":"/work"}]`)
+		case "/api/sessions/closed/status":
+			w.WriteHeader(http.StatusNotFound)
+		case "/api/sessions/sess-1/status":
+			fmt.Fprint(w, `{"streaming":false}`)
+		}
+	})
+
+	streaming, err := c.AnySessionStreaming(t.Context(), "/work")
+	require.NoError(t, err)
+	assert.False(t, streaming)
+}
+
 func TestSnapshot(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/sessions/sess-1/snapshot", r.URL.Path)
