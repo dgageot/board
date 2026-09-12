@@ -18,7 +18,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -58,10 +57,6 @@ const ReasonNormal = "normal"
 // reconnects. Servers that predate heartbeats never arm the watchdog, so
 // long-lived idle streams to older agents keep working.
 var streamIdleTimeout = 45 * time.Second
-
-// tabDiscoveryInterval limits the expensive session-list scan. Between scans,
-// the client polls only lightweight /status endpoints for known tabs.
-var tabDiscoveryInterval = 30 * time.Second
 
 // errStreamIdle reports a stream aborted by the idle watchdog.
 var errStreamIdle = errors.New("event stream idle: heartbeats stopped")
@@ -116,8 +111,8 @@ type Snapshot struct {
 }
 
 type sessionSummary struct {
-	ID         string `json:"id"`
 	WorkingDir string `json:"working_dir"`
+	Streaming  bool   `json:"streaming"`
 }
 
 // snapshotWire mirrors the fields the board reads off GET /snapshot. Current
@@ -141,10 +136,6 @@ type Client struct {
 	http    *http.Client
 	base    string
 	session string
-
-	tabsMu       sync.Mutex
-	tabIDs       []string
-	tabsListedAt time.Time
 }
 
 // NewClient returns a client that reaches the control plane over the given
@@ -177,81 +168,28 @@ func (c *Client) endpoint(name string) string {
 // currently running a turn. TUI tabs are separate control-plane sessions, so
 // watching only the card's original session cannot see their activity.
 func (c *Client) AnySessionStreaming(ctx context.Context, workingDir string) (bool, error) {
-	ids, err := c.tabSessionIDs(ctx, workingDir)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/sessions?active=true", http.NoBody)
 	if err != nil {
 		return false, err
 	}
-	inspected := false
-	for _, id := range ids {
-		streaming, err := c.sessionStreaming(ctx, id)
-		if err != nil {
-			continue // a tab may close between discovery and the status probe
-		}
-		inspected = true
-		if streaming {
-			return true, nil
-		}
-	}
-	if !inspected {
-		return false, errors.New("no sessions could be inspected")
-	}
-	return false, nil
-}
-
-func (c *Client) tabSessionIDs(ctx context.Context, workingDir string) ([]string, error) {
-	c.tabsMu.Lock()
-	defer c.tabsMu.Unlock()
-	if c.tabIDs != nil && time.Since(c.tabsListedAt) < tabDiscoveryInterval {
-		return append([]string(nil), c.tabIDs...), nil
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/sessions", http.NoBody)
-	if err != nil {
-		return nil, err
-	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("list sessions: %s", resp.Status)
+		return false, fmt.Errorf("list active sessions: %s", resp.Status)
 	}
 	var sessions []sessionSummary
 	if err := json.NewDecoder(resp.Body).Decode(&sessions); err != nil {
-		return nil, fmt.Errorf("decode sessions: %w", err)
+		return false, fmt.Errorf("decode active sessions: %w", err)
 	}
-	c.tabIDs = c.tabIDs[:0]
-	for _, sess := range sessions {
-		if sess.WorkingDir == workingDir {
-			c.tabIDs = append(c.tabIDs, sess.ID)
+	for _, session := range sessions {
+		if session.WorkingDir == workingDir && session.Streaming {
+			return true, nil
 		}
 	}
-	c.tabsListedAt = time.Now()
-	return append([]string(nil), c.tabIDs...), nil
-}
-
-func (c *Client) sessionStreaming(ctx context.Context, id string) (bool, error) {
-	u := c.base + "/api/sessions/" + url.PathEscape(id) + "/status"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
-	if err != nil {
-		return false, err
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("session status: %s", resp.Status)
-	}
-	var status struct {
-		Streaming bool `json:"streaming"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		return false, fmt.Errorf("decode session status: %w", err)
-	}
-	return status.Streaming, nil
+	return false, nil
 }
 
 // getSnapshot issues GET /snapshot and validates the response status. On

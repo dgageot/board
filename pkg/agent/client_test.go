@@ -22,16 +22,9 @@ func testClient(t *testing.T, handler http.HandlerFunc) *Client {
 
 func TestAnySessionStreaming(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/sessions":
-			fmt.Fprint(w, `[{"id":"sess-1","working_dir":"/work"},{"id":"tab-2","working_dir":"/work"},{"id":"other","working_dir":"/other"}]`)
-		case "/api/sessions/sess-1/status":
-			fmt.Fprint(w, `{"streaming":false}`)
-		case "/api/sessions/tab-2/status":
-			fmt.Fprint(w, `{"streaming":true}`)
-		default:
-			http.Error(w, "unexpected "+r.URL.Path, http.StatusInternalServerError)
-		}
+		assert.Equal(t, "true", r.URL.Query().Get("active"))
+		assert.Equal(t, "/api/sessions", r.URL.Path)
+		fmt.Fprint(w, `[{"id":"sess-1","working_dir":"/work"},{"id":"tab-2","working_dir":"/work","streaming":true},{"id":"other","working_dir":"/other","streaming":true}]`)
 	}))
 	t.Cleanup(srv.Close)
 
@@ -41,21 +34,34 @@ func TestAnySessionStreaming(t *testing.T) {
 	assert.True(t, streaming)
 }
 
-func TestAnySessionStreamingIgnoresClosedTab(t *testing.T) {
+func TestAnySessionStreamingIgnoresOtherWorktrees(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/sessions":
-			fmt.Fprint(w, `[{"id":"closed","working_dir":"/work"},{"id":"sess-1","working_dir":"/work"}]`)
-		case "/api/sessions/closed/status":
-			w.WriteHeader(http.StatusNotFound)
-		case "/api/sessions/sess-1/status":
-			fmt.Fprint(w, `{"streaming":false}`)
-		}
+		assert.Equal(t, "true", r.URL.Query().Get("active"))
+		fmt.Fprint(w, `[{"id":"sess-1","working_dir":"/work"},{"id":"other","working_dir":"/other","streaming":true}]`)
 	})
 
 	streaming, err := c.AnySessionStreaming(t.Context(), "/work")
 	require.NoError(t, err)
 	assert.False(t, streaming)
+}
+
+func TestAnySessionStreamingEmpty(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `[]`)
+	})
+
+	streaming, err := c.AnySessionStreaming(t.Context(), "/work")
+	require.NoError(t, err)
+	assert.False(t, streaming)
+}
+
+func TestAnySessionStreamingBadStatus(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	_, err := c.AnySessionStreaming(t.Context(), "/work")
+	require.EqualError(t, err, "list active sessions: 500 Internal Server Error")
 }
 
 func TestSnapshot(t *testing.T) {
