@@ -21,11 +21,11 @@ type sessionClient interface {
 	Transcript(ctx context.Context) ([]byte, error)
 	StreamEvents(ctx context.Context, since uint64, onEvent func(agent.Event) bool) error
 	Followup(ctx context.Context, idempotencyKey, message string) (bool, error)
-	AnySessionStreaming(ctx context.Context, workingDir string) (bool, error)
+	Activity(ctx context.Context) ([]agent.SessionActivity, error)
 }
 
 const (
-	// retryDelay paces reconnect and relaunch attempts.
+	// retryDelay paces activity probes, reconnects, and relaunch attempts.
 	retryDelay = 500 * time.Millisecond
 	// snapshotTimeout bounds a single snapshot request so a wedged server
 	// cannot block a watcher forever.
@@ -39,10 +39,6 @@ const (
 	// reaches out to GitHub, so a stalled or unauthenticated CLI must not hang
 	// the lookup forever.
 	prLookupTimeout = 10 * time.Second
-	// tabProbeInterval controls how quickly activity in another TUI tab is
-	// reflected on the card. Tabs are separate control-plane sessions and do
-	// not appear on the original session's event stream.
-	tabProbeInterval = 500 * time.Millisecond
 	// expectTurnTimeout bounds how long an expected first turn may hold a
 	// card at "starting". If the launch prompt never runs (dropped, or
 	// canceled by a user attached to the TUI), the card falls back to waiting
@@ -69,8 +65,9 @@ type Controller struct {
 	// is a field so tests can inject a fake without a real `gh` and GitHub repo.
 	prURLForHead func(ctx context.Context, worktree string) (string, error)
 
-	mu       sync.Mutex
-	watchers map[string]*watcher
+	mu               sync.Mutex
+	watchers         map[string]*watcher
+	activityWarnings map[string]string
 	// expectTurn marks cards whose latest launch carried an initial prompt: a
 	// first turn is imminent, so the watcher keeps them "starting" until the
 	// event stream reports it instead of flashing green ("waiting") first.
@@ -85,20 +82,22 @@ type Controller struct {
 
 // watcher tracks a running watch goroutine so it can be cancelled and waited on.
 type watcher struct {
-	cancel context.CancelFunc
-	done   chan struct{}
+	cancel   context.CancelFunc
+	done     chan struct{}
+	activity *cardActivity
 }
 
 func newController(ctx context.Context, store Store, sessions SessionManager, onChanged func()) *Controller {
 	return &Controller{
-		ctx:          ctx,
-		store:        store,
-		sessions:     sessions,
-		onChanged:    onChanged,
-		clientFor:    func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
-		prURLForHead: git.PRURLForHead,
-		watchers:     make(map[string]*watcher),
-		expectTurn:   make(map[string]time.Time),
+		ctx:              ctx,
+		store:            store,
+		sessions:         sessions,
+		onChanged:        onChanged,
+		clientFor:        func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
+		prURLForHead:     git.PRURLForHead,
+		watchers:         make(map[string]*watcher),
+		activityWarnings: make(map[string]string),
+		expectTurn:       make(map[string]time.Time),
 	}
 }
 
@@ -123,11 +122,14 @@ func (c *Controller) Start(card *Card) {
 		return
 	}
 	ctx, cancel := context.WithCancel(c.ctx)
-	w := &watcher{cancel: cancel, done: make(chan struct{})}
+	w := &watcher{
+		cancel: cancel, done: make(chan struct{}),
+		activity: &cardActivity{controller: c, cardID: card.ID, rootStatus: card.Status},
+	}
 	c.watchers[card.ID] = w
 	go func() {
 		defer close(w.done)
-		c.watch(ctx, card.ID)
+		c.watch(ctx, card.ID, w.activity)
 	}()
 }
 
@@ -182,11 +184,23 @@ func (c *Controller) Stop(cardID string) {
 		w.cancel()
 		<-w.done
 	}
+	c.mu.Lock()
+	delete(c.activityWarnings, cardID)
+	c.mu.Unlock()
 }
 
 // watch keeps one card mirrored to its control plane: snapshot to resync, then
 // tail events; on a drop, reconnect; if the agent is gone, relaunch and resume.
-func (c *Controller) watch(ctx context.Context, cardID string) {
+func (c *Controller) watch(ctx context.Context, cardID string, state *cardActivity) {
+	activityCtx, cancelActivity := context.WithCancel(ctx)
+	var activityDone chan struct{}
+	defer func() {
+		cancelActivity()
+		if activityDone != nil {
+			<-activityDone
+		}
+	}()
+
 	// lastSnapErr is the last snapshot failure logged. The loop retries every
 	// 500ms, so a persistent failure is logged once, when it appears or
 	// changes, not on every retry.
@@ -205,12 +219,19 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		if err != nil {
 			// Transient store error: back off and retry rather than abandoning
 			// the card until the next board restart.
-			if sleep(ctx, retryDelay) {
+			if sleep(ctx) {
 				return
 			}
 			continue
 		}
 		client := c.clientFor(socketPath(card.AgentSession), card.AgentSession)
+		if activityDone == nil {
+			activityDone = make(chan struct{})
+			go func() {
+				defer close(activityDone)
+				c.watchTabActivity(activityCtx, client, state)
+			}()
+		}
 
 		sctx, scancel := context.WithTimeout(ctx, snapshotTimeout)
 		snap, err := client.Snapshot(sctx)
@@ -231,7 +252,7 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 				relaunchedUnsupported = relaunchedUnsupported || unsupported
 				_ = c.relaunch(card, "")
 			}
-			if sleep(ctx, retryDelay) {
+			if sleep(ctx) {
 				return
 			}
 			continue
@@ -268,16 +289,16 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		streamCtx, streamCancel := ctx, context.CancelFunc(func() {})
 		if card.Status == StatusStarting {
 			if expected, remaining := c.turnExpected(cardID); !expected {
-				c.setStatus(cardID, StatusWaiting)
+				state.setRootStatus(StatusWaiting)
 			} else {
 				streamCtx, streamCancel = context.WithTimeout(ctx, remaining)
 			}
 		}
 
-		// Derive the root session's ordered state from its event stream. The
-		// snapshot flag is also used by the separate aggregate tab probe, but it
-		// cannot replace replay here because this stream carries errors, pauses,
-		// titles, and precise turn boundaries. Tail from the start of the buffer
+		// Replay supplies turn outcomes and legacy activity. On current agents
+		// GET /api/activity is authoritative for running/paused/idle; replay
+		// cannot override it, even when stream events have been dropped. Tail
+		// from the start of the buffer
 		// (since 0) so the whole backlog is replayed: a turn that began before
 		// this watcher connected — its stream_started already past the
 		// snapshot's last seq — is still seen and keeps the card running.
@@ -329,19 +350,16 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 		flushReplay := func() {
 			replaying = false
 			if replayStatus != "" {
-				c.setStatus(cardID, replayStatus)
+				state.setRootStatus(replayStatus)
 			}
 		}
 		setStatus := func(status CardStatus) {
 			if replaying {
 				replayStatus = status
 			} else {
-				c.setStatus(cardID, status)
+				state.setRootStatus(status)
 			}
 		}
-
-		activityCtx, cancelActivity := context.WithCancel(streamCtx)
-		go c.watchTabActivity(activityCtx, cardID, card.Worktree, client)
 
 		exited := false
 		_ = client.StreamEvents(streamCtx, 0, func(ev agent.Event) bool {
@@ -423,59 +441,22 @@ func (c *Controller) watch(ctx context.Context, cardID string) {
 			}
 			return true
 		})
-		cancelActivity()
 		streamCancel()
 
 		if exited && ctx.Err() == nil {
-			// The agent process ended; resume it so the card stays usable.
-			log.Printf("card %s: agent exited", cardID)
-			_ = c.relaunch(card, "")
+			// Closing the original tab must not kill the process's other tabs.
+			if alive, err := c.sessions.Alive(card.Session); err == nil && !alive {
+				log.Printf("card %s: agent exited", cardID)
+				_ = c.relaunch(card, "")
+			}
 		}
-		if sleep(ctx, retryDelay) {
+		if sleep(ctx) {
 			return
 		}
 	}
 }
 
-// watchTabActivity supplements the original session's event stream with the
-// live state of sibling TUI tabs. Tabs have independent session IDs and event
-// streams, but all share the card's worktree. Only transitions observed by
-// this probe are applied, so root-session error and pause states remain owned
-// by the event stream.
-func (c *Controller) watchTabActivity(ctx context.Context, cardID, worktree string, client sessionClient) {
-	wasStreaming := false
-	for {
-		probeCtx, cancel := context.WithTimeout(ctx, snapshotTimeout)
-		streaming, err := client.AnySessionStreaming(probeCtx, worktree)
-		cancel()
-		if err == nil {
-			c.applyTabActivity(cardID, streaming, wasStreaming)
-			wasStreaming = streaming
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(tabProbeInterval):
-		}
-	}
-}
-
-func (c *Controller) applyTabActivity(cardID string, streaming, wasStreaming bool) {
-	card, err := c.store.GetCard(cardID)
-	if err != nil {
-		return
-	}
-	if streaming && card.Status == StatusWaiting {
-		c.setStatus(cardID, StatusRunning)
-	} else if !streaming && wasStreaming && card.Status == StatusRunning {
-		c.setStatus(cardID, StatusWaiting)
-	}
-}
-
-// setTitleFromSnapshot mirrors a fresh snapshot's title into the card. The
-// root session's state is event-driven for ordering and replay; snapshot's
-// streaming flag is consumed only by the independent aggregate tab probe.
+// setTitleFromSnapshot mirrors a fresh snapshot's title into the card.
 func (c *Controller) setTitleFromSnapshot(cardID string, snap agent.Snapshot) {
 	if snap.Title != "" {
 		c.setTitle(cardID, snap.Title)
@@ -651,13 +632,20 @@ func (c *Controller) relaunch(card *Card, prompt string) error {
 	// "starting" until the turn's stream_started — not flash green while the
 	// agent is still initializing.
 	c.setExpectTurn(card.ID, prompt != "")
-	c.setStatus(card.ID, StatusStarting)
+	c.mu.Lock()
+	w := c.watchers[card.ID]
+	c.mu.Unlock()
+	if w != nil {
+		w.activity.relaunched()
+	} else {
+		c.setStatus(card.ID, StatusStarting)
+	}
 	return nil
 }
 
-// sleep waits for d or until ctx is done, reporting whether ctx was done.
-func sleep(ctx context.Context, d time.Duration) bool {
-	t := time.NewTimer(d)
+// sleep waits before retrying, or returns true when ctx is canceled.
+func sleep(ctx context.Context) bool {
+	t := time.NewTimer(retryDelay)
 	defer t.Stop()
 	select {
 	case <-ctx.Done():

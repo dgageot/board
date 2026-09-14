@@ -98,9 +98,8 @@ type Event struct {
 // state and find the stream position to resume from.
 type Snapshot struct {
 	Title string `json:"title"`
-	// Streaming reports whether this top-level session is running a turn. It
-	// is used when aggregating independent TUI tabs; event ordering for the
-	// watched root session still comes from stream_started/stream_stopped.
+	// Streaming is the session's own turn flag. Activity, not this snapshot,
+	// is authoritative for a card's state across tabs and descendants.
 	Streaming    bool   `json:"streaming"`
 	LastEventSeq uint64 `json:"last_event_seq"`
 	// Cost is the session's cumulative cost in US dollars. Current agents
@@ -110,10 +109,15 @@ type Snapshot struct {
 	Cost float64 `json:"-"`
 }
 
-type sessionSummary struct {
-	WorkingDir string `json:"working_dir"`
-	Streaming  bool   `json:"streaming"`
+// SessionActivity describes one tab and all run loops owned by its runtime.
+type SessionActivity struct {
+	ID        string `json:"id"`
+	Streaming bool   `json:"streaming"`
+	Paused    bool   `json:"paused"`
 }
+
+// ErrActivityUnsupported means the running agent must be upgraded and restarted.
+var ErrActivityUnsupported = errors.New("agent lacks GET /api/activity; upgrade docker-agent and restart this agent")
 
 // snapshotWire mirrors the fields the board reads off GET /snapshot. Current
 // agents report the session's total cost directly; older ones only record a
@@ -164,32 +168,34 @@ func (c *Client) endpoint(name string) string {
 	return c.sessionURL() + "/" + name
 }
 
-// AnySessionStreaming reports whether any top-level session in workingDir is
-// currently running a turn. TUI tabs are separate control-plane sessions, so
-// watching only the card's original session cannot see their activity.
-func (c *Client) AnySessionStreaming(ctx context.Context, workingDir string) (bool, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/sessions?active=true", http.NoBody)
+// Activity reads every tab on this card's private control plane. A tab may
+// change directories; socket ownership, not working_dir, determines its card.
+func (c *Client) Activity(ctx context.Context) ([]SessionActivity, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/activity", http.NoBody)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrActivityUnsupported
+	}
 	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("list active sessions: %s", resp.Status)
+		return nil, fmt.Errorf("activity: %s", resp.Status)
 	}
-	var sessions []sessionSummary
-	if err := json.NewDecoder(resp.Body).Decode(&sessions); err != nil {
-		return false, fmt.Errorf("decode active sessions: %w", err)
+	var activity struct {
+		Sessions []SessionActivity `json:"sessions"`
 	}
-	for _, session := range sessions {
-		if session.WorkingDir == workingDir && session.Streaming {
-			return true, nil
-		}
+	if err := json.NewDecoder(resp.Body).Decode(&activity); err != nil {
+		return nil, fmt.Errorf("decode activity: %w", err)
 	}
-	return false, nil
+	if activity.Sessions == nil {
+		return nil, errors.New("activity response is missing sessions")
+	}
+	return activity.Sessions, nil
 }
 
 // getSnapshot issues GET /snapshot and validates the response status. On

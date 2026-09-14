@@ -72,8 +72,8 @@ type fakeClient struct {
 	followErr     error
 	followKey     string
 	followMsg     string
-	anyStreaming  bool
-	anyErr        error
+	activity      []agent.SessionActivity
+	activityErr   error
 	// onStream, when set, runs once at the start of the first StreamEvents
 	// call, before any event is delivered. Tests use it to change the
 	// snapshot after the watcher's loop-top read.
@@ -113,10 +113,15 @@ func (f *fakeClient) StreamEvents(ctx context.Context, since uint64, onEvent fun
 	return ctx.Err()
 }
 
-func (f *fakeClient) AnySessionStreaming(context.Context, string) (bool, error) {
+func (f *fakeClient) Activity(ctx context.Context) ([]agent.SessionActivity, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.anyStreaming, f.anyErr
+	activity, err := f.activity, f.activityErr
+	f.mu.Unlock()
+	if activity == nil && err == nil {
+		<-ctx.Done() // Event-only tests do not supply activity samples.
+		return nil, ctx.Err()
+	}
+	return activity, err
 }
 
 func (f *fakeClient) Followup(_ context.Context, key, msg string) (bool, error) {
@@ -153,8 +158,8 @@ func TestControllerWorkingTabWithoutRootEventIsRunning(t *testing.T) {
 	require.NoError(t, store.InsertCard(devCard()))
 
 	client := &fakeClient{
-		snap:         agent.Snapshot{Streaming: false},
-		anyStreaming: true,
+		snap:     agent.Snapshot{Streaming: false},
+		activity: []agent.SessionActivity{{ID: "tab-2", Streaming: true}},
 	}
 	c := newTestController(t, store, newFakeSessionManager(), client)
 	c.Start(devCard())

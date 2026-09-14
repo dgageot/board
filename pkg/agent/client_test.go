@@ -20,48 +20,45 @@ func testClient(t *testing.T, handler http.HandlerFunc) *Client {
 	return newClient(srv.Client(), srv.URL, "sess-1")
 }
 
-func TestAnySessionStreaming(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "true", r.URL.Query().Get("active"))
-		assert.Equal(t, "/api/sessions", r.URL.Path)
-		fmt.Fprint(w, `[{"id":"sess-1","working_dir":"/work"},{"id":"tab-2","working_dir":"/work","streaming":true},{"id":"other","working_dir":"/other","streaming":true}]`)
-	}))
-	t.Cleanup(srv.Close)
-
-	c := newClient(srv.Client(), srv.URL, "sess-1")
-	streaming, err := c.AnySessionStreaming(t.Context(), "/work")
-	require.NoError(t, err)
-	assert.True(t, streaming)
-}
-
-func TestAnySessionStreamingIgnoresOtherWorktrees(t *testing.T) {
+func TestActivity(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "true", r.URL.Query().Get("active"))
-		fmt.Fprint(w, `[{"id":"sess-1","working_dir":"/work"},{"id":"other","working_dir":"/other","streaming":true}]`)
+		assert.Equal(t, "/api/activity", r.URL.Path)
+		fmt.Fprint(w, `{"sessions":[{"id":"sess-1","streaming":false,"paused":false},{"id":"tab-2","streaming":true,"paused":false}]}`)
 	})
-
-	streaming, err := c.AnySessionStreaming(t.Context(), "/work")
+	sessions, err := c.Activity(t.Context())
 	require.NoError(t, err)
-	assert.False(t, streaming)
+	assert.Equal(t, []SessionActivity{{ID: "sess-1"}, {ID: "tab-2", Streaming: true}}, sessions)
 }
 
-func TestAnySessionStreamingEmpty(t *testing.T) {
+func TestActivityEmpty(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `[]`)
+		fmt.Fprint(w, `{"sessions":[]}`)
 	})
-
-	streaming, err := c.AnySessionStreaming(t.Context(), "/work")
+	sessions, err := c.Activity(t.Context())
 	require.NoError(t, err)
-	assert.False(t, streaming)
+	assert.Empty(t, sessions)
 }
 
-func TestAnySessionStreamingBadStatus(t *testing.T) {
-	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	})
+func TestActivityUnsupported(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
+	_, err := c.Activity(t.Context())
+	require.ErrorIs(t, err, ErrActivityUnsupported)
+}
 
-	_, err := c.AnySessionStreaming(t.Context(), "/work")
-	require.EqualError(t, err, "list active sessions: 500 Internal Server Error")
+func TestActivityInvalidResponse(t *testing.T) {
+	for _, body := range []string{`{}`, `{"sessions":null}`, `[]`, `not json`} {
+		t.Run(body, func(t *testing.T) {
+			c := testClient(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) })
+			_, err := c.Activity(t.Context())
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestActivityBadStatus(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) })
+	_, err := c.Activity(t.Context())
+	require.EqualError(t, err, "activity: 500 Internal Server Error")
 }
 
 func TestSnapshot(t *testing.T) {

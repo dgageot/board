@@ -464,6 +464,18 @@ main#board::-webkit-scrollbar-thumb,
     border-color: color-mix(in srgb, var(--success) 32%, var(--border));
   }
 
+  &.card-unknown {
+    border-style: dashed;
+    border-color: var(--text-muted);
+  }
+
+  & .card-activity-warning {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+
   &.card-error {
     background: var(--card-error-bg);
     border-color: color-mix(in srgb, var(--danger) 52%, var(--border));

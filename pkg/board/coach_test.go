@@ -39,7 +39,6 @@ func newCoachTest(t *testing.T) coachTest {
 	card := devCard()
 	card.Prompt = "make the thing work"
 	card.Agent = "/agents/gopher.yaml"
-	require.NoError(t, store.InsertCard(card))
 
 	sessions := newFakeSessionManager()
 	sessions.alive = false // no coach running yet
@@ -48,6 +47,7 @@ func newCoachTest(t *testing.T) coachTest {
 	b, err := newBoard(t.Context(), Config{ListenAddr: ":0"}, store, sessions)
 	require.NoError(t, err)
 	b.controller.clientFor = func(string, string) sessionClient { return client }
+	require.NoError(t, store.InsertCard(card))
 
 	return coachTest{board: b, sessions: sessions, client: client, card: card}
 }
