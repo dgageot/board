@@ -34,8 +34,6 @@ const (
 	StatusStarting CardStatus = "starting"
 	StatusRunning  CardStatus = "running"
 	StatusWaiting  CardStatus = "waiting"
-	// StatusUnknown means tab activity could not be read; it is not idle.
-	StatusUnknown CardStatus = "unknown"
 	// StatusPaused marks a card whose turn is blocked on /pause. It lasts
 	// until the runtime emits events again (resume) or the turn ends.
 	StatusPaused CardStatus = "paused"
@@ -47,7 +45,7 @@ const (
 // Busy reports whether the card's agent cannot accept a prompt right now: it
 // is either still starting or in the middle of a turn.
 func (s CardStatus) Busy() bool {
-	return s == StatusStarting || s == StatusRunning || s == StatusUnknown
+	return s == StatusStarting || s == StatusRunning
 }
 
 // Card represents a task card on the board.

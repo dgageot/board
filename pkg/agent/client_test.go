@@ -1,10 +1,12 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -290,4 +292,128 @@ func TestStreamEventsNoHeartbeatNoWatchdog(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, got, 2)
+}
+
+func TestActivityFallsBackToVerifiedLegacyTabs(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/activity":
+			w.WriteHeader(http.StatusNotFound)
+		case "/api/sessions":
+			assert.Equal(t, "true", r.URL.Query().Get("active"))
+			fmt.Fprint(w, `[{"id":"sess-1","working_dir":"/one","num_messages":0},{"id":"tab-2","working_dir":"/two","num_messages":0}]`)
+		case "/api/sessions/sess-1/status":
+			fmt.Fprint(w, `{"id":"sess-1","streaming":false}`)
+		case "/api/sessions/tab-2/status":
+			fmt.Fprint(w, `{"id":"tab-2","streaming":true}`)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	sessions, err := c.Activity(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []SessionActivity{
+		{ID: "sess-1", Legacy: true},
+		{ID: "tab-2", Streaming: true, Legacy: true},
+	}, sessions)
+}
+
+func TestActivityRejectsHistoricalSessionListing(t *testing.T) {
+	var listings atomic.Int32
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/activity":
+			w.WriteHeader(http.StatusNotFound)
+		case "/api/sessions":
+			listings.Add(1)
+			fmt.Fprint(w, `[{"id":"historical","num_messages":100,"streaming":true}]`)
+		default:
+			t.Errorf("historical rows must not be probed: %s", r.URL.Path)
+		}
+	})
+	for range 2 {
+		_, err := c.Activity(t.Context())
+		require.ErrorIs(t, err, ErrActivityUnsupported)
+	}
+	assert.Equal(t, int32(1), listings.Load(), "do not repeatedly scan disk history")
+}
+
+func TestActivityRejectsHistoricalEmptyTranscript(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/sessions" {
+			fmt.Fprint(w, `[{"id":"historical","num_messages":0}]`)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	_, err := c.Activity(t.Context())
+	require.ErrorIs(t, err, ErrActivityUnsupported)
+}
+
+func TestActivityLegacyTimeoutIsNotRepeated(t *testing.T) {
+	var listings atomic.Int32
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/sessions" {
+			listings.Add(1)
+			<-r.Context().Done()
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	_, err := c.Activity(ctx)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	_, err = c.Activity(t.Context())
+	require.ErrorIs(t, err, ErrActivityUnsupported)
+	assert.Equal(t, int32(1), listings.Load())
+}
+
+func TestActivityUpgradeAfterUnsupportedLegacyListing(t *testing.T) {
+	var upgraded atomic.Bool
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/activity" && upgraded.Load() {
+			fmt.Fprint(w, `{"sessions":[{"id":"new-tab","streaming":true}]}`)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	_, err := c.Activity(t.Context())
+	require.ErrorIs(t, err, ErrActivityUnsupported)
+	upgraded.Store(true)
+	sessions, err := c.Activity(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []SessionActivity{{ID: "new-tab", Streaming: true}}, sessions)
+}
+
+func TestActivityLegacyDiscoveryRecoversAfterBackoff(t *testing.T) {
+	var available atomic.Bool
+	var listings atomic.Int32
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/activity":
+			w.WriteHeader(http.StatusNotFound)
+		case "/api/sessions":
+			listings.Add(1)
+			if !available.Load() {
+				fmt.Fprint(w, `[{"id":"history","num_messages":9}]`)
+			} else {
+				fmt.Fprint(w, `[{"id":"tab","num_messages":0}]`)
+			}
+		case "/api/sessions/tab/status":
+			fmt.Fprint(w, `{"id":"tab","streaming":true}`)
+		}
+	})
+	_, err := c.Activity(t.Context())
+	require.ErrorIs(t, err, ErrActivityUnsupported)
+	available.Store(true)
+	_, err = c.Activity(t.Context())
+	require.ErrorIs(t, err, ErrActivityUnsupported)
+	assert.Equal(t, int32(1), listings.Load())
+	c.legacyRetryAt.Store(time.Now().Add(-time.Second).UnixNano())
+	sessions, err := c.Activity(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []SessionActivity{{ID: "tab", Streaming: true, Legacy: true}}, sessions)
+	assert.Equal(t, int32(2), listings.Load())
 }

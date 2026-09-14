@@ -84,8 +84,7 @@ function notifyCardsThatBecameReady(nextCards) {
     const becameReady = nextCards.some((card) =>
       card.status === "waiting" &&
       knownCardStatuses.has(card.id) &&
-      knownCardStatuses.get(card.id) !== "waiting" &&
-      knownCardStatuses.get(card.id) !== "unknown"
+      knownCardStatuses.get(card.id) !== "waiting"
     );
     if (becameReady) playReadySound();
   }
@@ -245,7 +244,7 @@ function isForwardMove(srcColId, dstColId) {
 
 // A busy agent (starting or mid-turn) cannot accept a prompt yet.
 function isBusy(card) {
-  return card?.status === "starting" || card?.status === "running" || card?.status === "unknown";
+  return card?.status === "starting" || card?.status === "running";
 }
 
 function renderBoard() {
@@ -386,7 +385,6 @@ function renderCard(card, colId) {
   const el = document.createElement("div");
   el.className = `card card-${card.status}`;
   el.dataset.cardId = card.id;
-  if (card.activityWarning) el.title = card.activityWarning;
 
   el.draggable = true;
 
@@ -415,7 +413,6 @@ function renderCard(card, colId) {
   el.innerHTML = `
     ${coachIcon}
     <div class="card-title">${esc(card.title)}</div>
-    ${card.activityWarning ? `<div class="card-activity-warning">⚠ Activity unavailable — ${esc(card.activityWarning)}</div>` : ""}
     ${metaHtml}
     <div class="card-actions">
       <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" title="Open agent session">Agent</button>

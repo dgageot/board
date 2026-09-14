@@ -430,15 +430,14 @@ func TestBroadcastSkipsFullChannels(t *testing.T) {
 	b.broadcast()
 }
 
-func TestHandleListCardsIncludesActivityWarning(t *testing.T) {
+func TestHandleListCardsHasNoActivityWarning(t *testing.T) {
 	b, store := newTestBoard(t)
-	require.NoError(t, store.InsertCard(&Card{ID: "c1", Title: "T", Column: "dev", Status: StatusUnknown}))
-	b.controller.setActivityWarning("c1", "upgrade docker-agent and restart this agent")
+	require.NoError(t, store.InsertCard(&Card{ID: "c1", Title: "T", Column: "dev", Status: StatusWaiting}))
 	rec := httptest.NewRecorder()
 	b.handleListCards(rec, httptest.NewRequest(http.MethodGet, "/api/cards", http.NoBody))
-	var cards []cardResponse
+	var cards []map[string]any
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&cards))
 	require.Len(t, cards, 1)
-	assert.Equal(t, StatusUnknown, cards[0].Status)
-	assert.Contains(t, cards[0].ActivityWarning, "upgrade docker-agent")
+	assert.Equal(t, "waiting", cards[0]["status"])
+	assert.NotContains(t, cards[0], "activityWarning")
 }

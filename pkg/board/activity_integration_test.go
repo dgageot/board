@@ -23,7 +23,7 @@ import (
 	"github.com/dgageot/board/pkg/agent"
 )
 
-// Run with DOCKER_AGENT_TEST_BINARY pointing to a binary with GET /api/activity.
+// Run with DOCKER_AGENT_TEST_BINARY pointing to a current or legacy docker-agent binary.
 // No credentials or external model calls: the local model holds each tab's turn
 // until the test releases it.
 func TestActivityRealDockerAgentTabs(t *testing.T) {
@@ -195,7 +195,6 @@ agents:
 	waitActivity(2, 0)
 	waitStatus(StatusWaiting)
 	assert.NotEmpty(t, refresh, "status changes must wake the browser SSE clients")
-	assert.Empty(t, controller.activityWarning(card.ID))
 	assert.Len(t, rootStarted, 1)
 	assert.Len(t, tabStarted, 1)
 }

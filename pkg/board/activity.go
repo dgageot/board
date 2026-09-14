@@ -3,7 +3,6 @@ package board
 import (
 	"context"
 	"errors"
-	"log"
 	"sync"
 
 	"github.com/dgageot/board/pkg/agent"
@@ -14,11 +13,12 @@ import (
 // that can permanently drift when a start or stop is dropped.
 type cardActivity struct {
 	mu          sync.Mutex
+	probeMu     sync.Mutex
 	controller  *Controller
 	cardID      string
 	rootStatus  CardStatus
+	rootSession string
 	known       bool
-	unavailable bool
 	sessions    []agent.SessionActivity
 	generation  uint64
 }
@@ -38,7 +38,6 @@ func (s *cardActivity) relaunched() {
 	s.known = false
 	s.sessions = nil
 	s.apply()
-	s.controller.setActivityWarning(s.cardID, "")
 }
 
 func (s *cardActivity) currentGeneration() uint64 {
@@ -53,41 +52,67 @@ func (s *cardActivity) update(sessions []agent.SessionActivity, err error, gener
 	if generation != s.generation {
 		return // The sample belongs to the process that was just replaced.
 	}
-	s.unavailable = err != nil
-	if err == nil {
-		s.known = true
-		s.sessions = sessions
+	if err != nil {
+		// Failed probes never change the displayed status. New root events
+		// still apply, while known work in other tabs remains visible.
+		s.known = false
+		if errors.Is(err, agent.ErrActivityUnsupported) {
+			s.sessions = nil
+			s.apply()
+		}
+		return
 	}
-	status := s.apply()
-	warning := ""
-	if err != nil && (status != StatusStarting || errors.Is(err, agent.ErrActivityUnsupported)) {
-		warning = err.Error()
-	}
-	s.controller.setActivityWarning(s.cardID, warning)
+	s.known = true
+	s.sessions = sessions
+	s.apply()
 }
 
-func (s *cardActivity) apply() CardStatus {
-	status := s.rootStatus
-	if s.known {
-		status = activityStatus(s.sessions)
-		switch status { //nolint:exhaustive // Only idle and running need turn bookkeeping.
-		case StatusWaiting:
-			if s.rootStatus == StatusError {
-				status = StatusError
-			} else if expected, _ := s.controller.turnExpected(s.cardID); expected {
-				status = StatusStarting
-			}
-		case StatusRunning:
+func (s *cardActivity) apply() {
+	s.controller.setStatus(s.cardID, s.status())
+}
+
+func (s *cardActivity) status() CardStatus {
+	// Empty legacy listings are unsupported, never authoritative idle.
+	if !s.known || legacyActivity(s.sessions) {
+		return s.legacyStatus()
+	}
+	status := activityStatus(s.sessions)
+	switch status { //nolint:exhaustive // Only idle and running need turn bookkeeping.
+	case StatusWaiting:
+		if s.rootStatus == StatusError {
+			return StatusError
+		}
+		if expected, _ := s.controller.turnExpected(s.cardID); expected {
+			return StatusStarting
+		}
+	case StatusRunning:
+		s.controller.setExpectTurn(s.cardID, false)
+	}
+	return status
+}
+
+func (s *cardActivity) legacyStatus() CardStatus {
+	// Legacy listings miss fork skills and pause state. They can add
+	// evidence of work, but cannot declare an event-driven turn idle.
+	for _, session := range s.sessions {
+		if session.ID == s.rootSession && (!s.known || s.rootStatus == StatusPaused || s.rootStatus == StatusError) {
+			continue
+		}
+		if session.Streaming && !session.Paused {
 			s.controller.setExpectTurn(s.cardID, false)
+			return StatusRunning
 		}
 	}
-	// A failed probe is not evidence that every other tab is idle. Preserve
-	// known work, but never show a green, movable card on incomplete data.
-	if s.unavailable && status != StatusRunning && status != StatusStarting {
-		status = StatusUnknown
+	return s.rootStatus
+}
+
+func legacyActivity(sessions []agent.SessionActivity) bool {
+	for _, session := range sessions {
+		if session.Legacy {
+			return true
+		}
 	}
-	s.controller.setStatus(s.cardID, status)
-	return status
+	return false
 }
 
 func activityStatus(sessions []agent.SessionActivity) CardStatus {
@@ -104,41 +129,35 @@ func activityStatus(sessions []agent.SessionActivity) CardStatus {
 	return status
 }
 
+// setEventStatus refreshes legacy tabs before publishing a root stop, error,
+// or pause. A sibling may have started since the last periodic sample.
+func (s *cardActivity) setEventStatus(ctx context.Context, client sessionClient, status CardStatus) {
+	s.mu.Lock()
+	legacy := !s.known || legacyActivity(s.sessions)
+	s.mu.Unlock()
+	if status != StatusRunning && legacy {
+		s.refresh(ctx, client)
+	}
+	s.setRootStatus(status)
+}
+
+func (s *cardActivity) refresh(ctx context.Context, client sessionClient) {
+	s.probeMu.Lock()
+	defer s.probeMu.Unlock()
+	generation := s.currentGeneration()
+	probeCtx, cancel := context.WithTimeout(ctx, readyProbeTimeout)
+	sessions, err := client.Activity(probeCtx)
+	cancel()
+	if ctx.Err() == nil {
+		s.update(sessions, err, generation)
+	}
+}
+
 func (c *Controller) watchTabActivity(ctx context.Context, client sessionClient, state *cardActivity) {
 	for ctx.Err() == nil {
-		generation := state.currentGeneration()
-		probeCtx, cancel := context.WithTimeout(ctx, readyProbeTimeout)
-		sessions, err := client.Activity(probeCtx)
-		cancel()
-		if ctx.Err() != nil {
-			return
-		}
-		state.update(sessions, err, generation)
+		state.refresh(ctx, client)
 		if sleep(ctx) {
 			return
 		}
 	}
-}
-
-func (c *Controller) setActivityWarning(cardID, warning string) {
-	c.mu.Lock()
-	changed := c.activityWarnings[cardID] != warning
-	if warning == "" {
-		delete(c.activityWarnings, cardID)
-	} else {
-		c.activityWarnings[cardID] = warning
-	}
-	c.mu.Unlock()
-	if changed {
-		if warning != "" {
-			log.Printf("card %s: activity unavailable: %s", cardID, warning)
-		}
-		c.onChanged()
-	}
-}
-
-func (c *Controller) activityWarning(cardID string) string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.activityWarnings[cardID]
 }

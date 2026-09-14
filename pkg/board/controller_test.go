@@ -113,13 +113,12 @@ func (f *fakeClient) StreamEvents(ctx context.Context, since uint64, onEvent fun
 	return ctx.Err()
 }
 
-func (f *fakeClient) Activity(ctx context.Context) ([]agent.SessionActivity, error) {
+func (f *fakeClient) Activity(context.Context) ([]agent.SessionActivity, error) {
 	f.mu.Lock()
 	activity, err := f.activity, f.activityErr
 	f.mu.Unlock()
 	if activity == nil && err == nil {
-		<-ctx.Done() // Event-only tests do not supply activity samples.
-		return nil, ctx.Err()
+		return nil, agent.ErrActivityUnsupported // Event-only tests have no activity API.
 	}
 	return activity, err
 }

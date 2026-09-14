@@ -114,10 +114,12 @@ type SessionActivity struct {
 	ID        string `json:"id"`
 	Streaming bool   `json:"streaming"`
 	Paused    bool   `json:"paused"`
+	// Legacy samples report direct turns only, not fork skills or pauses.
+	Legacy bool `json:"-"`
 }
 
-// ErrActivityUnsupported means the running agent must be upgraded and restarted.
-var ErrActivityUnsupported = errors.New("agent lacks GET /api/activity; upgrade docker-agent and restart this agent")
+// ErrActivityUnsupported means activity must be derived from the event stream.
+var ErrActivityUnsupported = errors.New("agent has no supported activity listing")
 
 // snapshotWire mirrors the fields the board reads off GET /snapshot. Current
 // agents report the session's total cost directly; older ones only record a
@@ -140,6 +142,8 @@ type Client struct {
 	http    *http.Client
 	base    string
 	session string
+	// Back off listings that ignore active=true or time out scanning history.
+	legacyRetryAt atomic.Int64
 }
 
 // NewClient returns a client that reaches the control plane over the given
@@ -168,8 +172,9 @@ func (c *Client) endpoint(name string) string {
 	return c.sessionURL() + "/" + name
 }
 
-// Activity reads every tab on this card's private control plane. A tab may
-// change directories; socket ownership, not working_dir, determines its card.
+// Activity reads every tab on this card's private control plane, falling back
+// to verified legacy listings on 404. Socket ownership, not working_dir,
+// determines which card a tab belongs to.
 func (c *Client) Activity(ctx context.Context) ([]SessionActivity, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/activity", http.NoBody)
 	if err != nil {
@@ -181,7 +186,7 @@ func (c *Client) Activity(ctx context.Context) ([]SessionActivity, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrActivityUnsupported
+		return c.legacyActivity(ctx)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("activity: %s", resp.Status)
@@ -196,6 +201,86 @@ func (c *Client) Activity(ctx context.Context) ([]SessionActivity, error) {
 		return nil, errors.New("activity response is missing sessions")
 	}
 	return activity.Sessions, nil
+}
+
+// legacyActivity uses the previous tab listing only when it really lists
+// attached runtimes. Old servers ignore active=true and read all disk history.
+const legacyRetryDelay = time.Minute
+
+func (c *Client) legacyActivity(ctx context.Context) ([]SessionActivity, error) {
+	if time.Now().UnixNano() < c.legacyRetryAt.Load() {
+		return nil, ErrActivityUnsupported
+	}
+	sessions, err := c.readLegacyActivity(ctx)
+	if errors.Is(err, ErrActivityUnsupported) || errors.Is(err, context.DeadlineExceeded) {
+		// A deadline can be an old server walking disk history. Retry later
+		// rather than hammering it, or disabling tab discovery permanently.
+		c.legacyRetryAt.Store(time.Now().Add(legacyRetryDelay).UnixNano())
+	}
+	return sessions, err
+}
+
+func (c *Client) readLegacyActivity(ctx context.Context) ([]SessionActivity, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/sessions?active=true", http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, ErrActivityUnsupported
+	}
+	var rows []struct {
+		ID          string `json:"id"`
+		NumMessages int    `json:"num_messages"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1024*1024)).Decode(&rows); err != nil {
+		return nil, fmt.Errorf("decode legacy activity: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil, ErrActivityUnsupported // Cannot distinguish an empty history dump.
+	}
+	for _, row := range rows {
+		if row.ID == "" || row.NumMessages != 0 {
+			return nil, ErrActivityUnsupported
+		}
+	}
+	sessions := []SessionActivity{}
+	for _, row := range rows {
+		// /status is memory-only: historical sessions return 404, even if
+		// their stored transcript is empty and escaped the check above.
+		activity, err := c.legacySessionStatus(ctx, row.ID)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, activity)
+	}
+	return sessions, nil
+}
+
+func (c *Client) legacySessionStatus(ctx context.Context, id string) (SessionActivity, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/sessions/"+url.PathEscape(id)+"/status", http.NoBody)
+	if err != nil {
+		return SessionActivity{}, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return SessionActivity{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return SessionActivity{}, ErrActivityUnsupported
+	}
+	var activity SessionActivity
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&activity); err != nil {
+		return SessionActivity{}, fmt.Errorf("decode legacy status: %w", err)
+	}
+	activity.ID = id
+	activity.Legacy = true
+	return activity, nil
 }
 
 // getSnapshot issues GET /snapshot and validates the response status. On

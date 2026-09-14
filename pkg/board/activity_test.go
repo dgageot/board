@@ -19,7 +19,7 @@ func newTestActivity(t *testing.T) (*cardActivity, *SQLiteStore) {
 	store := openTestStore(t)
 	require.NoError(t, store.InsertCard(devCard()))
 	c := newTestController(t, store, newFakeSessionManager(), &fakeClient{})
-	return &cardActivity{controller: c, cardID: "c1", rootStatus: StatusWaiting}, store
+	return &cardActivity{controller: c, cardID: "c1", rootStatus: StatusWaiting, rootSession: "sess-1"}, store
 }
 
 func assertCardStatus(t *testing.T, store Store, want CardStatus) {
@@ -74,13 +74,12 @@ func TestActivityPausedTabDoesNotHideWorkingTab(t *testing.T) {
 	assertCardStatus(t, store, StatusWaiting)
 }
 
-func TestActivityFailureIsNotIdle(t *testing.T) {
+func TestActivityFailurePreservesExistingColors(t *testing.T) {
 	state, store := newTestActivity(t)
 	state.update(nil, agent.ErrActivityUnsupported, 0)
-	assertCardStatus(t, store, StatusUnknown)
+	assertCardStatus(t, store, StatusWaiting)
 	state.setRootStatus(StatusWaiting)
-	assertCardStatus(t, store, StatusUnknown)
-	assert.True(t, StatusUnknown.Busy())
+	assertCardStatus(t, store, StatusWaiting)
 	state.update([]agent.SessionActivity{{ID: "tab-2", Streaming: true}}, nil, 0)
 	assertCardStatus(t, store, StatusRunning)
 	state.update(nil, errors.New("timeout"), 0)
@@ -160,19 +159,18 @@ func TestControllerOriginalTabExitDoesNotKillOtherTabs(t *testing.T) {
 	assert.Never(t, func() bool { return len(sessions.calls()) > 0 }, 600*time.Millisecond, 10*time.Millisecond)
 }
 
-func TestControllerUnsupportedActivityIsVisibleWithoutKillingAgent(t *testing.T) {
+func TestControllerUnsupportedActivityKeepsEventStatusWithoutKillingAgent(t *testing.T) {
 	store := openTestStore(t)
 	require.NoError(t, store.InsertCard(devCard()))
-	client := &fakeClient{activityErr: agent.ErrActivityUnsupported}
+	client := &fakeClient{activityErr: agent.ErrActivityUnsupported, events: []agent.Event{{Type: agent.EventStreamStarted}, {Type: agent.EventStreamStopped, Reason: agent.ReasonNormal}}}
 	sessions := newFakeSessionManager()
 	c := newTestController(t, store, sessions, client)
 	c.Start(devCard())
 	defer c.Stop("c1")
 	require.Eventually(t, func() bool {
 		card, err := store.GetCard("c1")
-		return err == nil && card.Status == StatusUnknown
+		return err == nil && card.Status == StatusWaiting
 	}, time.Second, time.Millisecond)
-	assert.Contains(t, c.activityWarning("c1"), "upgrade docker-agent")
 	assert.Empty(t, sessions.calls())
 }
 
@@ -207,7 +205,6 @@ func TestControllerStopJoinsActivityProbe(t *testing.T) {
 	default:
 		t.Fatal("Stop returned before the activity probe stopped")
 	}
-	assert.Empty(t, c.activityWarning("c1"))
 }
 
 func TestActivityRelaunchDiscardsOldProcessState(t *testing.T) {
@@ -219,7 +216,6 @@ func TestActivityRelaunchDiscardsOldProcessState(t *testing.T) {
 			assertCardStatus(t, store, StatusStarting)
 			state.update(nil, errors.New("socket not ready"), 1)
 			assertCardStatus(t, store, StatusStarting)
-			assert.Empty(t, state.controller.activityWarning("c1"))
 			state.update([]agent.SessionActivity{}, nil, 0)
 			assertCardStatus(t, store, StatusStarting)
 			state.update([]agent.SessionActivity{{ID: "sess-1", Streaming: true}}, nil, 1)
@@ -235,4 +231,88 @@ func TestRelaunchResetsWatcherActivity(t *testing.T) {
 	require.NoError(t, state.controller.relaunch(devCard(), ""))
 	state.update(nil, errors.New("starting"), 1)
 	assertCardStatus(t, store, StatusStarting)
+}
+
+func TestLegacyActivityDoesNotOverrideRootPauseOrFailure(t *testing.T) {
+	for _, status := range []CardStatus{StatusPaused, StatusError} {
+		t.Run(string(status), func(t *testing.T) {
+			state, store := newTestActivity(t)
+			state.setRootStatus(status)
+			state.update([]agent.SessionActivity{{ID: "sess-1", Streaming: true, Legacy: true}}, nil, 0)
+			assertCardStatus(t, store, status)
+			state.update([]agent.SessionActivity{{ID: "other", Streaming: true, Legacy: true}}, nil, 0)
+			assertCardStatus(t, store, StatusRunning)
+			state.update([]agent.SessionActivity{{ID: "other", Legacy: true}}, nil, 0)
+			assertCardStatus(t, store, status)
+		})
+	}
+}
+
+func TestLegacyIdleSampleDoesNotHideForkSkill(t *testing.T) {
+	state, store := newTestActivity(t)
+	state.setRootStatus(StatusRunning)
+	state.update([]agent.SessionActivity{{ID: "sess-1", Legacy: true}}, nil, 0)
+	assertCardStatus(t, store, StatusRunning)
+	state.setRootStatus(StatusWaiting)
+	assertCardStatus(t, store, StatusWaiting)
+}
+
+func TestLegacyWorkingTabWinsOverRootCompletion(t *testing.T) {
+	state, store := newTestActivity(t)
+	state.update([]agent.SessionActivity{{ID: "other", Streaming: true, Legacy: true}}, nil, 0)
+	state.setRootStatus(StatusWaiting)
+	assertCardStatus(t, store, StatusRunning)
+	state.update([]agent.SessionActivity{{ID: "other", Legacy: true}}, nil, 0)
+	assertCardStatus(t, store, StatusWaiting)
+}
+
+func TestActivityUnavailableDoesNotChangePausedOrErrorColor(t *testing.T) {
+	for _, status := range []CardStatus{StatusPaused, StatusError, StatusRunning, StatusStarting, StatusWaiting} {
+		t.Run(string(status), func(t *testing.T) {
+			state, store := newTestActivity(t)
+			state.setRootStatus(status)
+			state.update(nil, agent.ErrActivityUnsupported, 0)
+			assertCardStatus(t, store, status)
+			state.update(nil, errors.New("timeout"), 0)
+			assertCardStatus(t, store, status)
+		})
+	}
+}
+
+func TestLegacyRootStopRefreshesTabsBeforePublishing(t *testing.T) {
+	state, store := newTestActivity(t)
+	state.update([]agent.SessionActivity{{ID: "sess-1", Legacy: true}}, nil, 0)
+	state.setRootStatus(StatusRunning)
+	var idleBroadcasts int
+	state.controller.onChanged = func() {
+		card, err := store.GetCard("c1")
+		require.NoError(t, err)
+		if card.Status == StatusWaiting {
+			idleBroadcasts++
+		}
+	}
+	client := &fakeClient{activity: []agent.SessionActivity{{ID: "tab-2", Streaming: true, Legacy: true}}}
+	state.setEventStatus(t.Context(), client, StatusWaiting)
+	assertCardStatus(t, store, StatusRunning)
+	assert.Zero(t, idleBroadcasts, "a stale idle sample must not briefly turn the card green")
+}
+
+func TestUnsupportedActivityDropsStaleSiblingState(t *testing.T) {
+	state, store := newTestActivity(t)
+	state.update([]agent.SessionActivity{{ID: "other", Streaming: true, Legacy: true}}, nil, 0)
+	state.setRootStatus(StatusWaiting)
+	assertCardStatus(t, store, StatusRunning)
+	state.update(nil, agent.ErrActivityUnsupported, 0)
+	assertCardStatus(t, store, StatusWaiting)
+	state.setRootStatus(StatusError)
+	assertCardStatus(t, store, StatusError)
+}
+
+func TestFailedActivityProbeDoesNotRestoreStaleRunningStatus(t *testing.T) {
+	state, store := newTestActivity(t)
+	state.setRootStatus(StatusRunning)
+	state.update([]agent.SessionActivity{{ID: "sess-1"}}, nil, 0)
+	assertCardStatus(t, store, StatusWaiting)
+	state.update(nil, errors.New("temporary network error"), 0)
+	assertCardStatus(t, store, StatusWaiting)
 }

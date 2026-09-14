@@ -65,9 +65,8 @@ type Controller struct {
 	// is a field so tests can inject a fake without a real `gh` and GitHub repo.
 	prURLForHead func(ctx context.Context, worktree string) (string, error)
 
-	mu               sync.Mutex
-	watchers         map[string]*watcher
-	activityWarnings map[string]string
+	mu       sync.Mutex
+	watchers map[string]*watcher
 	// expectTurn marks cards whose latest launch carried an initial prompt: a
 	// first turn is imminent, so the watcher keeps them "starting" until the
 	// event stream reports it instead of flashing green ("waiting") first.
@@ -89,15 +88,14 @@ type watcher struct {
 
 func newController(ctx context.Context, store Store, sessions SessionManager, onChanged func()) *Controller {
 	return &Controller{
-		ctx:              ctx,
-		store:            store,
-		sessions:         sessions,
-		onChanged:        onChanged,
-		clientFor:        func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
-		prURLForHead:     git.PRURLForHead,
-		watchers:         make(map[string]*watcher),
-		activityWarnings: make(map[string]string),
-		expectTurn:       make(map[string]time.Time),
+		ctx:          ctx,
+		store:        store,
+		sessions:     sessions,
+		onChanged:    onChanged,
+		clientFor:    func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
+		prURLForHead: git.PRURLForHead,
+		watchers:     make(map[string]*watcher),
+		expectTurn:   make(map[string]time.Time),
 	}
 }
 
@@ -124,7 +122,7 @@ func (c *Controller) Start(card *Card) {
 	ctx, cancel := context.WithCancel(c.ctx)
 	w := &watcher{
 		cancel: cancel, done: make(chan struct{}),
-		activity: &cardActivity{controller: c, cardID: card.ID, rootStatus: card.Status},
+		activity: &cardActivity{controller: c, cardID: card.ID, rootStatus: card.Status, rootSession: card.AgentSession},
 	}
 	c.watchers[card.ID] = w
 	go func() {
@@ -184,9 +182,6 @@ func (c *Controller) Stop(cardID string) {
 		w.cancel()
 		<-w.done
 	}
-	c.mu.Lock()
-	delete(c.activityWarnings, cardID)
-	c.mu.Unlock()
 }
 
 // watch keeps one card mirrored to its control plane: snapshot to resync, then
@@ -350,14 +345,14 @@ func (c *Controller) watch(ctx context.Context, cardID string, state *cardActivi
 		flushReplay := func() {
 			replaying = false
 			if replayStatus != "" {
-				state.setRootStatus(replayStatus)
+				state.setEventStatus(streamCtx, client, replayStatus)
 			}
 		}
 		setStatus := func(status CardStatus) {
 			if replaying {
 				replayStatus = status
 			} else {
-				state.setRootStatus(status)
+				state.setEventStatus(streamCtx, client, status)
 			}
 		}
 
