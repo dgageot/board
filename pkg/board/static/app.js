@@ -176,6 +176,7 @@ async function refresh() {
   cards = nextCards;
   projects = nextProjects;
   columns = nextColumns;
+  renderTerminalCardMeta();
   renderBoard();
   scheduleCoachRefresh();
 }
@@ -492,7 +493,7 @@ async function handleCardAction(e) {
         return;
       }
       const card = cards.find((c) => c.id === id);
-      openTerminal(info.session, card?.title || "Terminal", id, card?.project || "");
+      openTerminal(info.session, card?.title || "Terminal", id);
     } else if (action === "diff") {
       const title = cards.find((c) => c.id === id)?.title || "Diff";
       openDiffDialog(id, title);
@@ -522,12 +523,27 @@ let activeTerm = null;
 let activeSocket = null;
 let activeCardId = null;
 
-async function openTerminal(sessionName, title, cardId, project) {
+function renderTerminalCardMeta() {
+  const card = cards.find((candidate) => candidate.id === activeCardId);
+  const prLink = document.getElementById("terminal-pr");
+  document.getElementById("terminal-project").textContent = card?.project || "";
+  if (card?.prUrl) {
+    prLink.href = card.prUrl;
+    prLink.title = card.prUrl;
+    prLink.innerHTML = `${prIconSvg("open")}<span>${esc(prLabel(card.prUrl))}</span>`;
+  } else {
+    prLink.removeAttribute("href");
+    prLink.removeAttribute("title");
+    prLink.replaceChildren();
+  }
+}
+
+async function openTerminal(sessionName, title, cardId) {
   const dialog = document.getElementById("terminal-dialog");
   const container = document.getElementById("terminal-container");
   document.getElementById("terminal-title").textContent = title;
-  document.getElementById("terminal-project").textContent = project || "";
   activeCardId = cardId;
+  renderTerminalCardMeta();
 
   closeTerminal();
   // The dialog may already be open when switching terminals in place (e.g. the
@@ -675,7 +691,7 @@ coachBtn.addEventListener("click", async () => {
     }
     renderBoard();
     scheduleCoachRefresh();
-    await openTerminal(info.session, `🎓 ${card?.title || "Coach"}`, cardId, card?.project || "");
+    await openTerminal(info.session, `🎓 ${card?.title || "Coach"}`, cardId);
   } catch (err) {
     alert(err.message);
   } finally {
