@@ -382,6 +382,10 @@ const PR_STATUS_LABEL = {
 // status icon so approval reads independently of CI/merge state.
 const PR_APPROVED_SVG = `<svg class="card-pr-approved" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>`;
 
+function prLinkContent(url) {
+  return `${prIconSvg("open")}<span class="card-pr-label">${esc(prLabel(url))}</span>`;
+}
+
 function renderCard(card, colId) {
   const el = document.createElement("div");
   el.className = `card card-${card.status}`;
@@ -398,7 +402,7 @@ function renderCard(card, colId) {
   // GitHub-mark icon is uncolored initially; its merge/CI status is fetched
   // per card after render (see loadPRStatus) and applied as a modifier class.
   const prLink = card.prUrl
-    ? `<a class="card-pr" href="${esc(card.prUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(card.prUrl)}">${prIconSvg("open")}<span class="card-pr-label">${esc(prLabel(card.prUrl))}</span></a>`
+    ? `<a class="card-pr" href="${esc(card.prUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(card.prUrl)}">${prLinkContent(card.prUrl)}</a>`
     : "";
 
   // Cost and PR link share a single meta row; the wrapper is omitted entirely
@@ -455,13 +459,16 @@ function renderCard(card, colId) {
 // if stale.
 async function loadPRStatus(id, linkEl) {
   if (!linkEl) return;
+  const href = linkEl.getAttribute("href");
+  const request = String(Number(linkEl.dataset.prStatusRequest || 0) + 1);
+  linkEl.dataset.prStatusRequest = request;
   let status, approved;
   try {
     ({ status, approved } = await API.prStatus(id));
   } catch {
     return; // best-effort: leave the default icon
   }
-  if (!status) return;
+  if (!status || linkEl.getAttribute("href") !== href || linkEl.dataset.prStatusRequest !== request) return;
   linkEl.classList.add(`card-pr-${status}`);
   const icon = linkEl.querySelector(".card-pr-icon");
   if (icon) icon.outerHTML = prIconSvg(status);
@@ -528,9 +535,14 @@ function renderTerminalCardMeta() {
   const prLink = document.getElementById("terminal-pr");
   document.getElementById("terminal-project").textContent = card?.project || "";
   if (card?.prUrl) {
+    const changed = prLink.getAttribute("href") !== card.prUrl;
     prLink.href = card.prUrl;
-    prLink.title = card.prUrl;
-    prLink.innerHTML = `${prIconSvg("open")}<span>${esc(prLabel(card.prUrl))}</span>`;
+    if (changed) {
+      prLink.className = "card-pr";
+      prLink.title = card.prUrl;
+      prLink.innerHTML = prLinkContent(card.prUrl);
+      loadPRStatus(card.id, prLink);
+    }
   } else {
     prLink.removeAttribute("href");
     prLink.removeAttribute("title");
