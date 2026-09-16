@@ -100,3 +100,9 @@ func TestAgentCommandPreservesAgentArgument(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultTmuxMemoized(t *testing.T) {
+	first := defaultTmux()
+	require.NotNil(t, first)
+	require.Same(t, first, defaultTmux())
+}

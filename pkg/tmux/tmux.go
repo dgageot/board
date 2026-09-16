@@ -33,8 +33,8 @@ func SocketPath() string {
 // gotmux.NewTmux) because NewTmux validates the socket eagerly, which fails
 // before the first session has started the server. The handle only remembers
 // the socket path, so it is safe to reuse across goroutines.
-var defaultTmux = sync.OnceValues(func() (*gotmux.Tmux, error) {
-	return &gotmux.Tmux{Socket: &gotmux.Socket{Path: SocketPath()}}, nil
+var defaultTmux = sync.OnceValue(func() *gotmux.Tmux {
+	return &gotmux.Tmux{Socket: &gotmux.Socket{Path: SocketPath()}}
 })
 
 // serverDefaults are tmux options the board applies to its private server so
@@ -148,10 +148,7 @@ func promptFilePath(sessionID string) string {
 // empty and workDir is the existing worktree directory, so the agent stays
 // isolated there.
 func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) error {
-	tmux, err := defaultTmux()
-	if err != nil {
-		return fmt.Errorf("tmux init: %w", err)
-	}
+	tmux := defaultTmux()
 
 	session, err := tmux.NewSession(&gotmux.SessionOptions{
 		Name:           sessionName,
@@ -212,10 +209,7 @@ func tmuxRun(args ...string) error {
 
 // KillSession kills a tmux session.
 func (Sessions) KillSession(sessionName string) error {
-	tmux, err := defaultTmux()
-	if err != nil {
-		return err
-	}
+	tmux := defaultTmux()
 
 	session, err := tmux.GetSessionByName(sessionName)
 	if err != nil || session == nil {
@@ -237,10 +231,7 @@ func (Sessions) Alive(sessionName string) (bool, error) {
 		return false, nil
 	}
 
-	tmux, err := defaultTmux()
-	if err != nil {
-		return false, err
-	}
+	tmux := defaultTmux()
 
 	session, err := tmux.GetSessionByName(sessionName)
 	if err != nil {
