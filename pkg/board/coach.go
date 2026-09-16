@@ -165,7 +165,7 @@ func (b *Board) watchCoach(card *Card) {
 					b.setCoachRunning(card.ID, false)
 					return
 				}
-				if !waitForCoachRetry(ctx) {
+				if sleep(ctx) {
 					return
 				}
 				continue
@@ -220,22 +220,11 @@ func (b *Board) watchCoach(card *Card) {
 					return
 				}
 			}
-			if !waitForCoachRetry(ctx) {
+			if sleep(ctx) {
 				return
 			}
 		}
 	}()
-}
-
-func waitForCoachRetry(ctx context.Context) bool {
-	timer := time.NewTimer(500 * time.Millisecond)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
 }
 
 func (b *Board) markCoachRan(cardID string) {

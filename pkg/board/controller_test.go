@@ -1141,3 +1141,10 @@ func TestControllerEmptyPRURLDoesNotClear(t *testing.T) {
 }
 
 func (*fakeClient) CloseIdleConnections() {}
+
+func TestSleepReportsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	assert.True(t, sleep(ctx))
+	assert.False(t, sleep(t.Context()))
+}
