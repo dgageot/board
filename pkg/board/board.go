@@ -116,6 +116,8 @@ func (b *Board) handleSSE(w http.ResponseWriter, r *http.Request) {
 			if !writeRefresh() {
 				return
 			}
+		case <-b.done:
+			return
 		case <-r.Context().Done():
 			return
 		}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -65,7 +66,6 @@ func Run() error {
 	}
 
 	srv := &http.Server{
-		Addr:    cfg.ListenAddr,
 		Handler: handler,
 		// Bound header reads so idle half-open connections cannot pile up
 		// (slowloris). Body/write timeouts stay unset: SSE and terminal
@@ -73,21 +73,38 @@ func Run() error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	// Graceful shutdown
-	context.AfterFunc(ctx, func() {
-		fmt.Println("\nShutting down...")
-		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancelShutdown()
-		_ = srv.Shutdown(shutdownCtx)
-	})
-
+	ln, err := net.Listen("tcp", cfg.ListenAddr)
+	if err != nil {
+		return err
+	}
 	fmt.Printf("Board running at http://%s\n", cfg.ListenAddr)
 
-	err = srv.ListenAndServe()
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
+	return serve(ctx, srv, ln)
+}
+
+// serve runs srv on ln until ctx is canceled, then shuts it down and waits
+// (bounded by shutdownTimeout) for in-flight requests to finish before
+// returning, so callers can safely release resources handlers depend on.
+func serve(ctx context.Context, srv *http.Server, ln net.Listener) error {
+	served := make(chan error, 1)
+	go func() { served <- srv.Serve(ln) }()
+
+	select {
+	case err := <-served:
+		return err
+	case <-ctx.Done():
 	}
-	return err
+
+	fmt.Println("\nShutting down...")
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelShutdown()
+	// Connections still open past the timeout are dropped when the process
+	// exits, as before.
+	_ = srv.Shutdown(shutdownCtx)
+	if err := <-served; !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 // buildMux registers all routes for the board.
