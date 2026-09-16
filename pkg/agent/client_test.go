@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -237,60 +238,60 @@ func TestStreamEventsErrorsOnBadStatus(t *testing.T) {
 // been seen, a stream that goes silent is aborted with an error (instead of
 // blocking forever on a hung transport) so the watcher reconnects.
 func TestStreamEventsIdleWatchdogAbortsSilentStream(t *testing.T) {
-	old := streamIdleTimeout
-	streamIdleTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { streamIdleTimeout = old })
+	synctest.Test(t, func(t *testing.T) {
+		c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+			f, ok := w.(http.Flusher)
+			if !ok {
+				t.Error("response writer is not a flusher")
+				return
+			}
+			fmt.Fprint(w, ": ping\n\n")
+			fmt.Fprint(w, "data: {\"type\":\"stream_started\"}\n\n")
+			f.Flush()
+			// Then hang without closing, like a wedged transport.
+			<-r.Context().Done()
+		})
 
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		f, ok := w.(http.Flusher)
-		if !ok {
-			t.Error("response writer is not a flusher")
-			return
-		}
-		fmt.Fprint(w, ": ping\n\n")
-		fmt.Fprint(w, "data: {\"type\":\"stream_started\"}\n\n")
-		f.Flush()
-		// Then hang without closing, like a wedged transport.
-		<-r.Context().Done()
+		start := time.Now()
+		var got []Event
+		err := c.StreamEvents(t.Context(), 0, func(ev Event) bool {
+			got = append(got, ev)
+			return true
+		})
+		require.ErrorIs(t, err, errStreamIdle)
+		assert.Equal(t, streamIdleTimeout, time.Since(start))
+		require.Len(t, got, 1, "heartbeat comments must not reach the callback")
+		assert.Equal(t, EventStreamStarted, got[0].Type)
 	})
-
-	var got []Event
-	err := c.StreamEvents(t.Context(), 0, func(ev Event) bool {
-		got = append(got, ev)
-		return true
-	})
-	require.ErrorIs(t, err, errStreamIdle)
-	require.Len(t, got, 1, "heartbeat comments must not reach the callback")
-	assert.Equal(t, EventStreamStarted, got[0].Type)
 }
 
 // Without any heartbeat from the server (an older docker-agent), the watchdog
 // stays unarmed: a quiet stream is left alone and a clean close still ends
 // the stream without an idle error.
 func TestStreamEventsNoHeartbeatNoWatchdog(t *testing.T) {
-	old := streamIdleTimeout
-	streamIdleTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { streamIdleTimeout = old })
+	synctest.Test(t, func(t *testing.T) {
+		c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+			f, ok := w.(http.Flusher)
+			if !ok {
+				t.Error("response writer is not a flusher")
+				return
+			}
+			fmt.Fprint(w, "data: {\"type\":\"stream_started\"}\n\n")
+			f.Flush()
+			time.Sleep(2 * streamIdleTimeout)
+			fmt.Fprint(w, "data: {\"type\":\"stream_stopped\"}\n\n")
+		})
 
-	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		f, ok := w.(http.Flusher)
-		if !ok {
-			t.Error("response writer is not a flusher")
-			return
-		}
-		fmt.Fprint(w, "data: {\"type\":\"stream_started\"}\n\n")
-		f.Flush()
-		time.Sleep(120 * time.Millisecond) // longer than the idle timeout
-		fmt.Fprint(w, "data: {\"type\":\"stream_stopped\"}\n\n")
+		start := time.Now()
+		var got []Event
+		err := c.StreamEvents(t.Context(), 0, func(ev Event) bool {
+			got = append(got, ev)
+			return true
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 2*streamIdleTimeout, time.Since(start))
+		require.Len(t, got, 2)
 	})
-
-	var got []Event
-	err := c.StreamEvents(t.Context(), 0, func(ev Event) bool {
-		got = append(got, ev)
-		return true
-	})
-	require.NoError(t, err)
-	require.Len(t, got, 2)
 }
 
 func TestActivityFallsBackToVerifiedLegacyTabs(t *testing.T) {
