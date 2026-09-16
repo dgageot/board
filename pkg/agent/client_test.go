@@ -352,22 +352,24 @@ func TestActivityRejectsHistoricalEmptyTranscript(t *testing.T) {
 }
 
 func TestActivityLegacyTimeoutIsNotRepeated(t *testing.T) {
-	var listings atomic.Int32
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/sessions" {
-			listings.Add(1)
-			<-r.Context().Done()
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
+	synctest.Test(t, func(t *testing.T) {
+		var listings atomic.Int32
+		c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/sessions" {
+				listings.Add(1)
+				<-r.Context().Done()
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+		_, err := c.Activity(ctx)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		_, err = c.Activity(t.Context())
+		require.ErrorIs(t, err, ErrActivityUnsupported)
+		assert.Equal(t, int32(1), listings.Load())
 	})
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-	_, err := c.Activity(ctx)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	_, err = c.Activity(t.Context())
-	require.ErrorIs(t, err, ErrActivityUnsupported)
-	assert.Equal(t, int32(1), listings.Load())
 }
 
 func TestActivityUpgradeAfterUnsupportedLegacyListing(t *testing.T) {
@@ -388,32 +390,35 @@ func TestActivityUpgradeAfterUnsupportedLegacyListing(t *testing.T) {
 }
 
 func TestActivityLegacyDiscoveryRecoversAfterBackoff(t *testing.T) {
-	var available atomic.Bool
-	var listings atomic.Int32
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/activity":
-			w.WriteHeader(http.StatusNotFound)
-		case "/api/sessions":
-			listings.Add(1)
-			if !available.Load() {
-				fmt.Fprint(w, `[{"id":"history","num_messages":9}]`)
-			} else {
-				fmt.Fprint(w, `[{"id":"tab","num_messages":0}]`)
+	synctest.Test(t, func(t *testing.T) {
+		var available atomic.Bool
+		var listings atomic.Int32
+		c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/activity":
+				w.WriteHeader(http.StatusNotFound)
+			case "/api/sessions":
+				listings.Add(1)
+				if !available.Load() {
+					fmt.Fprint(w, `[{"id":"history","num_messages":9}]`)
+				} else {
+					fmt.Fprint(w, `[{"id":"tab","num_messages":0}]`)
+				}
+			case "/api/sessions/tab/status":
+				fmt.Fprint(w, `{"id":"tab","streaming":true}`)
 			}
-		case "/api/sessions/tab/status":
-			fmt.Fprint(w, `{"id":"tab","streaming":true}`)
-		}
+		})
+		_, err := c.Activity(t.Context())
+		require.ErrorIs(t, err, ErrActivityUnsupported)
+		available.Store(true)
+		synctest.Sleep(legacyRetryDelay - time.Nanosecond)
+		_, err = c.Activity(t.Context())
+		require.ErrorIs(t, err, ErrActivityUnsupported)
+		assert.Equal(t, int32(1), listings.Load())
+		synctest.Sleep(time.Nanosecond)
+		sessions, err := c.Activity(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, []SessionActivity{{ID: "tab", Streaming: true, Legacy: true}}, sessions)
+		assert.Equal(t, int32(2), listings.Load())
 	})
-	_, err := c.Activity(t.Context())
-	require.ErrorIs(t, err, ErrActivityUnsupported)
-	available.Store(true)
-	_, err = c.Activity(t.Context())
-	require.ErrorIs(t, err, ErrActivityUnsupported)
-	assert.Equal(t, int32(1), listings.Load())
-	c.legacyRetryAt.Store(time.Now().Add(-time.Second).UnixNano())
-	sessions, err := c.Activity(t.Context())
-	require.NoError(t, err)
-	assert.Equal(t, []SessionActivity{{ID: "tab", Streaming: true, Legacy: true}}, sessions)
-	assert.Equal(t, int32(2), listings.Load())
 }
