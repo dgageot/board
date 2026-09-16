@@ -529,6 +529,7 @@ async function handleCardAction(e) {
 let activeTerm = null;
 let activeSocket = null;
 let activeCardId = null;
+let terminalOpenToken = 0;
 
 function renderTerminalCardMeta() {
   const card = cards.find((candidate) => candidate.id === activeCardId);
@@ -558,11 +559,13 @@ async function openTerminal(sessionName, title, cardId) {
   renderTerminalCardMeta();
 
   closeTerminal();
+  const token = terminalOpenToken;
   // The dialog may already be open when switching terminals in place (e.g. the
   // agent's session to its coach): showModal() on an open dialog throws.
   if (!dialog.open) dialog.showModal();
 
   await ghosttyReady;
+  if (token !== terminalOpenToken || !dialog.open) return;
 
   const term = new GhosttyTerminal({
     cursorBlink: true,
@@ -615,6 +618,7 @@ async function openTerminal(sessionName, title, cardId) {
   });
 
   requestAnimationFrame(() => {
+    if (token !== terminalOpenToken || !dialog.open) return;
     fitAddon.fit();
 
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -643,6 +647,7 @@ async function openTerminal(sessionName, title, cardId) {
 }
 
 function closeTerminal() {
+  terminalOpenToken++;
   const dialog = document.getElementById("terminal-dialog");
   const container = document.getElementById("terminal-container");
 
