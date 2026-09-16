@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -432,37 +433,35 @@ func TestControllerStreamStartedClearsError(t *testing.T) {
 // at the end of the replay is applied — here it matches the stored one, so
 // nothing changes at all.
 func TestControllerReplayDoesNotBroadcastHistory(t *testing.T) {
-	store := openTestStore(t)
-	require.NoError(t, store.InsertCard(devCard())) // waiting
+	synctest.Test(t, func(t *testing.T) {
+		store := openTestStore(t)
+		require.NoError(t, store.InsertCard(devCard())) // waiting
 
-	// A failed turn followed by a successful one, all in the past.
-	client := &fakeClient{
-		snap: agent.Snapshot{LastEventSeq: 5},
-		events: []agent.Event{
-			{Type: agent.EventStreamStarted, Seq: 1},
-			{Type: agent.EventError, Seq: 2},
-			{Type: agent.EventStreamStopped, Seq: 3},
-			{Type: agent.EventStreamStarted, Seq: 4},
-			{Type: agent.EventStreamStopped, Seq: 5},
-		},
-	}
+		// A failed turn followed by a successful one, all in the past.
+		client := &fakeClient{
+			snap: agent.Snapshot{LastEventSeq: 5},
+			events: []agent.Event{
+				{Type: agent.EventStreamStarted, Seq: 1},
+				{Type: agent.EventError, Seq: 2},
+				{Type: agent.EventStreamStopped, Seq: 3},
+				{Type: agent.EventStreamStarted, Seq: 4},
+				{Type: agent.EventStreamStopped, Seq: 5},
+			},
+		}
 
-	var changes atomic.Int32
-	c := newController(t.Context(), store, newFakeSessionManager(), func() { changes.Add(1) })
-	c.clientFor = func(string, string) sessionClient { return client }
-	c.Start(devCard())
+		var changes atomic.Int32
+		c := newTestController(t, store, newFakeSessionManager(), client)
+		c.onChanged = func() { changes.Add(1) }
+		c.Start(devCard())
 
-	require.Eventually(t, func() bool {
-		client.mu.Lock()
-		defer client.mu.Unlock()
-		return client.streamCalled
-	}, time.Second, 5*time.Millisecond)
-	time.Sleep(100 * time.Millisecond) // let the replay finish
+		synctest.Wait()
+		assert.True(t, client.streamCalled)
 
-	card, err := store.GetCard("c1")
-	require.NoError(t, err)
-	assert.Equal(t, StatusWaiting, card.Status)
-	assert.Zero(t, changes.Load(), "replayed history must not be re-broadcast")
+		card, err := store.GetCard("c1")
+		require.NoError(t, err)
+		assert.Equal(t, StatusWaiting, card.Status)
+		assert.Zero(t, changes.Load(), "replayed history must not be re-broadcast")
+	})
 }
 
 // A turn still open at the end of the replay is real state, not history: the
@@ -541,58 +540,54 @@ func TestControllerNestedStreamsStayRunning(t *testing.T) {
 // Tabs can run independently. Finishing one tab must not turn the card green
 // while another tab still has an open stream.
 func TestControllerAnyWorkingTabKeepsCardRunning(t *testing.T) {
-	store := openTestStore(t)
-	require.NoError(t, store.InsertCard(devCard()))
+	synctest.Test(t, func(t *testing.T) {
+		store := openTestStore(t)
+		require.NoError(t, store.InsertCard(devCard()))
 
-	client := &fakeClient{
-		snap: agent.Snapshot{Streaming: false},
-		events: []agent.Event{
-			{Type: agent.EventStreamStarted, SessionID: "sess-1"},
-			{Type: agent.EventStreamStarted, SessionID: "tab-2"},
-			{Type: agent.EventStreamStopped, SessionID: "sess-1", Reason: agent.ReasonNormal},
-		},
-	}
-	c := newTestController(t, store, newFakeSessionManager(), client)
-	c.Start(devCard())
+		client := &fakeClient{
+			snap: agent.Snapshot{Streaming: false},
+			events: []agent.Event{
+				{Type: agent.EventStreamStarted, SessionID: "sess-1"},
+				{Type: agent.EventStreamStarted, SessionID: "tab-2"},
+				{Type: agent.EventStreamStopped, SessionID: "sess-1", Reason: agent.ReasonNormal},
+			},
+		}
+		c := newTestController(t, store, newFakeSessionManager(), client)
+		c.Start(devCard())
 
-	require.Eventually(t, func() bool {
+		synctest.Wait()
+
 		card, err := store.GetCard("c1")
-		return err == nil && card.Status == StatusRunning
-	}, time.Second, 5*time.Millisecond)
-
-	time.Sleep(100 * time.Millisecond)
-	card, err := store.GetCard("c1")
-	require.NoError(t, err)
-	assert.Equal(t, StatusRunning, card.Status, "a card stays orange while any tab is working")
+		require.NoError(t, err)
+		assert.Equal(t, StatusRunning, card.Status, "a card stays orange while any tab is working")
+	})
 }
 
 // A new turn resynchronizes only its own tab. It must not erase an open stream
 // in another tab and let that tab's work appear done.
 func TestControllerUserMessageDoesNotClearAnotherWorkingTab(t *testing.T) {
-	store := openTestStore(t)
-	require.NoError(t, store.InsertCard(devCard()))
+	synctest.Test(t, func(t *testing.T) {
+		store := openTestStore(t)
+		require.NoError(t, store.InsertCard(devCard()))
 
-	client := &fakeClient{
-		snap: agent.Snapshot{Streaming: false},
-		events: []agent.Event{
-			{Type: agent.EventStreamStarted, SessionID: "sess-1"},
-			{Type: agent.EventUserMessage, SessionID: "tab-2"},
-			{Type: agent.EventStreamStarted, SessionID: "tab-2"},
-			{Type: agent.EventStreamStopped, SessionID: "tab-2", Reason: agent.ReasonNormal},
-		},
-	}
-	c := newTestController(t, store, newFakeSessionManager(), client)
-	c.Start(devCard())
+		client := &fakeClient{
+			snap: agent.Snapshot{Streaming: false},
+			events: []agent.Event{
+				{Type: agent.EventStreamStarted, SessionID: "sess-1"},
+				{Type: agent.EventUserMessage, SessionID: "tab-2"},
+				{Type: agent.EventStreamStarted, SessionID: "tab-2"},
+				{Type: agent.EventStreamStopped, SessionID: "tab-2", Reason: agent.ReasonNormal},
+			},
+		}
+		c := newTestController(t, store, newFakeSessionManager(), client)
+		c.Start(devCard())
 
-	require.Eventually(t, func() bool {
+		synctest.Wait()
+
 		card, err := store.GetCard("c1")
-		return err == nil && card.Status == StatusRunning
-	}, time.Second, 5*time.Millisecond)
-
-	time.Sleep(100 * time.Millisecond)
-	card, err := store.GetCard("c1")
-	require.NoError(t, err)
-	assert.Equal(t, StatusRunning, card.Status, "another tab's new turn must not clear ongoing work")
+		require.NoError(t, err)
+		assert.Equal(t, StatusRunning, card.Status, "another tab's new turn must not clear ongoing work")
+	})
 }
 
 // Sub-agent and skill sub-sessions forward their stream events onto the root
@@ -601,30 +596,28 @@ func TestControllerUserMessageDoesNotClearAnotherWorkingTab(t *testing.T) {
 // stream_stopped must not close a different session and flash the card green
 // while that session is still working.
 func TestControllerDroppedSubSessionStartStaysRunning(t *testing.T) {
-	store := openTestStore(t)
-	require.NoError(t, store.InsertCard(devCard())) // AgentSession "sess-1"
+	synctest.Test(t, func(t *testing.T) {
+		store := openTestStore(t)
+		require.NoError(t, store.InsertCard(devCard())) // AgentSession "sess-1"
 
-	client := &fakeClient{
-		snap: agent.Snapshot{Streaming: false},
-		events: []agent.Event{
-			{Type: agent.EventStreamStarted, SessionID: "sess-1"}, // parent turn
-			// The sub-session's stream_started was dropped; only its stop
-			// arrives. It must not flip the card to waiting.
-			{Type: agent.EventStreamStopped, SessionID: "sub-9", Reason: agent.ReasonNormal},
-		},
-	}
-	c := newTestController(t, store, newFakeSessionManager(), client)
-	c.Start(devCard())
+		client := &fakeClient{
+			snap: agent.Snapshot{Streaming: false},
+			events: []agent.Event{
+				{Type: agent.EventStreamStarted, SessionID: "sess-1"}, // parent turn
+				// The sub-session's stream_started was dropped; only its stop
+				// arrives. It must not flip the card to waiting.
+				{Type: agent.EventStreamStopped, SessionID: "sub-9", Reason: agent.ReasonNormal},
+			},
+		}
+		c := newTestController(t, store, newFakeSessionManager(), client)
+		c.Start(devCard())
 
-	require.Eventually(t, func() bool {
+		synctest.Wait()
+
 		card, err := store.GetCard("c1")
-		return err == nil && card.Status == StatusRunning
-	}, time.Second, 5*time.Millisecond)
-
-	time.Sleep(100 * time.Millisecond) // let the sub-session stop be processed
-	card, err := store.GetCard("c1")
-	require.NoError(t, err)
-	assert.Equal(t, StatusRunning, card.Status, "an orphan sub-session stop must not turn the card green")
+		require.NoError(t, err)
+		assert.Equal(t, StatusRunning, card.Status, "an orphan sub-session stop must not turn the card green")
+	})
 }
 
 // The root session's own stop still ends the turn when sub-session streams
@@ -833,26 +826,24 @@ func TestControllerSnapshotClearsStarting(t *testing.T) {
 // RAG indexing…), before the prompt is submitted. The card must stay
 // "starting" — not flash green — until the turn's stream_started arrives.
 func TestControllerExpectedTurnKeepsStarting(t *testing.T) {
-	store := openTestStore(t)
-	card := devCard()
-	card.Status = StatusStarting
-	require.NoError(t, store.InsertCard(card))
+	synctest.Test(t, func(t *testing.T) {
+		store := openTestStore(t)
+		card := devCard()
+		card.Status = StatusStarting
+		require.NoError(t, store.InsertCard(card))
 
-	client := &fakeClient{snap: agent.Snapshot{}} // control plane answers, no events yet
-	c := newTestController(t, store, newFakeSessionManager(), client)
-	c.ExpectTurn(card.ID)
-	c.Start(card)
+		client := &fakeClient{snap: agent.Snapshot{}} // control plane answers, no events yet
+		c := newTestController(t, store, newFakeSessionManager(), client)
+		c.ExpectTurn(card.ID)
+		c.Start(card)
 
-	require.Eventually(t, func() bool {
-		client.mu.Lock()
-		defer client.mu.Unlock()
-		return client.streamCalled
-	}, time.Second, 5*time.Millisecond)
-	time.Sleep(100 * time.Millisecond)
+		synctest.Wait()
+		assert.True(t, client.streamCalled)
 
-	got, err := store.GetCard("c1")
-	require.NoError(t, err)
-	assert.Equal(t, StatusStarting, got.Status, "a card expecting its first turn must not turn green before the turn starts")
+		got, err := store.GetCard("c1")
+		require.NoError(t, err)
+		assert.Equal(t, StatusStarting, got.Status, "a card expecting its first turn must not turn green before the turn starts")
+	})
 }
 
 // The expected turn arriving (stream_started) flips the card to running and
