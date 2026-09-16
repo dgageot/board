@@ -1189,7 +1189,9 @@ function renderDiffFile(file) {
 
   let rendered = 0;
   let truncated = false;
-  let linesHtml = "";
+  let linesHtml = file.metadata
+    ? `<tr class="diff-hunk-header"><td colspan="3">${esc(file.metadata)}</td></tr>`
+    : "";
   for (const hunk of file.hunks) {
     if (rendered >= DIFF_MAX_LINES_PER_FILE) {
       truncated = true;
@@ -1281,9 +1283,8 @@ function parseDiffFiles(raw) {
       }
     }
 
-    if (hunks.length > 0) {
-      files.push({ name, hunks });
-    }
+    const metadata = hunks.length === 0 ? lines.slice(1).filter(Boolean).join("\n") : "";
+    files.push({ name, hunks, metadata });
   }
 
   return files;

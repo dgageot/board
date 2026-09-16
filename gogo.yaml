@@ -5,7 +5,7 @@ default: dev
 tasks:
   # Lint, test, and build on source changes
   dev:
-    deps: [lint, test, build]
+    deps: [lint, test, test-js, build]
     sources: go
 
   # Run the board server
@@ -23,6 +23,11 @@ tasks:
   test:
     cmd: go test ./...
     sources: go
+
+  # Run browser-logic regression tests
+  test-js:
+    cmd: node --test tests/*.test.cjs
+    sources: [pkg/board/static/app.js, tests/*.test.cjs]
 
   # Run linter
   lint:

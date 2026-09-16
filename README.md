@@ -23,6 +23,12 @@ own instead.
 
 > **⚠️ Experimental** — This is a personal project. It's not production-ready, APIs may change without notice, and things will break.
 
+## Development
+
+Run `go test -race ./...` for Go tests and `node --test tests/*.test.cjs`
+for browser-logic regression tests (requires Node.js). `gogo dev` runs both
+test suites, lint, and build; use the race command separately for race detection.
+
 ## License
 
 [MIT](LICENSE)
