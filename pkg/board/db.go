@@ -365,11 +365,13 @@ func (s *SQLiteStore) GetProject(id string) (*Project, error) {
 
 // InsertProject appends a project at the end of the ordered list.
 func (s *SQLiteStore) InsertProject(p *Project) error {
-	if err := s.db.Get(&p.Pos, "SELECT COALESCE(MAX(pos), -1) + 1 FROM projects"); err != nil {
+	return runInTx(s.db, func(tx *sqlx.Tx) error {
+		if err := tx.Get(&p.Pos, "SELECT COALESCE(MAX(pos), -1) + 1 FROM projects"); err != nil {
+			return err
+		}
+		_, err := tx.NamedExec(insertProjectSQL, p)
 		return err
-	}
-	_, err := s.db.NamedExec(insertProjectSQL, p)
-	return err
+	})
 }
 
 func (s *SQLiteStore) DeleteProject(id string) error {
