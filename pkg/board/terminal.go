@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
@@ -87,10 +88,18 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		"LANG=en_US.UTF-8",
 	)
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})
-	if err != nil {
+	if err := bridgeTerminal(conn, cmd, &pty.Winsize{Cols: cols, Rows: rows}); err != nil {
 		log.Printf("terminal session %s: %v", sessionName, err)
-		return
+	}
+}
+
+// bridgeTerminal starts cmd on a PTY of the given size and relays raw I/O
+// between it and conn until the command exits or the client disconnects.
+// It returns an error only when the command could not be started.
+func bridgeTerminal(conn *websocket.Conn, cmd *exec.Cmd, size *pty.Winsize) error {
+	ptmx, err := pty.StartWithSize(cmd, size)
+	if err != nil {
+		return err
 	}
 	closePTY := sync.OnceFunc(func() { _ = ptmx.Close() })
 	defer closePTY()
@@ -98,10 +107,12 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	// Protect WebSocket writes from concurrent access.
 	var wsMu sync.Mutex
 
-	var wg sync.WaitGroup
+	// The two relay goroutines are joined separately: the last PTY output
+	// must be relayed before the Close frame is sent.
+	var ptyReader, wsReader sync.WaitGroup
 
 	// PTY → WebSocket
-	wg.Go(func() {
+	ptyReader.Go(func() {
 		buf := make([]byte, 4096)
 		for {
 			n, err := ptmx.Read(buf)
@@ -120,12 +131,15 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// WebSocket → PTY
-	wg.Go(func() {
+	wsReader.Go(func() {
+		defer func() {
+			// A pending PTY read prevents Close from hanging up on Darwin.
+			_ = cmd.Process.Signal(syscall.SIGHUP)
+			closePTY()
+		}()
 		for {
 			_, data, err := conn.ReadMessage()
 			if err != nil {
-				// Close the PTY so the reader goroutine and cmd.Wait() unblock.
-				closePTY()
 				return
 			}
 
@@ -144,12 +158,18 @@ func (b *Board) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	})
 
 	_ = cmd.Wait()
-	// Close the PTY to unblock the reader goroutine.
+	// Drain the slave's final output before closing the master.
+	ptyReader.Wait()
 	closePTY()
-	wg.Wait()
 
 	wsMu.Lock()
 	_ = conn.WriteMessage(websocket.CloseMessage,
 		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session ended"))
 	wsMu.Unlock()
+
+	// Only closing the connection unblocks ReadMessage in the WebSocket
+	// reader; waiting on it first would stall until the client hangs up.
+	_ = conn.Close()
+	wsReader.Wait()
+	return nil
 }
