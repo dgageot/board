@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 )
 
@@ -41,7 +40,6 @@ func (b *Board) handleListAgents(w http.ResponseWriter, _ *http.Request) {
 			agents = append(agents, filepath.Join(dir, e.Name()))
 		}
 	}
-	slices.Sort(agents)
 
 	writeJSON(w, agents)
 }
@@ -87,7 +85,6 @@ func (b *Board) handleBrowse(w http.ResponseWriter, r *http.Request) {
 			dirs = append(dirs, e.Name())
 		}
 	}
-	slices.Sort(dirs)
 
 	parent := filepath.Dir(path)
 	if parent == path || !withinDir(home, parent) {

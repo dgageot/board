@@ -65,3 +65,28 @@ func TestHandleBrowseRejectsTraversalOutOfHome(t *testing.T) {
 	rec := browse(t, b, filepath.Join(home, "..", ".."))
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
+
+func TestDirectoryListingsPreserveFilenameOrder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	require.NoError(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755))
+	for _, name := range []string{"z.yml", "B.yaml", "a.YAML", "a b.yaml", "ignore.txt"} {
+		require.NoError(t, os.WriteFile(filepath.Join(home, ".agents", name), nil, 0o600))
+	}
+	for _, name := range []string{"z", "B", "a", "a b", ".hidden"} {
+		require.NoError(t, os.Mkdir(filepath.Join(home, name), 0o755))
+	}
+	b := &Board{}
+	rec := httptest.NewRecorder()
+	b.handleListAgents(rec, httptest.NewRequest(http.MethodGet, "/api/agents", http.NoBody))
+	var agents []string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &agents))
+	require.Equal(t, []string{
+		filepath.Join(home, ".agents", "B.yaml"), filepath.Join(home, ".agents", "a b.yaml"),
+		filepath.Join(home, ".agents", "a.YAML"), filepath.Join(home, ".agents", "z.yml"),
+	}, agents)
+	rec = browse(t, b, "")
+	var folders browseResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &folders))
+	require.Equal(t, []string{"B", "a", "a b", "z"}, folders.Dirs)
+}
