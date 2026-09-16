@@ -2,7 +2,9 @@ package tmux
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"al.essio.dev/pkg/shellescape"
@@ -73,4 +75,28 @@ func TestPromptFilePath(t *testing.T) {
 	t.Setenv("TMPDIR", dir)
 
 	assert.Equal(t, filepath.Join(os.TempDir(), "board-prompt-abc123"), promptFilePath("abc123"))
+}
+
+func TestAgentCommandPreservesAgentArgument(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, agent := range []string{
+		"/tmp/My Agent.yaml", "/tmp/a'quoted.yaml", "/tmp/$(printf INJECTED).yaml",
+		"/tmp/$HOME.yaml", "/tmp/agent; printf INJECTED", "docker.io/org/agent:latest",
+		"~/My Agent.yaml", "$HOME/My Agent.yaml", "${HOME}/My Agent.yaml",
+	} {
+		t.Run(agent, func(t *testing.T) {
+			want := agent
+			for _, prefix := range []string{"~/", "$HOME/", "${HOME}/"} {
+				if rest, ok := strings.CutPrefix(agent, prefix); ok {
+					want = home + "/" + rest
+				}
+			}
+			// Capture argv without starting Docker. Metacharacters must stay literal.
+			script := `docker() { printf '%s\n' "$@"; }; ` + agentCommand(agent, "session", "/tmp/sock", "", "", "")
+			out, err := exec.Command("sh", "-c", script).CombinedOutput()
+			require.NoError(t, err, "%s", out)
+			require.Equal(t, []string{"agent", "run", want, "--yolo", "--session", "session", "--listen", "unix:///tmp/sock"}, strings.Split(strings.TrimSuffix(string(out), "\n"), "\n"))
+		})
+	}
 }

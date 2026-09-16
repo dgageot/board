@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"al.essio.dev/pkg/shellescape"
@@ -108,7 +109,7 @@ func applyServerDefaults() {
 // escaping is fully safe for arbitrary user text.
 func agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile string) string {
 	cmd := fmt.Sprintf("docker agent run %s --yolo --session %s --listen %s",
-		agent, shellescape.Quote(sessionID), shellescape.Quote("unix://"+listenSocket))
+		quoteAgent(agent), shellescape.Quote(sessionID), shellescape.Quote("unix://"+listenSocket))
 	if worktreeName != "" {
 		cmd += fmt.Sprintf(" --worktree=%s --worktree-base %s",
 			shellescape.Quote(worktreeName), shellescape.Quote(worktreeBase))
@@ -117,6 +118,16 @@ func agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, pr
 		cmd += " - < " + shellescape.Quote(promptFile)
 	}
 	return cmd
+}
+
+// quoteAgent preserves home-relative config paths without evaluating shell text.
+func quoteAgent(agent string) string {
+	for _, prefix := range []string{"~/", "$HOME/", "${HOME}/"} {
+		if rest, ok := strings.CutPrefix(agent, prefix); ok {
+			return `"$HOME"/` + shellescape.Quote(rest)
+		}
+	}
+	return shellescape.Quote(agent)
 }
 
 // promptFilePath returns where a session's first prompt is staged for stdin
