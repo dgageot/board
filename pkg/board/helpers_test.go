@@ -46,6 +46,8 @@ func (noopSessionManager) Alive(string) (bool, error) { return true, nil }
 // test Board's watchers stay idle instead of dialing real sockets.
 type noopSessionClient struct{}
 
+func (noopSessionClient) CloseIdleConnections() {}
+
 func (noopSessionClient) Snapshot(context.Context) (agent.Snapshot, error) {
 	return agent.Snapshot{}, errors.New("no control plane in tests")
 }

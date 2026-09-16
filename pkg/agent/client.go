@@ -164,6 +164,11 @@ func newClient(httpc *http.Client, base, session string) *Client {
 	return &Client{http: httpc, base: base, session: session}
 }
 
+// CloseIdleConnections releases unused connections without interrupting requests.
+func (c *Client) CloseIdleConnections() {
+	c.http.CloseIdleConnections()
+}
+
 func (c *Client) sessionURL() string {
 	return c.base + "/api/sessions/" + url.PathEscape(c.session)
 }

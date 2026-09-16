@@ -1139,3 +1139,5 @@ func TestControllerEmptyPRURLDoesNotClear(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https://github.com/o/r/pull/7", card.PRURL, "no match must not clear the stored PR")
 }
+
+func (*fakeClient) CloseIdleConnections() {}
