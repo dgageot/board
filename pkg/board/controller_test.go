@@ -935,17 +935,20 @@ func TestControllerStopClearsExpectTurn(t *testing.T) {
 }
 
 func TestControllerDoesNotRelaunchWhileStarting(t *testing.T) {
-	store := openTestStore(t)
-	require.NoError(t, store.InsertCard(devCard()))
+	synctest.Test(t, func(t *testing.T) {
+		store := openTestStore(t)
+		require.NoError(t, store.InsertCard(devCard()))
 
-	sessions := newFakeSessionManager()
-	sessions.alive = true // still starting: connection fails but pane is alive
-	client := &fakeClient{snapErr: errors.New("connection refused")}
-	c := newTestController(t, store, sessions, client)
-	c.Start(devCard())
+		sessions := newFakeSessionManager()
+		sessions.alive = true // still starting: connection fails but pane is alive
+		client := &fakeClient{snapErr: errors.New("connection refused")}
+		c := newTestController(t, store, sessions, client)
+		c.Start(devCard())
 
-	time.Sleep(200 * time.Millisecond)
-	assert.Empty(t, sessions.calls(), "a starting session must not be relaunched")
+		// Exercise several retries, not just the initial snapshot failure.
+		synctest.Sleep(3 * retryDelay)
+		assert.Empty(t, sessions.calls(), "a starting session must not be relaunched")
+	})
 }
 
 // An alive agent whose control plane lacks GET /snapshot runs an old
@@ -953,20 +956,23 @@ func TestControllerDoesNotRelaunchWhileStarting(t *testing.T) {
 // resumes on the currently installed binary, instead of retrying the 404
 // forever and leaving the card stuck at "starting".
 func TestControllerRelaunchesUnsupportedAgentOnce(t *testing.T) {
-	store := openTestStore(t)
-	require.NoError(t, store.InsertCard(devCard()))
+	synctest.Test(t, func(t *testing.T) {
+		store := openTestStore(t)
+		require.NoError(t, store.InsertCard(devCard()))
 
-	sessions := newFakeSessionManager()
-	sessions.alive = true // the old agent is alive, just unusable
-	client := &fakeClient{snapErr: fmt.Errorf("snapshot: 404: %w", agent.ErrUnsupported)}
-	c := newTestController(t, store, sessions, client)
-	c.Start(devCard())
+		sessions := newFakeSessionManager()
+		sessions.alive = true // the old agent is alive, just unusable
+		client := &fakeClient{snapErr: fmt.Errorf("snapshot: 404: %w", agent.ErrUnsupported)}
+		c := newTestController(t, store, sessions, client)
+		c.Start(devCard())
 
-	require.Eventually(t, func() bool { return len(sessions.calls()) == 1 }, time.Second, 5*time.Millisecond)
+		synctest.Wait()
+		require.Len(t, sessions.calls(), 1)
 
-	// If the relaunched binary is still too old, do not thrash kill/restart.
-	time.Sleep(200 * time.Millisecond)
-	assert.Len(t, sessions.calls(), 1, "an unsupported agent is relaunched at most once per watcher")
+		// If the relaunched binary is still too old, do not thrash kill/restart.
+		synctest.Sleep(3 * retryDelay)
+		assert.Len(t, sessions.calls(), 1, "an unsupported agent is relaunched at most once per watcher")
+	})
 }
 
 func TestSendPromptUsesFollowup(t *testing.T) {
