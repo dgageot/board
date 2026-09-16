@@ -17,8 +17,7 @@ import (
 // testClient wires a Client to a test HTTP server.
 func testClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
-	srv := httptest.NewServer(handler)
-	t.Cleanup(srv.Close)
+	srv := httptest.NewTestServer(t, handler)
 	return newClient(srv.Client(), srv.URL, "sess-1")
 }
 
