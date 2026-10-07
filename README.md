@@ -8,6 +8,14 @@ Board lets you create tasks, assign them to AI agents running in tmux sessions, 
 
 Under the hood, Board uses git worktrees so multiple agents can work on separate branches of the same repo simultaneously. A web UI with live updates (SSE) and an embedded terminal (via WebSocket) lets you monitor progress and interact with agents directly from the browser.
 
+## Workspace
+
+The board uses a compact layout that fills the viewport, with independently
+scrolling columns and horizontal scrolling when the pipeline cannot fit.
+**Agent** and **Diff** open fullscreen; Escape closes the diff, while in the
+agent view it is sent to the agent. Hover a card to reveal its actions, or
+press **N** to create a task.
+
 ## Harness coach
 
 When a card is done, the **🎓 Coach** button at the top of its terminal view asks a

@@ -3,6 +3,13 @@ import { init, Terminal as GhosttyTerminal, FitAddon } from 'ghostty-web';
 // Initialize ghostty-web WASM (must complete before creating terminals)
 const ghosttyReady = init();
 
+// --- Icons ---
+
+// icon renders a 16px stroke icon from the inline sprite in index.html.
+function icon(name) {
+  return `<svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+}
+
 // --- Theme ---
 
 function getPreferredTheme() {
@@ -14,7 +21,7 @@ function getPreferredTheme() {
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   localStorage.setItem("theme", theme);
-  document.getElementById("btn-theme").textContent = theme === "dark" ? "🌙" : "☀️";
+  document.getElementById("btn-theme").innerHTML = icon(theme === "dark" ? "moon" : "sun");
 }
 
 applyTheme(getPreferredTheme());
@@ -37,7 +44,7 @@ let knownCardStatuses = null;
 
 function updateSoundButton() {
   const button = document.getElementById("btn-sound");
-  button.textContent = soundNotificationsEnabled ? "🔔" : "🔕";
+  button.innerHTML = icon(soundNotificationsEnabled ? "bell" : "bell-off");
   button.title = soundNotificationsEnabled
     ? "Disable sound notifications"
     : "Play a sound when a card becomes ready";
@@ -205,16 +212,24 @@ function connectSSE() {
 // --- Two-step buttons ---
 
 // armButton implements two-step (two-click) confirmation: the first click
-// arms the button by appending " ?" to its label and returns false; the
-// second click returns true so the caller performs the action. Losing focus
-// disarms the button, and any re-render replaces it, which also disarms.
+// arms the button (showing its data-arm-label, or appending " ?" to a plain
+// text label) and returns false; the second click returns true so the caller
+// performs the action. Losing focus disarms the button, and any re-render
+// replaces it, which also disarms.
 function armButton(btn) {
   if (btn.dataset.armed) {
     disarmButton(btn);
     return true;
   }
   btn.dataset.armed = "true";
-  btn.textContent += " ?";
+  btn.dataset.restore = btn.innerHTML;
+  const label = btn.dataset.armLabel || `${btn.textContent} ?`;
+  btn.textContent = label;
+  // Expose the pending confirmation to assistive tech as well.
+  if (btn.hasAttribute("aria-label")) {
+    btn.dataset.restoreAriaLabel = btn.getAttribute("aria-label");
+    btn.setAttribute("aria-label", `${label} Activate again to confirm.`);
+  }
   btn.addEventListener("blur", () => disarmButton(btn), { once: true });
   return false;
 }
@@ -222,18 +237,23 @@ function armButton(btn) {
 function disarmButton(btn) {
   if (!btn.dataset.armed) return;
   delete btn.dataset.armed;
-  btn.textContent = btn.textContent.replace(/ \?$/, "");
+  btn.innerHTML = btn.dataset.restore;
+  delete btn.dataset.restore;
+  if (btn.dataset.restoreAriaLabel !== undefined) {
+    btn.setAttribute("aria-label", btn.dataset.restoreAriaLabel);
+    delete btn.dataset.restoreAriaLabel;
+  }
 }
 
 // --- Render ---
 
-// Interpolate a color from orange (#e3873d) to green (#3fb950) based on t in [0,1].
+// Curated accent per column. The pipeline reads left to right, so hues
+// progress warm → cool, and the last column (done) is always green.
+const COLUMN_PALETTE = ["#f5a524", "#c084fc", "#38bdf8", "#fb7185", "#818cf8", "#2dd4bf", "#f472b6"];
+
 function columnColor(index, total) {
-  const t = total <= 1 ? 1 : index / (total - 1);
-  const r = Math.round(227 + (63 - 227) * t);
-  const g = Math.round(135 + (185 - 135) * t);
-  const b = Math.round(61 + (80 - 61) * t);
-  return `rgb(${r}, ${g}, ${b})`;
+  if (index === total - 1) return "#34d399";
+  return COLUMN_PALETTE[index % COLUMN_PALETTE.length];
 }
 
 function isForwardMove(srcColId, dstColId) {
@@ -258,19 +278,20 @@ function renderBoard() {
     const colCards = cards.filter((c) => c.column === col.id);
 
     const isLastCol = i === columns.length - 1;
-    const headerExtra = i === 0 ? `<button class="btn-add-task" title="New task">+</button>` : "";
-    const clearExtra = isLastCol && colCards.length > 0 ? `<button class="btn-clear-column" title="Clear all cards">🗑</button>` : "";
+    const headerExtra = i === 0 ? `<button class="icon-btn btn-add-task" title="New task" aria-label="New task">${icon("plus")}</button>` : "";
+    const clearExtra = isLastCol && colCards.length > 0 ? `<button class="icon-btn icon-btn-danger btn-clear-column" title="Clear all cards" aria-label="Clear all cards" data-arm-label="Clear all?">${icon("trash")}</button>` : "";
 
     const colEl = document.createElement("div");
     colEl.className = "column";
     colEl.style.setProperty("--col-accent", color);
     colEl.innerHTML = `
       <div class="column-header">
-        <span class="column-title">${esc(col.emoji)} ${esc(col.name)}</span>
+        ${col.emoji ? `<span class="column-emoji" aria-hidden="true">${esc(col.emoji)}</span>` : `<span class="column-dot" aria-hidden="true"></span>`}
+        <span class="column-title" title="${esc(col.name)}">${esc(col.name)}</span>
+        <span class="card-count">${colCards.length}</span>
         <div class="column-header-actions">
           ${headerExtra}
           ${clearExtra}
-          <span class="card-count">${colCards.length}</span>
         </div>
       </div>
       <div class="column-body" data-column="${esc(col.id)}"></div>
@@ -309,7 +330,7 @@ function renderBoard() {
     });
 
     if (colCards.length === 0) {
-      body.innerHTML = `<div class="empty-column">No tasks</div>`;
+      body.innerHTML = `<div class="empty-column">${i === 0 ? "No tasks yet · press N" : "No tasks"}</div>`;
     } else {
       for (const card of colCards) {
         body.appendChild(renderCard(card, col.id));
@@ -336,6 +357,21 @@ function renderBoard() {
 
     board.appendChild(colEl);
   }
+
+  renderSummary();
+}
+
+// renderSummary shows live board totals in the header: how many agents are
+// working and how many cards wait for a human.
+function renderSummary() {
+  const summary = document.getElementById("board-summary");
+  if (!summary) return;
+  const active = cards.filter(isBusy).length;
+  const ready = cards.filter((c) => c.status === "waiting").length;
+  const parts = [`<span><strong>${cards.length}</strong> ${cards.length === 1 ? "task" : "tasks"}</span>`];
+  if (active) parts.push(`<span class="summary-dot" style="--summary-color: var(--warning)"></span><span><strong>${active}</strong> running</span>`);
+  if (ready) parts.push(`<span class="summary-dot" style="--summary-color: var(--success)"></span><span><strong>${ready}</strong> ready</span>`);
+  summary.innerHTML = parts.join("");
 }
 
 // prIcon renders an Octicon SVG (16px viewBox) for a PR status, tinted via
@@ -386,6 +422,11 @@ function prLinkContent(url) {
   return `${prIconSvg("open")}<span class="card-pr-label">${esc(prLabel(url))}</span>`;
 }
 
+const CARD_STATUS_LABELS = {
+  starting: "Starting", running: "Running", waiting: "Ready",
+  error: "Error", paused: "Paused", idle: "Idle", done: "Done",
+};
+
 function renderCard(card, colId) {
   const el = document.createElement("div");
   el.className = `card card-${card.status}`;
@@ -405,25 +446,24 @@ function renderCard(card, colId) {
     ? `<a class="card-pr" href="${esc(card.prUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(card.prUrl)}">${prLinkContent(card.prUrl)}</a>`
     : "";
 
-  // Cost and PR link share a single meta row; the wrapper is omitted entirely
-  // when neither is present so an empty line never adds card height.
-  const metaHtml = costHtml || prLink
-    ? `<div class="card-meta">${costHtml}${prLink}</div>`
-    : "";
 
   const coachIcon = card.coachRan || card.coachRunning
-    ? `<span class="card-coach${card.coachRunning ? " card-coach-running" : ""}" title="Coach ${card.coachRunning ? "running" : "done"}" aria-label="Coach ${card.coachRunning ? "running" : "done"}">🎓</span>`
+    ? `<span class="card-coach${card.coachRunning ? " card-coach-running" : ""}" title="Coach ${card.coachRunning ? "running" : "done"}" aria-label="Coach ${card.coachRunning ? "running" : "done"}">${icon("coach")}</span>`
     : "";
 
   el.innerHTML = `
-    ${coachIcon}
+    <div class="card-heading">
+      <span class="card-status">${esc(CARD_STATUS_LABELS[card.status] || card.status)}</span>
+      <span class="card-project" title="${esc(card.project)}">${esc(card.project)}</span>
+      ${coachIcon}
+    </div>
     <div class="card-title">${esc(card.title)}</div>
-    ${metaHtml}
+    ${costHtml || prLink ? `<div class="card-footer">${costHtml}${prLink}</div>` : ""}
     <div class="card-actions">
-      <button class="btn btn-small btn-secondary" data-action="jump" data-id="${card.id}" title="Open agent session">Agent</button>
-      <button class="btn btn-small btn-secondary" data-action="diff" data-id="${card.id}" title="View worktree diff">Diff</button>
-      <button class="btn btn-small btn-secondary" data-action="vscode" data-id="${card.id}" title="Open in VSCode">Code</button>
-      <button class="btn btn-small btn-secondary btn-delete" data-action="delete" data-id="${card.id}" title="Delete task and worktree">✕</button>
+      <button class="icon-btn" data-action="jump" data-id="${card.id}" title="Open agent session" aria-label="Open agent session">${icon("terminal")}</button>
+      <button class="icon-btn" data-action="diff" data-id="${card.id}" title="View worktree diff" aria-label="View worktree diff">${icon("diff")}</button>
+      <button class="icon-btn" data-action="vscode" data-id="${card.id}" title="Open in VSCode" aria-label="Open in VSCode">${icon("code")}</button>
+      <button class="icon-btn icon-btn-danger btn-delete" data-action="delete" data-id="${card.id}" title="Delete task and worktree" aria-label="Delete task and worktree" data-arm-label="Delete?">${icon("trash")}</button>
     </div>
   `;
 
@@ -640,10 +680,17 @@ async function openTerminal(sessionName, title, cardId) {
   });
 
   const resizeHandler = () => {
-    if (activeTerm) fitAddon.fit();
+    clearTimeout(dialog._resizeTimer);
+    // FitAddon throttles fits for 50ms; a trailing fit applies the final size.
+    dialog._resizeTimer = setTimeout(() => {
+      if (activeTerm === term && dialog.open) fitAddon.fit();
+    }, 60);
   };
   window.addEventListener("resize", resizeHandler);
   dialog._resizeHandler = resizeHandler;
+  // A wrapping header resizes the terminal without a window resize.
+  dialog._resizeObserver = new ResizeObserver(resizeHandler);
+  dialog._resizeObserver.observe(container);
 }
 
 function closeTerminal() {
@@ -652,6 +699,8 @@ function closeTerminal() {
   const container = document.getElementById("terminal-container");
 
   if (activeSocket) {
+    // Closing delivers async events after the terminal has been disposed.
+    activeSocket.onmessage = activeSocket.onclose = activeSocket.onerror = null;
     activeSocket.close();
     activeSocket = null;
   }
@@ -661,6 +710,10 @@ function closeTerminal() {
   }
 
   container.innerHTML = "";
+  clearTimeout(dialog._resizeTimer);
+  dialog._resizeTimer = null;
+  dialog._resizeObserver?.disconnect();
+  dialog._resizeObserver = null;
 
   if (dialog._resizeHandler) {
     window.removeEventListener("resize", dialog._resizeHandler);
@@ -720,8 +773,8 @@ coachBtn.addEventListener("click", async () => {
 // has generated one, otherwise the full prompt (the placeholder title is a
 // truncated version of it). GitHub-style icons: copy at rest, a green check
 // as brief confirmation.
-const COPY_ICON_SVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path></svg>`;
-const CHECK_ICON_SVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path></svg>`;
+const COPY_ICON_SVG = icon("copy");
+const CHECK_ICON_SVG = icon("check");
 
 const copyTitleBtn = document.getElementById("terminal-copy-title");
 copyTitleBtn.innerHTML = COPY_ICON_SVG;
@@ -928,7 +981,7 @@ function renderProjects() {
           ${p.agent ? `<div class="project-path"><span class="project-path-label">agent</span>${esc(p.agent.split("/").pop())}</div>` : ""}
         </div>
       </div>
-      <button class="btn btn-small btn-danger" onclick="deleteProject('${p.id}')" title="Delete project">✕</button>
+      <button class="icon-btn icon-btn-danger" onclick="deleteProject('${p.id}')" title="Delete project" aria-label="Delete project">${icon("trash")}</button>
     </div>
   `).join("");
   enableProjectDragReorder(list);
@@ -1058,7 +1111,7 @@ function columnEditorItem(col) {
         <span class="column-drag" title="Drag to reorder">☰</span>
         <input class="col-emoji" type="text" value="${esc(col.emoji)}" placeholder="🔨" title="Emoji" autocomplete="off">
         <input class="col-name" type="text" value="${esc(col.name)}" placeholder="Column name" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-        <button type="button" class="btn btn-small btn-danger col-delete" title="Delete column">✕</button>
+        <button type="button" class="icon-btn icon-btn-danger col-delete" title="Delete column" aria-label="Delete column">${icon("trash")}</button>
       </div>
       <textarea class="col-prompt" rows="3" placeholder="No prompt (manual column)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">${esc(col.prompt)}</textarea>
     </div>
@@ -1131,7 +1184,7 @@ let diffRenderToken = 0;
 async function openDiffDialog(cardId, title) {
   const dialog = document.getElementById("diff-dialog");
   const container = document.getElementById("diff-container");
-  document.getElementById("diff-title").textContent = `📄 ${title}`;
+  document.getElementById("diff-title").textContent = title;
   document.getElementById("diff-project").textContent =
     cards.find((c) => c.id === cardId)?.project || "";
   container.innerHTML = `<div class="diff-loading">Loading diff…</div>`;
@@ -1306,12 +1359,7 @@ document.getElementById("diff-dialog").addEventListener("close", () => {
 
 document.getElementById("diff-dialog").addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    document.getElementById("diff-dialog").close();
-  }
-});
-
-document.getElementById("diff-dialog").addEventListener("click", (e) => {
-  if (e.target === e.currentTarget) {
+    e.preventDefault();
     document.getElementById("diff-dialog").close();
   }
 });
@@ -1346,6 +1394,8 @@ function prLabel(url) {
 }
 
 // --- Keyboard shortcuts ---
+
+document.getElementById("btn-new-task").addEventListener("click", openNewTaskDialog);
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "n" && e.key !== "N") return;

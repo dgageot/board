@@ -27,9 +27,12 @@ func TestStaticUIHasSoundNotificationsDisabledByDefault(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+	// The icon is rendered by app.js from the persisted preference; the
+	// markup only carries the default "off" state.
 	assert.Contains(t, rec.Body.String(), `id="btn-sound"`)
 	assert.Contains(t, rec.Body.String(), `aria-pressed="false"`)
-	assert.Contains(t, rec.Body.String(), `>🔕</button>`)
+	assert.Contains(t, rec.Body.String(), `id="i-bell-off"`)
+	assert.NotContains(t, rec.Body.String(), `🔔`)
 }
 
 func TestWriteJSONStatusSetsContentType(t *testing.T) {

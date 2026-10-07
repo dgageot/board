@@ -6,93 +6,98 @@
   padding: 0;
 }
 
+/* ===== Design tokens ===== */
 :root {
-  --bg: #090e1a;
-  --bg-elevated: #111827;
-  --surface: rgba(15, 23, 42, 0.72);
-  --surface-raised: rgba(30, 41, 59, 0.82);
-  --surface-hover: rgba(51, 65, 85, 0.82);
-  --border: rgba(148, 163, 184, 0.16);
-  --border-strong: rgba(148, 163, 184, 0.28);
-  --text: #eef4ff;
-  --text-muted: #94a3b8;
-  --text-subtle: #64748b;
-  --accent: #818cf8;
-  --accent-hover: #a5b4fc;
-  --accent-contrast: #ffffff;
+  --bg: #0b0d12;
+  --bg-tint-1: rgba(124, 134, 255, 0.11);
+  --bg-tint-2: rgba(192, 132, 252, 0.07);
+  --surface: #12151c;
+  --surface-raised: #171b24;
+  --surface-hover: #1e2330;
+  --surface-input: #0e1117;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --text: #e8eaf0;
+  --text-muted: #8f97a8;
+  --text-subtle: #5f6778;
+  --accent: #7c86ff;
+  --accent-hover: #929bff;
+  --accent-contrast: #0b0d12;
+  --accent-2: #c084fc;
   --danger: #fb7185;
   --success: #34d399;
   --warning: #fbbf24;
-  --info: #60a5fa;
-  --accent-success: var(--success);
-  --accent-danger: var(--danger);
-  --accent-primary: var(--accent);
-  --radius: 16px;
-  --radius-sm: 10px;
+  --info: #38bdf8;
+  --neutral: #94a3b8;
+  --radius-lg: 14px;
+  --radius: 10px;
+  --radius-sm: 7px;
   --font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, monospace;
-  --shadow-sm: 0 8px 18px rgba(0, 0, 0, 0.18);
-  --shadow-md: 0 18px 45px rgba(0, 0, 0, 0.28);
-  --shadow-glow: 0 0 0 1px rgba(129, 140, 248, 0.18), 0 14px 34px rgba(79, 70, 229, 0.16);
-  --badge-running-bg: rgba(251, 191, 36, 0.16);
-  --badge-waiting-bg: rgba(52, 211, 153, 0.14);
-  --badge-done-bg: rgba(148, 163, 184, 0.14);
-  --card-running-bg: linear-gradient(145deg, rgba(251, 191, 36, 0.13), rgba(30, 41, 59, 0.76));
-  --card-starting-bg: linear-gradient(145deg, rgba(96, 165, 250, 0.14), rgba(30, 41, 59, 0.76));
-  --card-waiting-bg: linear-gradient(145deg, rgba(52, 211, 153, 0.12), rgba(30, 41, 59, 0.76));
-  --card-error-bg: linear-gradient(145deg, rgba(248, 81, 73, 0.16), rgba(30, 41, 59, 0.76));
-  --card-paused-bg: linear-gradient(145deg, rgba(226, 232, 240, 0.22), rgba(30, 41, 59, 0.76));
-  --backdrop: rgba(2, 6, 23, 0.72);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-card-hover: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 24px 64px -16px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --backdrop: rgba(4, 6, 12, 0.6);
+  --terminal-bg: #0b0d12;
+  --board-gap: 14px;
+  --card-gap: 8px;
   color-scheme: dark;
 }
 
 [data-theme="light"] {
-  --bg: #f8fafc;
-  --bg-elevated: #ffffff;
-  --surface: rgba(241, 245, 249, 0.88);
-  --surface-raised: rgba(255, 255, 255, 0.94);
-  --surface-hover: #f1f5f9;
-  --border: rgba(15, 23, 42, 0.1);
-  --border-strong: rgba(15, 23, 42, 0.16);
-  --text: #0f172a;
-  --text-muted: #64748b;
-  --text-subtle: #94a3b8;
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
+  --bg: #f4f5f8;
+  --bg-tint-1: rgba(99, 102, 241, 0.08);
+  --bg-tint-2: rgba(168, 85, 247, 0.05);
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-hover: #f0f2f6;
+  --surface-input: #ffffff;
+  --border: rgba(17, 24, 39, 0.08);
+  --border-strong: rgba(17, 24, 39, 0.18);
+  --text: #111827;
+  --text-muted: #5b6475;
+  --text-subtle: #8a93a6;
+  --accent: #5b63f0;
+  --accent-hover: #4a52e0;
   --accent-contrast: #ffffff;
+  --accent-2: #a855f7;
   --danger: #e11d48;
   --success: #059669;
   --warning: #d97706;
-  --info: #3b82f6;
-  --shadow-sm: 0 8px 20px rgba(15, 23, 42, 0.08);
-  --shadow-md: 0 24px 60px rgba(15, 23, 42, 0.14);
-  --shadow-glow: 0 0 0 1px rgba(79, 70, 229, 0.12), 0 14px 34px rgba(79, 70, 229, 0.1);
-  --badge-running-bg: rgba(217, 119, 6, 0.12);
-  --badge-waiting-bg: rgba(5, 150, 105, 0.1);
-  --badge-done-bg: rgba(100, 116, 139, 0.12);
-  --card-running-bg: linear-gradient(145deg, rgba(251, 191, 36, 0.16), rgba(255, 255, 255, 0.92));
-  --card-starting-bg: linear-gradient(145deg, rgba(59, 130, 246, 0.13), rgba(255, 255, 255, 0.92));
-  --card-waiting-bg: linear-gradient(145deg, rgba(16, 185, 129, 0.12), rgba(255, 255, 255, 0.92));
-  --card-error-bg: linear-gradient(145deg, rgba(225, 29, 72, 0.14), rgba(255, 255, 255, 0.92));
-  --card-paused-bg: linear-gradient(145deg, rgba(226, 232, 240, 0.85), rgba(255, 255, 255, 0.95));
-  --backdrop: rgba(15, 23, 42, 0.3);
+  --info: #0284c7;
+  --neutral: #64748b;
+  --shadow-card: 0 1px 2px rgba(17, 24, 39, 0.06), 0 0 0 1px rgba(17, 24, 39, 0.02);
+  --shadow-card-hover: 0 10px 28px -10px rgba(17, 24, 39, 0.22), 0 1px 2px rgba(17, 24, 39, 0.06);
+  --shadow-md: 0 24px 64px -16px rgba(17, 24, 39, 0.3), 0 0 0 1px rgba(17, 24, 39, 0.06);
+  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.06);
+  --backdrop: rgba(17, 24, 39, 0.35);
+  --terminal-bg: #ffffff;
   color-scheme: light;
 }
 
+/* ===== Base ===== */
 html,
 body {
   height: 100%;
   overflow: hidden;
   font-family: var(--font);
+  font-size: 13px;
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01", "ss03", "tnum";
 }
 
 body {
-  background: var(--bg);
-}
-
-[data-theme="light"] body {
-  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background:
+    radial-gradient(900px 480px at 12% -8%, var(--bg-tint-1), transparent 62%),
+    radial-gradient(700px 420px at 96% -4%, var(--bg-tint-2), transparent 60%),
+    var(--bg);
 }
 
 button,
@@ -100,6 +105,7 @@ input,
 textarea,
 select {
   font: inherit;
+  color: inherit;
 }
 
 button,
@@ -107,75 +113,239 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Header */
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The sprite only hosts <symbol>s; it must never take layout space. */
+.icon-sprite {
+  display: none;
+}
+
+.icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  vertical-align: -3px;
+}
+
+/* ===== Header ===== */
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 18px 20px 12px;
-  gap: 14px;
+  min-height: 48px;
+  padding: 0 14px 0 16px;
+  gap: 8px 14px;
   flex-wrap: wrap;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 
   & h1 {
     display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 22px;
-    font-weight: 750;
-    letter-spacing: -0.04em;
+    align-items: baseline;
+    gap: 7px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
     white-space: nowrap;
-    text-shadow: 0 1px 20px rgba(129, 140, 248, 0.18);
-  }
-
-  & .header-actions {
-    display: flex;
-    gap: 10px;
-    flex-shrink: 0;
-    flex-wrap: wrap;
-    justify-content: flex-end;
   }
 }
 
-/* Buttons */
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--accent) 60%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
+}
+
+.brand-sub {
+  color: var(--text-subtle);
+  font-weight: 500;
+  font-size: 12.5px;
+}
+
+.board-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+
+  &:empty {
+    display: none;
+  }
+
+  & .summary-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--summary-color, var(--text-subtle));
+  }
+
+  & strong {
+    font-weight: 600;
+    color: var(--text);
+  }
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.header-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--border);
+}
+
+/* ===== Buttons ===== */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  min-height: 36px;
-  padding: 8px 14px;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
   color: var(--text);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
   cursor: pointer;
-  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease, color 0.16s ease;
-}
-
-.btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 72%, #14b8a6));
-  color: var(--accent-contrast);
-  border-color: transparent;
-  box-shadow: 0 12px 28px rgba(79, 70, 229, 0.25);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 
   &:hover:not(:disabled) {
-    background: linear-gradient(135deg, var(--accent-hover), var(--accent));
-    box-shadow: 0 16px 34px rgba(79, 70, 229, 0.32);
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }
 
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.btn-primary {
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.2);
+  font-weight: 600;
+
+  &:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: transparent;
+  }
 }
 
-/* Inline keyboard shortcut hint inside a button */
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+
+  &:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--surface-hover);
+    border-color: transparent;
+  }
+}
+
+.btn-small {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.btn-icon {
+  width: 30px;
+  padding: 0;
+}
+
+.btn-danger {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+
+  &:hover:not(:disabled) {
+    color: #fff;
+    background: var(--danger);
+    border-color: var(--danger);
+  }
+}
+
+/* Quiet square icon button used in cards, column headers and panel headers. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--surface-hover);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &.icon-btn-danger:hover:not(:disabled):not([data-armed]) {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+  }
+
+  /* Armed (two-step confirmation): the icon is replaced by a short label. */
+  &[data-armed],
+  &[data-armed]:hover {
+    width: auto;
+    height: 22px;
+    padding: 0 8px;
+    color: #fff;
+    background: var(--danger);
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+}
+
+/* Inline keyboard hint inside a button. */
 .btn-kbd {
   display: inline-flex;
   align-items: center;
@@ -183,250 +353,358 @@ a {
   margin-left: 2px;
 }
 
-.btn-kbd kbd {
+kbd {
   font-family: var(--font);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 10.5px;
+  font-weight: 600;
   line-height: 1;
-  min-width: 18px;
-  padding: 3px 5px;
+  min-width: 17px;
+  padding: 3px 4px;
   text-align: center;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--accent-contrast) 22%, transparent);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent-contrast) 30%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .btn-loading .btn-kbd {
   display: none;
 }
 
-.btn-secondary {
-  background: color-mix(in srgb, var(--surface-raised) 76%, transparent);
-  color: var(--text);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-
-  &:hover:not(:disabled) {
-    border-color: var(--border-strong);
-    background: var(--surface-hover);
-    box-shadow: var(--shadow-sm);
-  }
-}
-
-.btn-small {
-  min-height: 28px;
-  padding: 5px 10px;
-  font-size: 11px;
-}
-
-.btn-icon {
-  width: 36px;
-  padding: 8px;
-}
-
-.btn-danger {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 42%, transparent);
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
-
-  &:hover:not(:disabled) {
-    background: var(--danger);
-    color: #fff;
-    border-color: var(--danger);
-  }
-}
-
-/* Board layout */
+/* ===== Board ===== */
+/* The board takes the space left by the header, including when it wraps. */
 main#board {
+  flex: 1;
   display: flex;
-  gap: 14px;
-  padding: 12px 20px 20px;
-  height: calc(100vh - 64px);
+  gap: var(--board-gap);
+  padding: 14px 16px 10px;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-color: var(--border-strong) transparent;
   scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  outline: none;
 }
 
 main#board::-webkit-scrollbar,
 .column-body::-webkit-scrollbar,
-#diff-container::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+#diff-container::-webkit-scrollbar,
+#projects-list::-webkit-scrollbar,
+#columns-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
 main#board::-webkit-scrollbar-thumb,
 .column-body::-webkit-scrollbar-thumb,
-#diff-container::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text-muted) 28%, transparent);
-  border: 3px solid transparent;
-  border-radius: 999px;
+#diff-container::-webkit-scrollbar-thumb,
+#projects-list::-webkit-scrollbar-thumb,
+#columns-list::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 2px solid transparent;
+  border-radius: 8px;
   background-clip: padding-box;
 }
 
-/* Column */
+/* ===== Column (open lane, no box) ===== */
 .column {
-  flex: 1 1 0;
-  min-width: 210px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) + 2px);
+  flex: 1 0 188px;
+  min-width: 188px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  max-height: 100%;
-  overflow: hidden;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), var(--shadow-sm);
-  /* No backdrop-filter here: columns sit on a flat background so blurring is
-     invisible, but it forces the compositor to keep a snapshot of everything
-     behind the column. Stale snapshots ghosted closed dialogs through the
-     board (Chromium/WebKit backdrop-filter invalidation bugs). */
 
   & .column-header {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    padding: 14px 14px 12px;
-    min-height: 58px;
-    color: var(--text);
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-raised) 72%, transparent), color-mix(in srgb, var(--surface) 86%, transparent)),
-      linear-gradient(90deg, color-mix(in srgb, var(--col-accent, var(--accent)) 18%, transparent), transparent 58%);
-    border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
+    height: 32px;
+    padding: 0 4px 0 6px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+  }
 
-    &::before {
-      content: "";
-      position: absolute;
-      left: 14px;
-      right: 14px;
-      bottom: -1px;
-      height: 2px;
-      border-radius: 999px;
-      background: linear-gradient(90deg, var(--col-accent, var(--accent)), transparent);
-      opacity: 0.9;
-    }
+  & .column-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--col-accent, var(--accent));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--col-accent, var(--accent)) 18%, transparent);
+    flex-shrink: 0;
+  }
 
-    & .column-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-      font-size: 12px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: color-mix(in srgb, var(--text) 90%, var(--col-accent, var(--accent)));
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+  & .column-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
-    & .column-header-actions {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      min-height: 28px;
-      flex-shrink: 0;
-    }
+  /* A configured emoji sits in a tile tinted with the column color and
+     replaces the plain dot. */
+  & .column-emoji {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--col-accent, var(--accent)) 16%, transparent);
+    font-size: 11px;
+    line-height: 1;
+  }
 
-    & .card-count {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 28px;
-      height: 24px;
-      padding: 0 9px;
-      border-radius: 999px;
-      background: color-mix(in srgb, var(--col-accent, var(--accent)) 18%, transparent);
-      color: color-mix(in srgb, var(--col-accent, var(--accent)) 86%, var(--text));
-      border: 1px solid color-mix(in srgb, var(--col-accent, var(--accent)) 35%, transparent);
-      font-size: 12px;
-      font-weight: 800;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    }
+  & .column-emoji + .column-title .column-dot,
+  &:has(.column-emoji) .column-dot {
+    display: none;
+  }
+
+  & .card-count {
+    color: var(--text-subtle);
+    font-size: 11.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  & .column-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   & .column-body {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    padding: 12px;
+    padding: 2px 2px 10px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    transition: background 0.16s ease, box-shadow 0.16s ease;
+    gap: var(--card-gap);
+    border-radius: var(--radius);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+    transition: background 0.15s ease;
 
     &.drop-target {
-      background: color-mix(in srgb, var(--col-accent, var(--accent)) 10%, transparent);
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--col-accent, var(--accent)) 38%, transparent);
+      background: color-mix(in srgb, var(--col-accent, var(--accent)) 8%, transparent);
+      outline: 1px dashed color-mix(in srgb, var(--col-accent, var(--accent)) 55%, transparent);
+      outline-offset: -1px;
     }
   }
 }
 
-.btn-add-task,
-.btn-clear-column {
-  border: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  color: #fff;
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
-}
-
 .btn-add-task {
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #14b8a6));
-  box-shadow: 0 10px 22px rgba(79, 70, 229, 0.28);
+  color: var(--text-muted);
+}
+
+/* ===== Card ===== */
+.card {
+  --status: var(--neutral);
+  container-type: inline-size;
+  position: relative;
+  flex-shrink: 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px 8px;
+  box-shadow: var(--shadow-card);
+  cursor: grab;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
 
   &:hover {
-    transform: translateY(-1px) scale(1.04);
-    filter: brightness(1.08);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-1px);
+  }
+
+  &.dragging {
+    opacity: 0.4;
+    cursor: grabbing;
+    transform: none;
+  }
+
+  &.card-running { --status: var(--warning); }
+  &.card-starting { --status: var(--info); }
+  &.card-waiting { --status: var(--success); }
+  &.card-error { --status: var(--danger); }
+  &.card-paused { --status: var(--neutral); }
+  &.card-done { --status: var(--text-subtle); }
+
+  /* Cards that need a human get a tinted edge so they stand out at a glance. */
+  &.card-waiting {
+    border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  }
+
+  &.card-error {
+    border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  }
+
+  &.card-done {
+    opacity: 0.6;
+  }
+
+  &.card-done:hover {
+    opacity: 1;
+  }
+
+  & .card-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin-bottom: 8px;
+  }
+
+  & .card-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 20px;
+    padding: 0 7px 0 6px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--status);
+    background: color-mix(in srgb, var(--status) 12%, transparent);
+    flex-shrink: 0;
+
+    &::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+  }
+
+  &.card-running .card-status::before,
+  &.card-starting .card-status::before {
+    animation: activity-pulse 1.6s ease-in-out infinite;
+  }
+
+  & .card-project {
+    margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-subtle);
+    font-size: 10.5px;
+    font-weight: 500;
+  }
+
+  & .card-coach {
+    display: inline-flex;
+    color: var(--accent-2);
+    flex-shrink: 0;
+  }
+
+  & .card-coach-running {
+    animation: activity-pulse 1.6s ease-in-out infinite;
+  }
+
+  & .card-title {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
+    overflow-wrap: anywhere;
+  }
+
+  &.card-done .card-title {
+    color: var(--text-muted);
+  }
+
+  /* Footer: cost and PR chip. Omitted by the renderer when both are empty. */
+  & .card-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 20px;
+    margin-top: 8px;
+    min-width: 0;
+  }
+
+  & .card-cost {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-subtle);
+    white-space: nowrap;
+  }
+
+  /* Actions overlay the heading's right edge on hover, replacing the
+     secondary project label, so they never reflow the card or cover the
+     status chip, cost or PR link. Hidden actions ignore pointer events. */
+  & .card-actions {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding-left: 10px;
+    background: linear-gradient(90deg, transparent, var(--surface-raised) 10px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+  }
+
+  &:hover .card-actions,
+  &:focus-within .card-actions,
+  & .card-actions:has([data-armed]) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  &:hover .card-project,
+  &:hover .card-coach,
+  &:focus-within .card-project,
+  &:focus-within .card-coach,
+  &:has(.card-actions [data-armed]) .card-project,
+  &:has(.card-actions [data-armed]) .card-coach {
+    opacity: 0;
+  }
+
+  & .card-project,
+  & .card-coach {
+    transition: opacity 0.15s ease;
+  }
+
+  & .card-actions .icon-btn:not([data-armed]) {
+    width: 22px;
+    height: 22px;
   }
 }
 
-.btn-clear-column {
-  background: linear-gradient(135deg, var(--danger), color-mix(in srgb, var(--danger) 70%, #f97316));
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--danger) 28%, transparent);
-
-  &:hover {
-    transform: translateY(-1px) scale(1.04);
-    filter: brightness(1.06);
-  }
-
-  /* Armed (two-step confirmation): solid danger fill and room for the " ?". */
-  &[data-armed] {
-    width: auto;
-    padding: 0 10px;
-    background: var(--danger);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 40%, transparent);
-  }
-}
-
-/* Card */
 /* Pull request links are shared by board cards and the terminal header. */
 .card-pr {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
+  height: 20px;
+  padding: 0 7px 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 10.5px;
+  font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: color 0.16s ease;
+  transition: color 0.15s ease, background 0.15s ease;
 
   &:hover {
     color: var(--text);
-    text-decoration: underline;
+    background: color-mix(in srgb, var(--text-muted) 18%, transparent);
   }
 
   &:not([href]) {
@@ -435,7 +713,6 @@ main#board::-webkit-scrollbar-thumb,
 
   & .card-pr-icon {
     flex-shrink: 0;
-    /* Neutral until the status loads; a status class below tints it. */
     color: var(--text-muted);
   }
 
@@ -444,222 +721,42 @@ main#board::-webkit-scrollbar-thumb,
     text-overflow: ellipsis;
   }
 
-  /* Green check mark for an approved PR, shown after the label and always
-     green regardless of the status icon's color. */
   & .card-pr-approved {
     flex-shrink: 0;
-    color: #1a7f37;
+    color: var(--success);
   }
 
-  /* Merge/CI/review status: only the octicon is colored, so the link stays
-     readable while still signaling state at a glance. Colors are GitHub's
-     own status palette. */
-  &.card-pr-open .card-pr-icon {
-    color: #1a7f37; /* green: open, waiting for review */
-  }
-  &.card-pr-draft .card-pr-icon {
-    color: #6e7781; /* gray: draft */
-  }
-  &.card-pr-closed .card-pr-icon {
-    color: #cf222e; /* red: closed, not merged */
-  }
-  &.card-pr-merged .card-pr-icon {
-    color: #8250df; /* purple: merged */
-  }
-  &.card-pr-success .card-pr-icon {
-    color: #1a7f37; /* green: CI passed / approved */
-  }
-  &.card-pr-failure .card-pr-icon {
-    color: #cf222e; /* red: CI failed / changes requested */
-  }
-  &.card-pr-pending .card-pr-icon {
-    color: #bf8700; /* yellow: CI running */
+  /* Only the octicon is colored, so the link stays readable while still
+     signaling state. */
+  &.card-pr-open .card-pr-icon,
+  &.card-pr-success .card-pr-icon { color: var(--success); }
+  &.card-pr-draft .card-pr-icon { color: var(--neutral); }
+  &.card-pr-closed .card-pr-icon,
+  &.card-pr-failure .card-pr-icon { color: var(--danger); }
+  &.card-pr-merged .card-pr-icon { color: var(--accent-2); }
+  &.card-pr-pending .card-pr-icon { color: var(--warning); }
+}
+
+@container (max-width: 150px) {
+  .card .card-project {
+    display: none;
   }
 }
 
-.card {
-  container-type: inline-size;
-  position: relative;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
+/* Empty state */
+.empty-column {
+  display: grid;
+  place-items: center;
+  min-height: 72px;
+  padding: 16px 10px;
+  color: var(--text-subtle);
+  font-size: 12px;
+  text-align: center;
+  border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
-  padding: 14px;
-  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, opacity 0.16s ease, box-shadow 0.16s ease;
-  cursor: grab;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 22px rgba(0, 0, 0, 0.12);
-
-  &::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    background: linear-gradient(135deg, color-mix(in srgb, var(--col-accent, var(--accent)) 12%, transparent), transparent 55%);
-    opacity: 0.7;
-  }
-
-  & > * {
-    position: relative;
-  }
-
-  &:hover {
-    transform: translateY(-2px);
-    border-color: color-mix(in srgb, var(--col-accent, var(--accent)) 42%, var(--border));
-    box-shadow: var(--shadow-glow);
-  }
-
-  &.dragging {
-    opacity: 0.45;
-    cursor: grabbing;
-    transform: rotate(1deg) scale(0.98);
-  }
-
-  &.card-running {
-    background: var(--card-running-bg);
-    border-color: color-mix(in srgb, var(--warning) 34%, var(--border));
-    animation: pulse-running 2.2s ease-in-out infinite;
-  }
-
-  /* An agent that is launching but has not answered yet: blue. */
-  &.card-starting {
-    background: var(--card-starting-bg);
-    border-color: color-mix(in srgb, var(--info) 34%, var(--border));
-    animation: pulse-starting 2.2s ease-in-out infinite;
-  }
-
-  &.card-waiting {
-    background: var(--card-waiting-bg);
-    border-color: color-mix(in srgb, var(--success) 32%, var(--border));
-  }
-
-  &.card-error {
-    background: var(--card-error-bg);
-    border-color: color-mix(in srgb, var(--danger) 52%, var(--border));
-  }
-
-  /* A paused agent: whitish, to stand out from the activity colors. */
-  &.card-paused {
-    background: var(--card-paused-bg);
-    border-color: color-mix(in srgb, var(--text-muted) 45%, var(--border));
-  }
-
-  & .card-coach {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    z-index: 2;
-    font-size: 15px;
-    line-height: 1;
-    cursor: default;
-  }
-
-  & .card-coach-running {
-    animation: coach-pulse 1.2s ease-in-out infinite;
-  }
-
-  & .card-coach + .card-title {
-    padding-right: 18px;
-  }
-
-  &.card-done {
-    opacity: 0.72;
-  }
-
-    & .card-title {
-    font-size: 14px;
-    font-weight: 700;
-    line-height: 1.35;
-    letter-spacing: -0.01em;
-    overflow-wrap: break-word;
-    word-break: break-word;
-  }
-
-  /* Cost label and PR link share one line below the title. */
-  & .card-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 8px;
-    min-width: 0;
-  }
-
-  & .card-cost {
-    flex-shrink: 0;
-    font-size: 10.5px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--text-muted);
-    white-space: nowrap;
-  }
-
-
-  & .card-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
-    gap: 6px;
-    margin-top: 12px;
-    opacity: 0;
-    max-height: 0;
-    overflow: hidden;
-    transform: translateY(-4px);
-    transition: opacity 0.16s ease, max-height 0.16s ease, transform 0.16s ease;
-
-    & .btn {
-      min-height: 30px;
-      border-radius: 10px;
-      background: color-mix(in srgb, var(--surface) 72%, transparent);
-      text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      box-shadow: none;
-    }
-
-    & .btn:hover:not(:disabled) {
-      background: color-mix(in srgb, var(--col-accent, var(--accent)) 15%, var(--surface-hover));
-      transform: none;
-    }
-
-    & .btn-delete {
-      color: var(--text-muted);
-
-      &:hover {
-        color: var(--danger);
-        border-color: color-mix(in srgb, var(--danger) 42%, transparent);
-        background: color-mix(in srgb, var(--danger) 10%, transparent);
-      }
-
-      /* Armed (two-step confirmation): fill with the danger color that
-         normally only tints the border, so the pending delete is obvious. */
-      &[data-armed],
-      &[data-armed]:hover {
-        color: #fff;
-        background: var(--danger);
-        border-color: var(--danger);
-      }
-    }
-  }
-
-  &:hover .card-actions,
-  &:focus-within .card-actions {
-    opacity: 1;
-    max-height: 76px;
-    transform: translateY(0);
-  }
 }
 
-/* Narrow cards: stack actions in 2x2 grid */
-@container (max-width: 190px) {
-  .card-title {
-    font-size: 13px;
-  }
-
-  .card-actions {
-    grid-template-columns: 1fr 1fr !important;
-  }
-}
-
-/* Dialog */
+/* ===== Dialogs ===== */
 /* Never paint a closed dialog, whatever other display rules match. The UA
    has dialog:not([open]) { display: none } but at zero specificity, so any
    stray display override resurrects the closed dialog as a ghost overlay. */
@@ -668,35 +765,34 @@ dialog:not([open]) {
 }
 
 dialog {
-  background: var(--surface-raised);
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border-strong);
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   padding: 0;
-  max-width: 500px;
-  width: min(92vw, 500px);
+  max-width: 520px;
+  width: min(92vw, 520px);
   margin: auto;
   overflow: hidden;
   box-shadow: var(--shadow-md);
-  backdrop-filter: blur(24px) saturate(130%);
 
   &::backdrop {
     background: var(--backdrop);
-    backdrop-filter: blur(10px);
   }
 
   & h3 {
-    font-size: 13px;
-    margin: 18px 0 10px;
-    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    color: var(--text-subtle);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
   }
 
   & label {
     display: block;
-    font-size: 13px;
-    font-weight: 650;
+    font-size: 12px;
+    font-weight: 500;
     color: var(--text-muted);
     margin-bottom: 14px;
   }
@@ -707,41 +803,38 @@ dialog {
     display: block;
     width: 100%;
     margin-top: 6px;
-    padding: 10px 12px;
-    background: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
+    padding: 8px 10px;
+    background: var(--surface-input);
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-sm);
     font-size: 13px;
+    line-height: 1.5;
     resize: vertical;
     outline: none;
-    transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+    &::placeholder {
+      color: var(--text-subtle);
+    }
   }
 
   & select {
     appearance: none;
     resize: none;
     cursor: pointer;
-    padding-right: 34px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    padding-right: 30px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16' fill='none' stroke='%238f97a8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
-    background-position: right 12px center;
+    background-position: right 10px center;
   }
 
   & input:focus,
   & textarea:focus,
   & select:focus {
-    border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
-  }
-
-  & pre {
-    background: var(--bg-elevated);
-    padding: 12px;
-    border-radius: 12px;
-    font-size: 13px;
-    overflow-x: auto;
-    user-select: all;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
   }
 }
 
@@ -749,97 +842,59 @@ dialog {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 62%),
-    color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+  gap: 10px;
+  padding: 14px 14px 14px 18px;
   border-bottom: 1px solid var(--border);
-  font-size: 15px;
-  font-weight: 750;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   flex-shrink: 0;
 }
 
 .dialog-close {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-muted);
-  font-size: 16px;
-  cursor: pointer;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  line-height: 1;
-  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
-
-  &:hover {
-    color: var(--text);
-    background: var(--surface-hover);
-    border-color: var(--border);
-  }
+  flex-shrink: 0;
 }
 
 .dialog-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
-/* Terminal header: let a long title truncate instead of pushing the
-   actions off-screen. */
 .dialog-title-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
-#terminal-title {
+#terminal-title,
+#diff-title {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-/* Small icon button (GitHub-style) that copies the card's full title or
-   prompt to the clipboard. */
-.btn-copy-title {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  line-height: 1;
-  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
-
-  &:hover {
-    color: var(--text);
-    background: var(--surface-hover);
-    border-color: var(--border);
-  }
-
-  &.copied,
-  &.copied:hover {
-    color: var(--success);
-  }
+.btn-copy-title.copied,
+.btn-copy-title.copied:hover {
+  color: var(--success);
 }
 
-/* Project name shown just before the terminal header buttons. */
+/* Project name shown just before the panel header buttons. */
 .header-project {
   flex-shrink: 0;
   max-width: 30vw;
-  padding: 3px 10px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: color-mix(in srgb, var(--accent) 88%, var(--text));
-  font-size: 11px;
-  font-weight: 700;
+  color: color-mix(in srgb, var(--accent) 85%, var(--text));
+  font-size: 10.5px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -850,20 +905,21 @@ dialog {
 }
 
 .dialog-body {
-  padding: 22px 24px 24px;
+  padding: 18px;
 }
 
 .dialog-subtitle {
-  font-size: 13px;
+  font-size: 12.5px;
+  line-height: 1.5;
   color: var(--text-muted);
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 18px;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 dialog.dialog-large {
@@ -871,10 +927,11 @@ dialog.dialog-large {
   width: min(92vw, 680px);
 }
 
-/* Projects dialog: cap height and scroll only the project list so the
-   header and the Add Project form stay visible. Scoped to [open] so the
-   display override never reveals the dialog while it's closed. */
-#projects-dialog[open] {
+/* Projects / Columns dialogs: cap height and scroll only the list so the
+   header and actions stay visible. Scoped to [open] so the display override
+   never reveals the dialog while it's closed. */
+#projects-dialog[open],
+#columns-dialog[open] {
   max-height: min(86vh, 760px);
   display: flex;
   flex-direction: column;
@@ -886,42 +943,38 @@ dialog.dialog-large {
     overflow: hidden;
   }
 
-  & #projects-list {
+  & #projects-list,
+  & #columns-list {
     overflow-y: auto;
     flex: 1;
     min-height: 0;
     margin: 0 -6px;
     padding: 0 6px;
+    scrollbar-width: thin;
   }
 
-  & .project-form {
+  & .project-form,
+  & .dialog-actions {
     flex-shrink: 0;
   }
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0 16px;
-}
-
 /* Column editor */
 .column-edit-item {
-  padding: 10px 12px;
-  background: color-mix(in srgb, var(--bg-elevated) 76%, transparent);
+  padding: 10px;
+  background: var(--surface-raised);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   margin-bottom: 8px;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
 
   &:hover {
     border-color: var(--border-strong);
   }
 
   &.dragging {
-    opacity: 0.6;
-    border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
-    box-shadow: var(--shadow-glow);
+    opacity: 0.5;
+    border-color: var(--accent);
   }
 
   & .column-edit-row {
@@ -946,16 +999,11 @@ dialog.dialog-large {
 
   & input,
   & textarea {
-    padding: 8px 10px;
-    background: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    font-size: 13px;
+    margin-top: 0;
   }
 
   & .col-emoji {
-    width: 46px;
+    width: 44px;
     text-align: center;
     flex-shrink: 0;
   }
@@ -963,43 +1011,10 @@ dialog.dialog-large {
   & .col-name {
     flex: 1;
     min-width: 0;
-    font-weight: 600;
+    font-weight: 500;
   }
 
   & .col-delete {
-    flex-shrink: 0;
-  }
-
-  & textarea {
-    display: block;
-    width: 100%;
-    resize: vertical;
-  }
-}
-
-/* Columns dialog: cap height and scroll only the column list so the header
-   and actions stay visible. Scoped to [open] like #projects-dialog. */
-#columns-dialog[open] {
-  max-height: min(86vh, 760px);
-  display: flex;
-  flex-direction: column;
-
-  & .dialog-body {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  & #columns-list {
-    overflow-y: auto;
-    flex: 1;
-    min-height: 0;
-    margin: 0 -6px;
-    padding: 0 6px;
-  }
-
-  & .dialog-actions {
     flex-shrink: 0;
   }
 }
@@ -1014,23 +1029,20 @@ dialog.dialog-large {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  background: color-mix(in srgb, var(--bg-elevated) 76%, transparent);
+  padding: 8px 10px;
+  background: var(--surface-raised);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   margin-bottom: 6px;
-  font-size: 13px;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, transform 0.16s ease;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
 
   &:hover {
     border-color: var(--border-strong);
-    box-shadow: var(--shadow-sm);
   }
 
   &.dragging {
-    opacity: 0.6;
-    border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
-    box-shadow: var(--shadow-glow);
+    opacity: 0.5;
+    border-color: var(--accent);
   }
 
   & .project-drag {
@@ -1052,7 +1064,7 @@ dialog.dialog-large {
   }
 
   & .project-name {
-    font-weight: 700;
+    font-weight: 600;
     font-size: 13px;
   }
 
@@ -1060,51 +1072,46 @@ dialog.dialog-large {
     display: flex;
     flex-wrap: wrap;
     gap: 4px 10px;
-    margin-top: 2px;
+    margin-top: 3px;
   }
 
   & .project-path {
     display: inline-flex;
-    align-items: baseline;
+    align-items: center;
     gap: 6px;
     font-size: 11px;
     color: var(--text-muted);
     font-family: var(--font-mono);
-    overflow-wrap: break-word;
-    word-break: break-all;
+    overflow-wrap: anywhere;
   }
 
   & .project-path-label {
     flex-shrink: 0;
-    padding: 0 6px;
+    padding: 1px 6px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--accent) 14%, transparent);
-    color: color-mix(in srgb, var(--accent) 88%, var(--text));
+    color: color-mix(in srgb, var(--accent) 85%, var(--text));
     font-family: var(--font);
-    font-size: 9px;
-    font-weight: 700;
+    font-size: 9.5px;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
   }
 }
 
 .project-form {
-  margin-top: 18px;
-  padding: 18px;
-  background: color-mix(in srgb, var(--bg-elevated) 50%, transparent);
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--surface-raised);
   border: 1px solid var(--border);
-  border-radius: 16px;
-
-  & h3 {
-    margin: 0 0 14px;
-  }
+  border-radius: var(--radius);
 
   & label {
     display: grid;
     grid-template-columns: 90px 1fr;
     align-items: center;
     gap: 12px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
 
   & label:last-of-type {
@@ -1120,49 +1127,39 @@ dialog.dialog-large {
 /* Input paired with an inline button (e.g. folder browse) */
 .input-with-button {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: stretch;
-  margin-top: 0;
 
   & input {
     flex: 1;
     margin-top: 0;
   }
-
-  & .btn {
-    flex-shrink: 0;
-    white-space: nowrap;
-    border-radius: 12px;
-  }
 }
 
-/* Icon-only browse button: square, matching the text input height */
 .btn-browse {
-  width: 40px;
-  min-height: 0;
-  align-self: stretch;
+  height: auto;
+  width: 36px;
   padding: 0;
-  font-size: 15px;
+  flex-shrink: 0;
 }
 
 /* Folder picker */
 .folder-current {
-  padding: 10px 12px;
-  margin-bottom: 14px;
-  background: var(--bg-elevated);
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  background: var(--surface-input);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-muted);
-  overflow-wrap: break-word;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .folder-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   max-height: 320px;
   overflow-y: auto;
   margin-bottom: 4px;
@@ -1173,19 +1170,18 @@ dialog.dialog-large {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 9px 12px;
+  padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.16s ease, border-color 0.16s ease;
+  transition: background 0.15s ease;
 
   &:hover {
     background: var(--surface-hover);
-    border-color: var(--border);
   }
 }
 
@@ -1193,136 +1189,104 @@ dialog.dialog-large {
   color: var(--text-muted);
 }
 
-/* Empty state */
-.empty-column {
-  display: grid;
-  place-items: center;
-  min-height: 96px;
-  padding: 20px 10px;
-  color: var(--text-subtle);
-  font-size: 13px;
-  font-weight: 600;
-  border: 1px dashed color-mix(in srgb, var(--text-muted) 24%, transparent);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-elevated) 28%, transparent);
-}
-
-/* Terminal dialog */
+/* ===== Fullscreen panels (terminal / diff) ===== */
 dialog.dialog-terminal[open] {
-  max-width: 100vw;
+  position: fixed;
+  inset: 0;
+  max-width: none;
   width: 100vw;
-  height: 100vh;
-  max-height: 100vh;
-  padding: 0;
+  height: 100dvh;
+  max-height: none;
   margin: 0;
   border: none;
   border-radius: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: none;
+  background: var(--terminal-bg);
+
+  & .dialog-header {
+    gap: 8px;
+    flex-wrap: wrap;
+    min-height: 44px;
+    padding: 6px 10px 6px 16px;
+    font-size: 13px;
+    background: var(--surface);
+  }
+
+  & .dialog-title-group {
+    flex: 1;
+  }
+
+  & .dialog-header-actions {
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+
+  & .dialog-header-actions .btn {
+    margin-right: 2px;
+  }
+}
+
+#diff-title {
+  flex: 1;
 }
 
 #terminal-container {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
-  padding: 4px;
-  background: #020617;
+  padding: 6px 8px;
+  background: var(--terminal-bg);
 
   & canvas {
     display: block;
-    height: 100%;
-    width: 100%;
   }
 }
 
-/* Animations */
-@keyframes pulse-running {
-  0%, 100% { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 22px rgba(0, 0, 0, 0.12); }
-  50% { box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.18), 0 14px 32px rgba(251, 191, 36, 0.12); }
-}
-
-@keyframes pulse-starting {
-  0%, 100% { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 22px rgba(0, 0, 0, 0.12); }
-  50% { box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18), 0 14px 32px rgba(96, 165, 250, 0.12); }
-}
-
-@keyframes coach-pulse {
-  0%, 100% { transform: scale(1); opacity: 0.65; }
-  50% { transform: scale(1.25); opacity: 1; }
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.btn-loading {
-  pointer-events: none;
-  opacity: 0.78;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  &::before {
-    content: '';
-    width: 12px;
-    height: 12px;
-    border: 2px solid rgba(255, 255, 255, 0.32);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-    margin-right: 6px;
-    flex-shrink: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .card .card-coach-running {
-    animation: none;
-  }
-}
-
-/* Diff dialog */
+/* ===== Diff viewer ===== */
 #diff-container {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 20px 24px;
+  padding: 14px 16px;
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.55;
+  scrollbar-width: thin;
 }
 
 .diff-stats {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  font-size: 13px;
-  font-weight: 700;
-  margin-bottom: 16px;
+  gap: 10px;
+  padding: 0 2px;
+  margin-bottom: 12px;
   font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
   flex-wrap: wrap;
-  box-shadow: var(--shadow-sm);
 }
 
 .diff-file-adds {
   color: var(--success);
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .diff-file-dels {
   color: var(--danger);
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .diff-file {
   border: 1px solid var(--border);
-  border-radius: 16px;
-  margin-bottom: 12px;
+  border-radius: var(--radius);
+  margin-bottom: 10px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--bg-elevated) 62%, transparent);
+  background: var(--surface);
   /* Skip layout/paint for off-screen files; huge performance win on large diffs. */
   content-visibility: auto;
   contain-intrinsic-size: 1px 400px;
@@ -1332,28 +1296,35 @@ dialog.dialog-terminal[open] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 11px 14px;
+  gap: 8px;
+  padding: 8px 12px;
   background: var(--surface-raised);
-  border-bottom: 1px solid var(--border);
   cursor: pointer;
   font-family: var(--font);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12.5px;
+  font-weight: 600;
   user-select: none;
-  gap: 8px;
+  list-style: none;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+}
+
+details[open] > .diff-file-header {
+  border-bottom: 1px solid var(--border);
 }
 
 .diff-file-name {
-  color: var(--accent);
-  overflow-wrap: break-word;
-  word-break: break-all;
+  color: var(--text);
+  overflow-wrap: anywhere;
   min-width: 0;
 }
 
 .diff-file-stats {
   display: flex;
   gap: 8px;
-  font-size: 12px;
+  font-size: 11.5px;
   flex-shrink: 0;
 }
 
@@ -1364,7 +1335,7 @@ dialog.dialog-terminal[open] {
 }
 
 .diff-table tr {
-  line-height: 1.65;
+  line-height: 1.6;
 }
 
 .diff-ln {
@@ -1372,11 +1343,9 @@ dialog.dialog-terminal[open] {
   white-space: nowrap;
   text-align: right;
   padding: 0 8px;
-  color: var(--text-muted);
-  opacity: 0.62;
+  color: var(--text-subtle);
   user-select: none;
   font-size: 11px;
-  border-right: 1px solid var(--border);
 }
 
 .diff-code {
@@ -1386,27 +1355,25 @@ dialog.dialog-terminal[open] {
 }
 
 .diff-hunk-header td {
-  padding: 5px 12px;
-  background: var(--surface);
+  padding: 4px 12px;
+  background: color-mix(in srgb, var(--info) 7%, transparent);
   color: var(--text-muted);
   font-size: 11px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
 }
 
 .diff-add {
-  background: rgba(52, 211, 153, 0.12);
+  background: color-mix(in srgb, var(--success) 11%, transparent);
 
   & .diff-code {
-    color: var(--success);
+    color: color-mix(in srgb, var(--success) 70%, var(--text));
   }
 }
 
 .diff-del {
-  background: rgba(251, 113, 133, 0.12);
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
 
   & .diff-code {
-    color: var(--danger);
+    color: color-mix(in srgb, var(--danger) 70%, var(--text));
   }
 }
 
@@ -1419,55 +1386,106 @@ dialog.dialog-terminal[open] {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 220px;
+  height: 200px;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 13px;
   font-family: var(--font);
 }
 
-[data-theme="light"] {
-  .diff-add {
-    background: rgba(5, 150, 105, 0.1);
+/* ===== Motion ===== */
+@keyframes activity-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.btn-loading {
+  pointer-events: none;
+  opacity: 0.8;
+
+  &::before {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    flex-shrink: 0;
   }
-  .diff-del {
-    background: rgba(225, 29, 72, 0.09);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }
 
 /* ===== Responsive ===== */
 @media (hover: none) {
+  /* No hover: actions get their own row at the bottom of the card, so the
+     project label stays visible and targets are finger-sized. */
   .card .card-actions {
+    position: static;
+    justify-content: flex-end;
+    margin-top: 6px;
+    padding-left: 0;
+    background: none;
     opacity: 1;
-    max-height: 76px;
-    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .card:hover .card-project,
+  .card:hover .card-coach,
+  .card:focus-within .card-project,
+  .card:focus-within .card-coach {
+    opacity: 1;
+  }
+
+  .btn,
+  .icon-btn {
+    min-height: 34px;
+  }
+
+  .card .card-actions .icon-btn:not([data-armed]) {
+    width: 32px;
+    height: 32px;
+  }
+
+  .icon-btn[data-armed] {
+    height: 32px;
+  }
+}
+
+@media (max-width: 900px) {
+  .board-summary,
+  .brand-sub {
+    display: none;
   }
 }
 
 @media (max-width: 640px) {
   .app-header {
-    padding: 14px 12px 8px;
+    padding: 0 8px;
+    min-height: 44px;
+  }
 
-    & h1 {
-      font-size: 17px;
-    }
+  .header-actions .btn-label,
+  .header-divider {
+    display: none;
+  }
 
-    & .header-actions {
-      width: 100%;
-      justify-content: flex-start;
-      gap: 8px;
-    }
-
-    & .header-actions .btn {
-      min-height: 34px;
-      padding: 7px 10px;
-      font-size: 12px;
-    }
+  .header-actions .btn {
+    padding: 0 8px;
   }
 
   main#board {
-    height: calc(100vh - 104px);
-    padding: 8px 12px 14px;
-    gap: 10px;
+    padding: 10px 10px 6px;
+    gap: 12px;
     scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;
   }
@@ -1478,26 +1496,41 @@ dialog.dialog-terminal[open] {
     scroll-snap-align: start;
   }
 
-  .card .card-actions {
-    opacity: 1;
-    max-height: 76px;
-    transform: translateY(0);
-  }
-
   dialog,
   dialog.dialog-large {
-    width: 100vw;
+    width: 100%;
     max-width: 100vw;
+    max-height: 100dvh;
     border-radius: 0;
-    max-height: 100vh;
   }
 
   .dialog-body {
-    padding: 16px;
+    padding: 14px;
+  }
+
+  dialog.dialog-terminal .dialog-header-actions {
+    width: 100%;
+  }
+
+  dialog.dialog-terminal .dialog-close {
+    margin-left: auto;
+  }
+
+  .header-project {
+    max-width: 28vw;
+  }
+
+  .project-form {
+    padding: 12px;
+  }
+
+  .project-form label {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 
   #diff-container {
-    padding: 12px;
+    padding: 8px;
   }
 
   .diff-ln {
@@ -1508,43 +1541,5 @@ dialog.dialog-terminal[open] {
   .diff-code {
     padding: 0 6px;
     font-size: 11px;
-  }
-}
-
-@media (min-width: 641px) and (max-width: 1180px) {
-  .app-header {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
-
-  main#board {
-    padding-left: 10px;
-    padding-right: 10px;
-    gap: 8px;
-  }
-
-  .column {
-    min-width: 170px;
-
-    & .column-header {
-      padding-left: 8px;
-      padding-right: 8px;
-    }
-
-    & .column-body {
-      padding-left: 6px;
-      padding-right: 6px;
-    }
-  }
-
-  .card {
-    padding-left: 8px;
-    padding-right: 8px;
-  }
-
-  .card .card-actions {
-    opacity: 1;
-    max-height: 76px;
-    transform: translateY(0);
   }
 }
