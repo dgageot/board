@@ -923,10 +923,26 @@ document.getElementById("new-task-dialog").addEventListener("close", () => {
 });
 
 // Projects dialog
+let selectedProjectId = null;
+
 document.getElementById("btn-projects").addEventListener("click", async () => {
+  selectedProjectId = projects.find((p) => p.id === selectedProjectId)?.id || projects[0]?.id || null;
   renderProjects();
   await populateAgentSelect();
   document.getElementById("projects-dialog").showModal();
+});
+
+document.getElementById("proj-new").addEventListener("click", () => {
+  selectedProjectId = null;
+  renderProjects();
+  document.getElementById("proj-name").focus();
+});
+
+document.getElementById("projects-list").addEventListener("click", (e) => {
+  const button = e.target.closest(".project-select");
+  if (!button) return;
+  selectedProjectId = button.dataset.id;
+  renderProjectSelection();
 });
 
 // Populate the agent <select> with the YAML configs found under ~/.agents.
@@ -954,7 +970,8 @@ document.getElementById("projects-dialog").querySelector("form").addEventListene
   if (!name) return;
 
   try {
-    await API.createProject({ name, repoPath, agent });
+    const project = await API.createProject({ name, repoPath, agent });
+    selectedProjectId = project.id;
     document.getElementById("proj-name").value = "";
     document.getElementById("proj-repo").value = "";
     document.getElementById("proj-agent").value = "";
@@ -967,24 +984,51 @@ document.getElementById("projects-dialog").querySelector("form").addEventListene
 
 function renderProjects() {
   const list = document.getElementById("projects-list");
+  if (selectedProjectId && !projects.some((p) => p.id === selectedProjectId)) {
+    selectedProjectId = projects[0]?.id || null;
+  }
+  document.getElementById("projects-count").textContent = `${projects.length} project${projects.length === 1 ? "" : "s"}`;
   if (projects.length === 0) {
     list.innerHTML = `<div class="empty-column">No projects yet</div>`;
+  } else {
+    list.innerHTML = projects.map((p) => `
+      <div class="project-item" draggable="true" data-id="${esc(p.id)}">
+        <span class="project-drag" title="Drag to reorder" aria-hidden="true">☰</span>
+        <button type="button" class="project-select" data-id="${esc(p.id)}" aria-pressed="false">
+          <span class="project-name" title="${esc(p.name)}">${esc(p.name)}</span>
+          <span class="project-repo" title="${esc(p.repoPath)}">${esc(shortenPath(p.repoPath))}</span>
+        </button>
+      </div>
+    `).join("");
+    enableProjectDragReorder(list);
+  }
+  renderProjectSelection();
+}
+
+function renderProjectSelection() {
+  const project = projects.find((p) => p.id === selectedProjectId);
+  document.querySelectorAll("#projects-list .project-select").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.id === selectedProjectId));
+  });
+  const inspector = document.getElementById("project-inspector");
+  inspector.hidden = !project;
+  document.querySelector("#projects-dialog .project-form").hidden = !!project;
+  if (!project) {
+    inspector.innerHTML = "";
     return;
   }
-  list.innerHTML = projects.map((p) => `
-    <div class="project-item" draggable="true" data-id="${p.id}">
-      <span class="project-drag" title="Drag to reorder">☰</span>
-      <div class="project-info">
-        <div class="project-name">${esc(p.name)}</div>
-        <div class="project-paths">
-          ${p.repoPath ? `<div class="project-path"><span class="project-path-label">repo</span>${esc(shortenPath(p.repoPath))}</div>` : ""}
-          ${p.agent ? `<div class="project-path"><span class="project-path-label">agent</span>${esc(p.agent.split("/").pop())}</div>` : ""}
-        </div>
-      </div>
-      <button class="icon-btn icon-btn-danger" onclick="deleteProject('${p.id}')" title="Delete project" aria-label="Delete project">${icon("trash")}</button>
+  inspector.innerHTML = `
+    <h3>Project details</h3>
+    <h4 class="project-detail-name">${esc(project.name)}</h4>
+    <dl class="project-details">
+      <dt>Repository</dt><dd>${esc(project.repoPath)}</dd>
+      <dt>Agent</dt><dd>${esc(project.agent)}</dd>
+    </dl>
+    <div class="dialog-actions">
+      <button type="button" id="proj-delete" class="btn btn-danger">${icon("trash")} Delete project</button>
     </div>
-  `).join("");
-  enableProjectDragReorder(list);
+  `;
+  document.getElementById("proj-delete").addEventListener("click", () => window.deleteProject(project.id));
 }
 
 // Drag-and-drop reordering of project items. On drop, the new order is

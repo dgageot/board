@@ -105,32 +105,43 @@
     </form>
   </dialog>
 
-  <dialog id="projects-dialog" class="dialog-large">
+  <dialog id="projects-dialog" class="dialog-large" aria-labelledby="projects-title">
     <div class="dialog-header">
-      <span>Projects</span>
+      <span id="projects-title">Projects</span>
       <button class="icon-btn dialog-close" data-close title="Close" aria-label="Close"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button>
     </div>
     <div class="dialog-body">
       <p class="dialog-subtitle">Manage your projects. Drag to reorder how they appear in the new task selector.</p>
-      <div id="projects-list"></div>
-      <form method="dialog" autocomplete="off" class="project-form">
-        <h3>Add project</h3>
-        <label>Name
-          <input id="proj-name" type="text" placeholder="My Project" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-        </label>
-        <label>Repo Path
-          <div class="input-with-button">
-            <input id="proj-repo" type="text" placeholder="/path/to/repo" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-            <button type="button" id="proj-repo-browse" class="btn btn-browse" title="Browse folders" aria-label="Browse folders"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-folder"/></svg></button>
+      <div class="projects-workspace">
+        <section class="projects-sidebar" aria-label="Project list">
+          <div class="projects-list-header">
+            <span id="projects-count"></span>
+            <button type="button" id="proj-new" class="btn btn-primary">New project</button>
           </div>
-        </label>
-        <label>Agent
-          <select id="proj-agent"></select>
-        </label>
-        <div class="dialog-actions">
-          <button type="submit" class="btn btn-primary">Add project</button>
+          <div id="projects-list"></div>
+        </section>
+        <div class="projects-editor">
+          <section id="project-inspector" aria-label="Project details" hidden></section>
+          <form method="dialog" autocomplete="off" class="project-form">
+            <h3>Add project</h3>
+            <label>Name
+              <input id="proj-name" type="text" placeholder="My Project" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+            </label>
+            <label>Repo Path
+              <div class="input-with-button">
+                <input id="proj-repo" type="text" placeholder="/path/to/repo" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                <button type="button" id="proj-repo-browse" class="btn btn-browse" title="Browse folders" aria-label="Browse folders"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-folder"/></svg></button>
+              </div>
+            </label>
+            <label>Agent
+              <select id="proj-agent"></select>
+            </label>
+            <div class="dialog-actions">
+              <button type="submit" class="btn btn-primary">Add project</button>
+            </div>
+          </form>
         </div>
-      </form>
+      </div>
     </div>
   </dialog>
 
