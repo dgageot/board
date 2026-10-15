@@ -257,13 +257,37 @@ func (b *Board) handleDiffCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	diff, err := git.Diff(card.Worktree)
+	var diff string
+	var err error
+	if hash := r.URL.Query().Get("commit"); hash != "" {
+		diff, err = git.CommitDiff(card.Worktree, hash)
+	} else {
+		diff, err = git.Diff(card.Worktree)
+	}
+	if errors.Is(err, git.ErrCommitNotFound) {
+		writeError(w, fmt.Errorf("%w: commit", errNotFound))
+		return
+	}
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 
 	writeJSON(w, map[string]string{"diff": diff})
+}
+
+func (b *Board) handleCardCommits(w http.ResponseWriter, r *http.Request) {
+	card, ok := b.getCard(w, r)
+	if !ok {
+		return
+	}
+
+	commits, err := git.Commits(card.Worktree)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, commits)
 }
 
 // handlePRStatus reports the merge/CI status of a card's pull request, fetched

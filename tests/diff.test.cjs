@@ -94,6 +94,8 @@ function diffHarness(preference = null, storageFails = false) {
       this.attributes = {};
       this.listeners = {};
       this.innerHTML = '';
+      this.selectedIndex = 0;
+      this.value = '';
     }
     get innerHTML() { return this.html; }
     set innerHTML(value) { this.html = value; this.children = []; }
@@ -136,7 +138,7 @@ function diffHarness(preference = null, storageFails = false) {
     },
     requestAnimationFrame: (callback) => frames.push(callback),
     cards: [],
-    API: { diffCard: async () => ({ diff: '' }) },
+    API: { diffCard: async () => ({ diff: '' }), cardCommits: async () => [] },
   });
   function buttons() {
     const collect = (node) => node.children.flatMap((child) => child.tag === 'button' ? [child] : collect(child));
@@ -261,4 +263,77 @@ test('cached diff counts include all hunks and preserve collapse and truncation 
   assert.equal(files[1].added, 0);
   assert.equal(files[1].removed, 0);
   assert.equal(files[1].lineCount, 0);
+});
+
+test('commit selector lists commits safely and navigates oldest first', async () => {
+  const h = diffHarness();
+  const commits = [{ hash: 'a'.repeat(40), subject: '<script>first</script>' }, { hash: 'b'.repeat(40), subject: 'Second' }];
+  h.context.API.cardCommits = async () => commits;
+  const calls = [];
+  h.context.API.diffCard = async (card, hash) => { calls.push([card, hash]); return { diff: '' }; };
+  await h.context.openDiffDialog('a', 'A');
+  const selector = h.get('diff-commit-select');
+  assert.equal(selector.disabled, false);
+  assert.equal(selector.children[0].textContent, '1. aaaaaaa <script>first</script>');
+  assert.equal(selector.children[0].innerHTML, '');
+  assert.equal(h.get('diff-commit-status').textContent, '2 commits · oldest first');
+  assert.equal(h.get('diff-commit-prev').disabled, true);
+  assert.equal(h.get('diff-commit-next').disabled, false);
+  selector.selectedIndex = 1;
+  selector.value = commits[0].hash;
+  await h.context.loadDiffSelection();
+  h.context.updateDiffCommitNavigation();
+  assert.deepEqual(calls.at(-1), ['a', commits[0].hash]);
+  assert.equal(h.get('diff-commit-prev').disabled, true);
+  assert.equal(h.get('diff-commit-next').disabled, false);
+  h.get('diff-commit-next').listeners.click();
+  assert.equal(selector.selectedIndex, 2);
+  assert.equal(h.get('diff-commit-next').disabled, true);
+  h.get('diff-commit-prev').listeners.click();
+  assert.equal(selector.selectedIndex, 1);
+  selector.value = '';
+  await h.context.loadDiffSelection();
+  assert.deepEqual(calls.at(-1), ['a', '']);
+});
+
+test('late commit lists cannot populate a closed or different card', async () => {
+  const h = diffHarness();
+  const resolve = [];
+  h.context.API.cardCommits = () => new Promise((done) => resolve.push(done));
+  await h.context.openDiffDialog('a', 'A');
+  await h.context.openDiffDialog('b', 'B');
+  resolve[0]([{ hash: 'a'.repeat(40), subject: 'Stale' }]);
+  await Promise.resolve();
+  assert.equal(h.get('diff-commit-select').children.length, 0);
+  h.get('diff-dialog').listeners.close();
+  resolve[1]([{ hash: 'b'.repeat(40), subject: 'Closed' }]);
+  await Promise.resolve();
+  assert.equal(h.get('diff-commit-select').children.length, 0);
+});
+
+test('late diffs cannot overwrite a newer commit selection', async () => {
+  const h = diffHarness();
+  const resolve = [];
+  h.context.API.diffCard = () => new Promise((done) => resolve.push(done));
+  const opened = h.context.openDiffDialog('a', 'A');
+  h.get('diff-commit-select').value = 'a'.repeat(40);
+  const selected = h.context.loadDiffSelection();
+  resolve[1]({ diff: sampleDiff(1) });
+  await selected;
+  h.frames.shift()();
+  const current = h.get('diff-container').innerHTML;
+  resolve[0]({ diff: '' });
+  await opened;
+  assert.equal(h.get('diff-container').innerHTML, current);
+});
+
+test('empty commits and commit list failures do not hide the combined diff', async () => {
+  const h = diffHarness();
+  h.context.API.cardCommits = async () => { throw new Error('Unavailable'); };
+  await h.context.openDiffDialog('a', 'A');
+  assert.equal(h.get('diff-commit-status').textContent, 'Could not load commits');
+  assert.match(h.get('diff-container').innerHTML, /No changes/);
+  h.get('diff-commit-select').value = 'a'.repeat(40);
+  await h.context.loadDiffSelection();
+  assert.match(h.get('diff-container').innerHTML, /This commit has no file changes/);
 });

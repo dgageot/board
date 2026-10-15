@@ -16,7 +16,10 @@ scrolling columns and horizontal scrolling when the pipeline cannot fit.
 agent view it is sent to the agent. Hover a card to reveal its actions, or
 press **N** to create a task. In the diff view, use **Files** to show or hide the
 left-hand file explorer; this preference is remembered. Expand folders and
-select a changed file to jump to its diff.
+select a changed file to jump to its diff. The **Changes** selector lists the
+worktree's commits, oldest first; select a commit or use **Previous**/**Next** to
+review them individually. **All changes** returns to the combined diff,
+including uncommitted work.
 
 ## Harness coach
 

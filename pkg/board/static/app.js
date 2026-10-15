@@ -137,7 +137,8 @@ const API = {
   coachCard: (id) => api(`/cards/${id}/coach`, { method: "POST" }),
   deleteCard: (id) => api(`/cards/${id}`, { method: "DELETE" }),
   moveCard: (id, column) => api(`/cards/${id}/move`, { method: "POST", body: JSON.stringify({ column }) }),
-  diffCard: (id) => api(`/cards/${id}/diff`),
+  diffCard: (id, commit = "") => api(`/cards/${id}/diff${commit ? `?commit=${encodeURIComponent(commit)}` : ""}`),
+  cardCommits: (id) => api(`/cards/${id}/commits`),
   prStatus: (id) => api(`/cards/${id}/pr`),
   openVSCode: (id) => api(`/cards/${id}/vscode`, { method: "POST" }),
   listProjects: () => api("/projects"),
@@ -1180,6 +1181,9 @@ const DIFF_MAX_LINES_PER_FILE = 5000;
 const DIFF_FILES_PER_FRAME = 5;
 
 let diffRenderToken = 0;
+let diffSessionToken = 0;
+let diffCardId = null;
+let diffCommits = [];
 let diffExplorerVisible = localStorage.getItem("diff-explorer") !== "false";
 
 function updateDiffExplorer() {
@@ -1220,25 +1224,83 @@ function revealDiffFile(index) {
   return true;
 }
 
+function updateDiffCommitNavigation() {
+  const selector = document.getElementById("diff-commit-select");
+  const index = selector.selectedIndex;
+  document.getElementById("diff-commit-prev").disabled = index <= 1;
+  document.getElementById("diff-commit-next").disabled = diffCommits.length === 0 || index === diffCommits.length;
+}
+
+document.getElementById("diff-commit-select").addEventListener("change", () => {
+  updateDiffCommitNavigation();
+  loadDiffSelection();
+});
+
+for (const [id, step] of [["diff-commit-prev", -1], ["diff-commit-next", 1]]) {
+  document.getElementById(id).addEventListener("click", () => {
+    const selector = document.getElementById("diff-commit-select");
+    selector.selectedIndex += step;
+    updateDiffCommitNavigation();
+    loadDiffSelection();
+  });
+}
+
+async function loadDiffCommits(cardId, token) {
+  const status = document.getElementById("diff-commit-status");
+  try {
+    const commits = await API.cardCommits(cardId);
+    if (token !== diffSessionToken) return;
+    diffCommits = commits;
+    const selector = document.getElementById("diff-commit-select");
+    for (const [index, commit] of commits.entries()) {
+      const option = document.createElement("option");
+      option.value = commit.hash;
+      option.textContent = `${index + 1}. ${commit.hash.slice(0, 7)} ${commit.subject}`;
+      selector.append(option);
+    }
+    selector.disabled = commits.length === 0;
+    status.textContent = commits.length ? `${commits.length} commit${commits.length === 1 ? "" : "s"} · oldest first` : "No commits yet";
+    updateDiffCommitNavigation();
+  } catch {
+    if (token === diffSessionToken) status.textContent = "Could not load commits";
+  }
+}
+
 async function openDiffDialog(cardId, title) {
   const dialog = document.getElementById("diff-dialog");
-  const container = document.getElementById("diff-container");
+  diffCardId = cardId;
+  diffCommits = [];
+  const session = ++diffSessionToken;
+  const selector = document.getElementById("diff-commit-select");
+  selector.innerHTML = '<option value="">All changes (including uncommitted)</option>';
+  selector.disabled = true;
+  document.getElementById("diff-commit-status").textContent = "Loading commits…";
+  updateDiffCommitNavigation();
   document.getElementById("diff-title").textContent = title;
   document.getElementById("diff-project").textContent =
     cards.find((c) => c.id === cardId)?.project || "";
+  dialog.showModal();
+  void loadDiffCommits(cardId, session);
+  await loadDiffSelection();
+}
+
+async function loadDiffSelection() {
+  const cardId = diffCardId;
+  if (!cardId) return;
+  const commit = document.getElementById("diff-commit-select").value;
+  const container = document.getElementById("diff-container");
   container.innerHTML = `<div class="diff-loading">Loading diff…</div>`;
   container.scrollTop = 0;
   document.getElementById("diff-file-tree").innerHTML = "";
-  dialog.showModal();
 
   const token = ++diffRenderToken;
 
   try {
-    const data = await API.diffCard(cardId);
+    const data = await API.diffCard(cardId, commit);
     if (token !== diffRenderToken) return;
     const diff = data.diff || "";
     if (!diff.trim()) {
-      container.innerHTML = `<div class="diff-empty">No changes</div>`;
+      container.innerHTML = `<div class="diff-empty">${commit ? "This commit has no file changes" : "No changes"}</div>`;
       return;
     }
     renderDiffInto(container, diff, token);
@@ -1441,6 +1503,10 @@ document.getElementById("close-diff").addEventListener("click", () => {
 
 document.getElementById("diff-dialog").addEventListener("close", () => {
   diffRenderToken++;
+  diffSessionToken++;
+  diffCardId = null;
+  diffCommits = [];
+  document.getElementById("diff-commit-select").innerHTML = "";
   document.getElementById("diff-container").innerHTML = "";
   document.getElementById("diff-file-tree").innerHTML = "";
 });

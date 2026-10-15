@@ -83,9 +83,14 @@
         <button class="icon-btn dialog-close" id="close-diff" title="Close" aria-label="Close diff"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button>
       </div>
     </div>
+    <div class="diff-commit-toolbar" role="group" aria-label="Commit navigation">
+      <select id="diff-commit-select" aria-label="Changes" disabled><option value="">All changes (including uncommitted)</option></select>
+      <button id="diff-commit-prev" class="btn btn-ghost btn-small" title="Previous commit" disabled>Previous</button>
+      <button id="diff-commit-next" class="btn btn-ghost btn-small" title="Next commit" disabled>Next</button>
+      <span id="diff-commit-status" role="status"></span>
+    </div>
     <div class="diff-layout">
       <nav id="diff-explorer" aria-label="Changed files">
-        <div class="diff-explorer-title">Changed files</div>
         <div id="diff-file-tree"></div>
       </nav>
       <div id="diff-container"></div>
