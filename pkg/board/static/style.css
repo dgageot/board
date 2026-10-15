@@ -1037,10 +1037,6 @@ dialog.dialog-large {
       flex: 1;
     }
   }
-
-  & .dialog-subtitle {
-    flex-shrink: 0;
-  }
 }
 
 .projects-workspace {
@@ -1058,15 +1054,29 @@ dialog.dialog-large {
   min-width: 0;
 }
 
-.projects-list-header {
+.projects-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 14px;
+  margin-bottom: 16px;
   flex-shrink: 0;
   color: var(--text-muted);
   font-size: 12px;
+
+  & .dialog-subtitle {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  & #projects-count,
+  & #proj-new {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
 }
 
 .projects-editor {

@@ -111,13 +111,13 @@
       <button class="icon-btn dialog-close" data-close title="Close" aria-label="Close"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button>
     </div>
     <div class="dialog-body">
-      <p class="dialog-subtitle">Manage your projects. Drag to reorder how they appear in the new task selector.</p>
+      <div class="projects-toolbar">
+        <p class="dialog-subtitle" title="Manage your projects. Drag to reorder how they appear in the new task selector.">Manage your projects. Drag to reorder how they appear in the new task selector.</p>
+        <span id="projects-count"></span>
+        <button type="button" id="proj-new" class="btn btn-primary">New project</button>
+      </div>
       <div class="projects-workspace">
         <section class="projects-sidebar" aria-label="Project list">
-          <div class="projects-list-header">
-            <span id="projects-count"></span>
-            <button type="button" id="proj-new" class="btn btn-primary">New project</button>
-          </div>
           <div id="projects-list"></div>
         </section>
         <div class="projects-editor">
