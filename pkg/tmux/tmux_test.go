@@ -106,3 +106,14 @@ func TestDefaultTmuxMemoized(t *testing.T) {
 	require.NotNil(t, first)
 	require.Same(t, first, defaultTmux())
 }
+
+func TestLaunchCommandUsesCredentialHelper(t *testing.T) {
+	s := Sessions{Executable: "/tmp/Board's app", CredentialSocket: "/tmp/helper socket"}
+	command := s.launchCommand("agent", "session", "/tmp/control", "", "", "")
+	// Capture argv to verify escaping, without running Board or Docker.
+	script := "capture() { printf '%s\\n' \"$@\"; }; " + strings.Replace(command, shellescape.Quote(s.Executable), "capture", 1)
+	out, err := exec.Command("sh", "-c", script).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	assert.Equal(t, []string{"credential-exec", s.CredentialSocket, "docker", "agent", "run", "agent", "--yolo", "--session", "session", "--listen", "unix:///tmp/control"}, strings.Split(strings.TrimSpace(string(out)), "\n"))
+	assert.Equal(t, agentCommand("agent", "session", "/tmp/control", "", "", ""), Sessions{}.launchCommand("agent", "session", "/tmp/control", "", "", ""))
+}

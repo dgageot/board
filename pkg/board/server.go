@@ -11,9 +11,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/dgageot/board/pkg/credentials"
 	"github.com/dgageot/board/pkg/tmux"
 )
 
@@ -55,7 +59,26 @@ func Run() error {
 		}
 	}
 
-	b, err := newBoard(ctx, cfg, store, tmux.Sessions{})
+	sessions := tmux.Sessions{}
+	if cfg.SharedCredentials {
+		dir := filepath.Join(os.TempDir(), "board-credentials-"+strconv.Itoa(os.Getuid()))
+		source := os.Getenv("BOARD_SSH_AUTH_SOCK")
+		if source == "" && strings.Contains(os.Getenv("SSH_AUTH_SOCK"), "1password") {
+			source = os.Getenv("SSH_AUTH_SOCK")
+		}
+		helper, err := credentials.Start(ctx, dir, source, os.Environ())
+		if err != nil {
+			return fmt.Errorf("start credential helper: %w", err)
+		}
+		defer helper.Close()
+		executable, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("locate Board executable: %w", err)
+		}
+		sessions = tmux.Sessions{CredentialSocket: helper.Socket, Executable: executable}
+	}
+
+	b, err := newBoard(ctx, cfg, store, sessions)
 	if err != nil {
 		return err
 	}

@@ -40,3 +40,58 @@ test suites, lint, and build; use the race command separately for race detection
 ## License
 
 [MIT](LICENSE)
+
+## Shared credentials
+
+Credential sharing is **disabled by default**. Set `BOARD_CREDENTIALS=1` when
+starting Board to give newly launched and relaunched cards a shared local
+credential helper. No agent YAML or per-card setup is needed.
+
+- **Git signing:** when `SSH_AUTH_SOCK` points to 1Password, all cards sign
+  through one persistent connection owned by Board. The private key stays in
+  1Password. Your existing SSH signing key and `commit.gpgsign` configuration
+  still apply; Board overrides only the signing program, in each agent's
+  environment. Ordinary SSH authentication (including fetch/push) keeps its
+  original agent. For a custom socket path, set `BOARD_SSH_AUTH_SOCK` explicitly.
+- **1Password secrets:** Board discovers inherited environment variables whose
+  values start with `op://`. On the first card launch, it resolves each distinct
+  reference once and caches the results in memory for all cards. Variables
+  pointing to the same reference share a lookup. Names are not hard-coded:
+  `BRAVE_API_KEY` works for gopher's `docker:brave` toolset, as do other variables
+  for other tools. Unrelated literal environment values are left unchanged.
+  Failed references become empty values with a warning, preventing per-card
+  retries; other secrets and Git signing still work. Restart Board to retry.
+
+For example, configure the references and opt in when starting Board:
+
+```sh
+export BRAVE_API_KEY='op://your-vault/your-brave-item/credential'
+export OTHER_API_TOKEN='op://your-vault/another-item/credential'
+BOARD_CREDENTIALS=1 go run .
+```
+
+All inherited `op://` variables are made available to every card; only export
+references you intend to share with those agents. References left over in tmux
+but absent from Board's current environment are removed at launch, so they cannot
+trigger independent lookups. Existing literal values in tmux are not identified
+as references or revoked; already-running agents retain their environment.
+
+Credential values never appear in Board's database, generated scripts, or tmux
+commands. The helper's directory and sockets are restricted to your OS user;
+**this is not isolation from other processes running as that user**. The proxy
+accepts only public-key listing and Git-namespace SSH signatures, not general
+SSH authentication or key-management requests. Credential-bearing child
+processes retain their environment after Board exits. Docker Agent may itself
+stage MCP credentials in temporary files; Board does not change that behavior.
+
+Board must stay running to sign. Stable socket paths let already-configured
+cards resume signing after a Board restart. Cards that were running before
+this feature was enabled need their agent relaunched to receive the setup.
+1Password can still require approval after locking or expiration, or for every
+request if your policy requires it; the helper does not bypass that policy.
+
+Leave `BOARD_CREDENTIALS` unset (or use any value other than `1`) to preserve
+normal launch behavior without either integration. Changing this setting does
+not reconfigure already-running agents; relaunch them after restarting Board.
+Only one credential-enabled Board can run per user and temp directory. Use the
+same temp directory across restarts to preserve socket paths.

@@ -16,7 +16,11 @@ import (
 )
 
 // Sessions provides session management operations backed by tmux.
-type Sessions struct{}
+type Sessions struct {
+	// CredentialSocket enables automatic credential injection for every launch.
+	CredentialSocket string
+	Executable       string
+}
 
 // SocketPath is the dedicated tmux socket the board runs its sessions on.
 // Board shares the host's tmux binary but not its default server: a private
@@ -147,7 +151,7 @@ func promptFilePath(sessionID string) string {
 // and --worktree branches a new worktree from it. On resume worktreeName is
 // empty and workDir is the existing worktree directory, so the agent stays
 // isolated there.
-func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) error {
+func (s Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) error {
 	tmux := defaultTmux()
 
 	session, err := tmux.NewSession(&gotmux.SessionOptions{
@@ -187,7 +191,8 @@ func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket,
 
 	// exec replaces the shell with the agent so the agent becomes the pane's
 	// process: when it exits the pane goes dead (see remain-on-exit above).
-	if err := panes[0].SendKeys("exec " + agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile)); err != nil {
+	cmd := s.launchCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile)
+	if err := panes[0].SendKeys("exec " + cmd); err != nil {
 		return fmt.Errorf("send keys: %w", err)
 	}
 	if err := panes[0].SendKeys("Enter"); err != nil {
@@ -195,6 +200,15 @@ func (Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket,
 	}
 
 	return nil
+}
+
+// launchCommand passes only the helper socket through the interactive shell.
+func (s Sessions) launchCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile string) string {
+	cmd := agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile)
+	if s.CredentialSocket != "" {
+		cmd = shellescape.Quote(s.Executable) + " credential-exec " + shellescape.Quote(s.CredentialSocket) + " " + cmd
+	}
+	return cmd
 }
 
 // tmuxRun runs `tmux -S <socket> <args...>` against the board's private server
