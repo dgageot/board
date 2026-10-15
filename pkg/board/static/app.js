@@ -1421,11 +1421,22 @@ function appendDiffTreeFile(directories, file, index) {
     }
     parent = directories.get(path);
   }
+  const change = file.change || "modified";
+  const label = { added: "Added", deleted: "Deleted", modified: "Modified" }[change];
   const button = document.createElement("button");
   button.type = "button";
   button.dataset.diffIndex = String(index);
-  button.title = file.name;
-  button.textContent = name;
+  button.dataset.change = change;
+  button.title = `${file.name} — ${label}`;
+  button.setAttribute("aria-label", button.title);
+  const filename = document.createElement("span");
+  filename.className = "diff-tree-name";
+  filename.textContent = name;
+  const badge = document.createElement("span");
+  badge.className = "diff-tree-status";
+  badge.setAttribute("aria-hidden", "true");
+  badge.textContent = label[0];
+  button.append(filename, badge);
   parent.append(button);
 }
 
@@ -1466,6 +1477,7 @@ function parseDiffFiles(raw) {
     let added = 0;
     let removed = 0;
     let lineCount = 0;
+    let change = "modified";
 
     for (const line of lines.slice(1)) {
       if (line.startsWith("@@")) {
@@ -1474,6 +1486,9 @@ function parseDiffFiles(raw) {
         newLine = hunkMatch ? parseInt(hunkMatch[2], 10) : 0;
         currentHunk = { header: line, lines: [] };
         hunks.push(currentHunk);
+      } else if (!currentHunk) {
+        if (line.startsWith("new file mode ") || line === "--- /dev/null") change = "added";
+        else if (line.startsWith("deleted file mode ") || line === "+++ /dev/null") change = "deleted";
       } else if (currentHunk) {
         if (line.startsWith("+")) {
           currentHunk.lines.push({ type: "+", text: line.slice(1), newNum: newLine++ });
@@ -1491,7 +1506,7 @@ function parseDiffFiles(raw) {
     }
 
     const metadata = hunks.length === 0 ? lines.slice(1).filter(Boolean).join("\n") : "";
-    files.push({ name, hunks, metadata, added, removed, lineCount });
+    files.push({ name, hunks, metadata, added, removed, lineCount, change });
   }
 
   return files;

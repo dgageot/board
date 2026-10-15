@@ -1316,13 +1316,39 @@ dialog.dialog-terminal[open] {
   }
 
   & button {
-    display: block;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
     width: 100%;
     border: none;
     background: transparent;
-    color: var(--text);
+    color: var(--diff-file-color, var(--text));
     font: inherit;
     text-align: left;
+  }
+
+  & button[data-change="added"] {
+    --diff-file-color: light-dark(#047857, var(--success));
+  }
+
+  & button[data-change="deleted"] {
+    --diff-file-color: light-dark(#be123c, var(--danger));
+  }
+
+  & button[data-change="modified"] {
+    --diff-file-color: light-dark(#92400e, var(--warning));
+  }
+
+  & .diff-tree-name {
+    flex: 1;
+    min-width: 0;
+  }
+
+  & .diff-tree-status {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
   }
 
   & summary:hover,
@@ -1332,7 +1358,6 @@ dialog.dialog-terminal[open] {
 
   & button[aria-current] {
     background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
   }
 }
 

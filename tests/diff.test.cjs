@@ -166,8 +166,10 @@ test('explorer shares folders and navigates to unique diff targets in batches', 
   h.frames.shift()();
   assert.equal(h.buttons().length, 7);
   const button = h.buttons()[6];
-  assert.equal(button.title, 'src/sub/file6.js');
-  assert.equal(button.textContent, 'file6.js');
+  assert.equal(button.title, 'src/sub/file6.js — Modified');
+  assert.equal(button.children[0].textContent, 'file6.js');
+  assert.equal(button.children[1].textContent, 'M');
+  assert.equal(button.dataset.change, 'modified');
   h.get('diff-file-tree').listeners.click({ target: button });
   assert.equal(button.attributes['aria-current'], 'true');
   assert.equal(h.get('diff-file-6').open, true);
@@ -183,7 +185,7 @@ test('file names are assigned as text, never HTML', () => {
   h.context.appendDiffTreeFile(directories, { name: '<script>/<img onerror="bad">' }, 9);
   const folder = h.get('diff-file-tree').children[0];
   assert.equal(folder.children[0].textContent, '<script>');
-  assert.equal(h.buttons()[0].textContent, '<img onerror="bad">');
+  assert.equal(h.buttons()[0].children[0].textContent, '<img onerror="bad">');
   assert.equal(h.buttons()[0].innerHTML, '');
 });
 
@@ -336,4 +338,59 @@ test('empty commits and commit list failures do not hide the combined diff', asy
   h.get('diff-commit-select').value = 'a'.repeat(40);
   await h.context.loadDiffSelection();
   assert.match(h.get('diff-container').innerHTML, /This commit has no file changes/);
+});
+
+test('file changes distinguish additions and deletions from edits using git metadata', (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'board-diff-status-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  git(repo, 'init', '-q');
+  const initial = {
+    'edited.txt': 'before\n',
+    'only-additions.txt': 'first\n',
+    'emptied.txt': 'before\n',
+    'deleted.txt': 'gone\n',
+    'deleted-empty.txt': '',
+    'renamed.txt': 'same\n',
+    'mode.sh': 'echo hello\n',
+    'header-like.txt': 'before\n',
+  };
+  for (const [name, text] of Object.entries(initial)) fs.writeFileSync(path.join(repo, name), text, { mode: 0o644 });
+  fs.writeFileSync(path.join(repo, 'deleted.bin'), Buffer.from([0, 1, 2]));
+  git(repo, 'add', '.');
+  git(repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'base');
+  fs.writeFileSync(path.join(repo, 'edited.txt'), 'after\n');
+  fs.writeFileSync(path.join(repo, 'only-additions.txt'), 'first\nsecond\n');
+  fs.writeFileSync(path.join(repo, 'emptied.txt'), '');
+  for (const name of ['deleted.txt', 'deleted-empty.txt', 'deleted.bin']) fs.rmSync(path.join(repo, name));
+  git(repo, 'mv', 'renamed.txt', 'renamed-new.txt');
+  fs.chmodSync(path.join(repo, 'mode.sh'), 0o755);
+  fs.writeFileSync(path.join(repo, 'header-like.txt'), '++ /dev/null\nnew file mode 100644\n');
+  fs.writeFileSync(path.join(repo, 'added.txt'), 'new\n');
+  fs.writeFileSync(path.join(repo, 'added-empty.txt'), '');
+  fs.writeFileSync(path.join(repo, 'added.bin'), Buffer.from([0, 2, 3]));
+  git(repo, 'add', '--intent-to-add', 'added.txt', 'added-empty.txt', 'added.bin');
+  const files = context.parseDiffFiles(git(repo, 'diff', '--find-renames', '--no-rename-empty', 'HEAD'));
+  const statuses = Object.fromEntries(Array.from(files, (file) => [file.name, file.change]));
+  assert.deepEqual(statuses, {
+    'added.bin': 'added', 'added-empty.txt': 'added', 'added.txt': 'added',
+    'deleted.bin': 'deleted', 'deleted-empty.txt': 'deleted', 'deleted.txt': 'deleted',
+    'edited.txt': 'modified', 'emptied.txt': 'modified', 'header-like.txt': 'modified',
+    'mode.sh': 'modified', 'only-additions.txt': 'modified', 'renamed-new.txt': 'modified',
+  });
+});
+
+test('explorer entries expose color status, a letter, and an accessible label', () => {
+  const h = diffHarness();
+  const directories = new Map([['', h.get('diff-file-tree')]]);
+  for (const [index, change] of ['added', 'deleted', 'modified'].entries()) {
+    h.context.appendDiffTreeFile(directories, { name: `dir/${change}.txt`, change }, index);
+    const button = h.buttons()[index];
+    const label = change[0].toUpperCase() + change.slice(1);
+    assert.equal(button.dataset.change, change);
+    assert.equal(button.attributes['aria-label'], `dir/${change}.txt — ${label}`);
+    assert.equal(button.title, button.attributes['aria-label']);
+    assert.equal(button.children[0].textContent, `${change}.txt`);
+    assert.equal(button.children[1].textContent, label[0]);
+    assert.equal(button.children[1].attributes['aria-hidden'], 'true');
+  }
 });
