@@ -115,6 +115,7 @@ func buildMux(b *Board) (http.Handler, error) {
 	mux.HandleFunc("GET /api/projects", b.handleListProjects)
 	mux.HandleFunc("POST /api/projects", b.handleCreateProject)
 	mux.HandleFunc("PUT /api/projects/order", b.handleReorderProjects)
+	mux.HandleFunc("PUT /api/projects/{id}", b.handleUpdateProject)
 	mux.HandleFunc("DELETE /api/projects/{id}", b.handleDeleteProject)
 	mux.HandleFunc("GET /api/agents", b.handleListAgents)
 	mux.HandleFunc("GET /api/browse", b.handleBrowse)

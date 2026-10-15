@@ -142,6 +142,7 @@ const API = {
   openVSCode: (id) => api(`/cards/${id}/vscode`, { method: "POST" }),
   listProjects: () => api("/projects"),
   createProject: (data) => api("/projects", { method: "POST", body: JSON.stringify(data) }),
+  updateProject: (id, data) => api(`/projects/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteProject: (id) => api(`/projects/${id}`, { method: "DELETE" }),
   reorderProjects: (ids) => api("/projects/order", { method: "PUT", body: JSON.stringify(ids) }),
   listAgents: () => api("/agents"),
@@ -924,8 +925,13 @@ document.getElementById("new-task-dialog").addEventListener("close", () => {
 
 // Projects dialog
 let selectedProjectId = null;
+let editingProjectId = null;
+let newProjectDraft = null;
+let projectSavePending = false;
 
 document.getElementById("btn-projects").addEventListener("click", async () => {
+  if (projectSavePending) return;
+  stopEditingProject();
   selectedProjectId = projects.find((p) => p.id === selectedProjectId)?.id || projects[0]?.id || null;
   renderProjects();
   await populateAgentSelect();
@@ -933,6 +939,8 @@ document.getElementById("btn-projects").addEventListener("click", async () => {
 });
 
 document.getElementById("proj-new").addEventListener("click", () => {
+  if (projectSavePending) return;
+  stopEditingProject();
   selectedProjectId = null;
   renderProjects();
   document.getElementById("proj-name").focus();
@@ -940,7 +948,8 @@ document.getElementById("proj-new").addEventListener("click", () => {
 
 document.getElementById("projects-list").addEventListener("click", (e) => {
   const button = e.target.closest(".project-select");
-  if (!button) return;
+  if (!button || projectSavePending) return;
+  stopEditingProject();
   selectedProjectId = button.dataset.id;
   renderProjectSelection();
 });
@@ -958,32 +967,94 @@ async function populateAgentSelect() {
   for (const a of agents) {
     options.push(`<option value="${esc(a)}">${esc(a.split("/").pop())}</option>`);
   }
+  const value = select.value;
   select.innerHTML = options.join("");
+  setProjectAgent(value);
+}
+
+function setProjectAgent(agent) {
+  const select = document.getElementById("proj-agent");
+  if (agent && ![...select.options].some((option) => option.value === agent)) {
+    select.insertAdjacentHTML("beforeend", `<option value="${esc(agent)}">${esc(agent.split("/").pop())}</option>`);
+  }
+  if (agent) select.value = agent;
+}
+
+function projectFormValues() {
+  return {
+    name: document.getElementById("proj-name").value,
+    repoPath: document.getElementById("proj-repo").value,
+    agent: document.getElementById("proj-agent").value,
+  };
+}
+
+function fillProjectForm(project) {
+  document.getElementById("proj-name").value = project.name;
+  document.getElementById("proj-repo").value = project.repoPath;
+  setProjectAgent(project.agent);
+  document.getElementById("proj-agent").value = project.agent;
+}
+
+function stopEditingProject() {
+  if (!editingProjectId) return;
+  editingProjectId = null;
+  fillProjectForm(newProjectDraft);
+  newProjectDraft = null;
+}
+
+document.getElementById("proj-cancel").addEventListener("click", () => {
+  if (projectSavePending) return;
+  stopEditingProject();
+  renderProjectSelection();
+  document.getElementById("proj-edit")?.focus();
+});
+
+function setProjectSavePending(pending) {
+  projectSavePending = pending;
+  document.querySelectorAll("#projects-dialog input, #projects-dialog select, #projects-dialog button:not([data-close])").forEach((control) => {
+    control.disabled = pending;
+  });
 }
 
 document.getElementById("projects-dialog").querySelector("form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (projectSavePending) return;
   const name = document.getElementById("proj-name").value.trim();
   const repoPath = document.getElementById("proj-repo").value.trim();
   const agent = document.getElementById("proj-agent").value.trim();
 
   if (!name) return;
 
+  setProjectSavePending(true);
   try {
-    const project = await API.createProject({ name, repoPath, agent });
+    const data = { name, repoPath, agent };
+    const project = editingProjectId
+      ? await API.updateProject(editingProjectId, data)
+      : await API.createProject(data);
+    if (editingProjectId) {
+      stopEditingProject();
+    } else {
+      fillProjectForm({ name: "", repoPath: "", agent: "" });
+    }
     selectedProjectId = project.id;
-    document.getElementById("proj-name").value = "";
-    document.getElementById("proj-repo").value = "";
-    document.getElementById("proj-agent").value = "";
+    const index = projects.findIndex((p) => p.id === project.id);
+    if (index === -1) projects.push(project);
+    else projects[index] = project;
+    renderProjects();
     await refresh();
     renderProjects();
   } catch (err) {
     alert(err.message);
+  } finally {
+    setProjectSavePending(false);
   }
 });
 
 function renderProjects() {
   const list = document.getElementById("projects-list");
+  if (editingProjectId && !projects.some((p) => p.id === editingProjectId)) {
+    stopEditingProject();
+  }
   if (selectedProjectId && !projects.some((p) => p.id === selectedProjectId)) {
     selectedProjectId = projects[0]?.id || null;
   }
@@ -1011,8 +1082,13 @@ function renderProjectSelection() {
     button.setAttribute("aria-pressed", String(button.dataset.id === selectedProjectId));
   });
   const inspector = document.getElementById("project-inspector");
-  inspector.hidden = !project;
-  document.querySelector("#projects-dialog .project-form").hidden = !!project;
+  const editing = !!project && editingProjectId === project.id;
+  inspector.hidden = !project || editing;
+  document.querySelector("#projects-dialog .project-form").hidden = !!project && !editing;
+  document.getElementById("proj-form-title").textContent = editing ? "Edit project" : "Add project";
+  document.getElementById("proj-submit").textContent = editing ? "Save changes" : "Add project";
+  document.getElementById("proj-cancel").hidden = !editing;
+  document.getElementById("proj-edit-note").hidden = !editing;
   if (!project) {
     inspector.innerHTML = "";
     return;
@@ -1025,9 +1101,18 @@ function renderProjectSelection() {
       <dt>Agent</dt><dd>${esc(project.agent)}</dd>
     </dl>
     <div class="dialog-actions">
+      <button type="button" id="proj-edit" class="btn btn-primary">Edit project</button>
       <button type="button" id="proj-delete" class="btn btn-danger">${icon("trash")} Delete project</button>
     </div>
   `;
+  document.getElementById("proj-edit").addEventListener("click", () => {
+    if (projectSavePending) return;
+    newProjectDraft = projectFormValues();
+    editingProjectId = project.id;
+    fillProjectForm(project);
+    renderProjectSelection();
+    document.getElementById("proj-name").focus();
+  });
   document.getElementById("proj-delete").addEventListener("click", () => window.deleteProject(project.id));
 }
 
@@ -1037,12 +1122,17 @@ function enableProjectDragReorder(list) {
   let dragged = null;
 
   list.querySelectorAll(".project-item").forEach((item) => {
-    item.addEventListener("dragstart", () => {
+    item.addEventListener("dragstart", (e) => {
+      if (projectSavePending) {
+        e.preventDefault();
+        return;
+      }
       dragged = item;
       item.classList.add("dragging");
     });
 
     item.addEventListener("dragend", async () => {
+      if (!dragged) return;
       item.classList.remove("dragging");
       dragged = null;
       const ids = [...list.querySelectorAll(".project-item")].map((el) => el.dataset.id);
@@ -1065,9 +1155,19 @@ function enableProjectDragReorder(list) {
 }
 
 window.deleteProject = async (id) => {
-  await API.deleteProject(id);
-  await refresh();
-  renderProjects();
+  if (projectSavePending) return;
+  setProjectSavePending(true);
+  try {
+    await API.deleteProject(id);
+    projects = projects.filter((p) => p.id !== id);
+    renderProjects();
+    await refresh();
+    renderProjects();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    setProjectSavePending(false);
+  }
 };
 
 // --- Folder picker ---

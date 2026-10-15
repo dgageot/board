@@ -374,6 +374,18 @@ func (s *SQLiteStore) InsertProject(p *Project) error {
 	})
 }
 
+// UpdateProject preserves the project's identity, position and existing card snapshots.
+func (s *SQLiteStore) UpdateProject(p *Project) (*Project, error) {
+	var project Project
+	if err := s.db.Get(&project,
+		"UPDATE projects SET name = ?, repo_path = ?, agent = ? WHERE id = ? RETURNING "+projectColumns,
+		p.Name, p.RepoPath, p.Agent, p.ID,
+	); err != nil {
+		return nil, err
+	}
+	return &project, nil
+}
+
 func (s *SQLiteStore) DeleteProject(id string) error {
 	_, err := s.db.Exec("DELETE FROM projects WHERE id = ?", id)
 	return err

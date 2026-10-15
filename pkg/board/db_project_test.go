@@ -1,6 +1,7 @@
 package board
 
 import (
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -10,6 +11,54 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUpdateProjectPreservesOrderAndCards(t *testing.T) {
+	store := openTestStore(t)
+	for _, id := range []string{"a", "b", "c"} {
+		require.NoError(t, store.InsertProject(&Project{ID: id, Name: id, RepoPath: "/old/repo", Agent: "/old/agent"}))
+	}
+	require.NoError(t, store.ReorderProjects([]string{"c", "a", "b"}))
+	before, err := store.ListProjects()
+	require.NoError(t, err)
+
+	card := &Card{
+		ID: "card-1", Title: "Existing card", Prompt: "Keep this prompt", TitleGenerated: true,
+		Column: "dev", Status: StatusRunning, Project: "a", Agent: "/old/agent", RepoPath: "/old/repo",
+		Branch: "branch", Worktree: "/worktree", Session: "session", AgentSession: "agent-session",
+		Cost: 1.5, PRURL: "https://example.com/pull/1", CoachRan: true,
+	}
+	require.NoError(t, store.InsertCard(card))
+
+	updated, err := store.UpdateProject(&Project{ID: "a", Name: "Renamed", RepoPath: "/new/repo", Agent: "/new/agent", Pos: 99})
+	require.NoError(t, err)
+	want := &Project{ID: "a", Name: "Renamed", RepoPath: "/new/repo", Agent: "/new/agent", Pos: 1}
+	assert.Equal(t, want, updated)
+
+	stored, err := store.GetProject("a")
+	require.NoError(t, err)
+	assert.Equal(t, want, stored)
+	after, err := store.ListProjects()
+	require.NoError(t, err)
+	assert.Equal(t, []*Project{before[0], want, before[2]}, after)
+	cards, err := store.ListCards()
+	require.NoError(t, err)
+	assert.Equal(t, []*Card{card}, cards)
+
+	unchanged, err := store.UpdateProject(want)
+	require.NoError(t, err, "saving unchanged values still returns the project")
+	assert.Equal(t, want, unchanged)
+}
+
+func TestUpdateProjectNotFound(t *testing.T) {
+	store := openTestStore(t)
+
+	project, err := store.UpdateProject(&Project{ID: "missing", Name: "Missing", RepoPath: "/repo", Agent: "/agent"})
+	require.ErrorIs(t, err, sql.ErrNoRows)
+	assert.Nil(t, project)
+	projects, err := store.ListProjects()
+	require.NoError(t, err)
+	assert.Empty(t, projects)
+}
 
 // TestInsertProjectConcurrentPositionsAreDistinct guards the MAX(pos)+1
 // computation against interleaving inserts: two projects must never land on

@@ -123,7 +123,8 @@
         <div class="projects-editor">
           <section id="project-inspector" aria-label="Project details" hidden></section>
           <form method="dialog" autocomplete="off" class="project-form">
-            <h3>Add project</h3>
+            <h3 id="proj-form-title">Add project</h3>
+            <p id="proj-edit-note" class="dialog-subtitle" hidden>Changes apply to new tasks. Existing tasks keep their current settings.</p>
             <label>Name
               <input id="proj-name" type="text" placeholder="My Project" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
             </label>
@@ -137,7 +138,8 @@
               <select id="proj-agent"></select>
             </label>
             <div class="dialog-actions">
-              <button type="submit" class="btn btn-primary">Add project</button>
+              <button type="button" id="proj-cancel" class="btn" hidden>Cancel</button>
+              <button type="submit" id="proj-submit" class="btn btn-primary">Add project</button>
             </div>
           </form>
         </div>

@@ -1029,6 +1029,10 @@ dialog.dialog-large {
   width: min(94vw, 1080px);
   max-width: 1080px;
 
+  & [hidden] {
+    display: none;
+  }
+
   &[open] {
     height: min(86dvh, 820px);
     max-height: min(86dvh, 820px);

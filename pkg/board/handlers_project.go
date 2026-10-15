@@ -1,8 +1,11 @@
 package board
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/dgageot/board/pkg/git"
 )
@@ -45,6 +48,48 @@ func (b *Board) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 
 	b.broadcast()
 	writeJSON(w, p)
+}
+
+func (b *Board) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
+	var p Project
+	if !decodeJSON(w, r, &p) {
+		return
+	}
+
+	p.ID = r.PathValue("id")
+	p.Name = strings.TrimSpace(p.Name)
+	p.RepoPath = strings.TrimSpace(p.RepoPath)
+	p.Agent = strings.TrimSpace(p.Agent)
+
+	if p.Name == "" {
+		writeError(w, fmt.Errorf("%w: name required", errBadInput))
+		return
+	}
+	if p.RepoPath == "" {
+		writeError(w, fmt.Errorf("%w: repoPath required", errBadInput))
+		return
+	}
+	if p.Agent == "" {
+		writeError(w, fmt.Errorf("%w: agent required", errBadInput))
+		return
+	}
+	if !git.IsRepo(p.RepoPath) {
+		writeError(w, fmt.Errorf("%w: %q is not a git repository", errBadInput, p.RepoPath))
+		return
+	}
+
+	project, err := b.store.UpdateProject(&p)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		writeError(w, fmt.Errorf("%w: project %s", errNotFound, p.ID))
+		return
+	case err != nil:
+		writeError(w, fmt.Errorf("update project %s: %w", p.ID, err))
+		return
+	}
+
+	b.broadcast()
+	writeJSON(w, project)
 }
 
 func (b *Board) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
