@@ -79,10 +79,17 @@
       <span id="diff-title">Diff</span>
       <div class="dialog-header-actions">
         <span id="diff-project" class="header-project"></span>
+        <button id="diff-toggle-explorer" class="btn btn-ghost btn-small" title="Hide file explorer" aria-controls="diff-explorer" aria-expanded="true"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-folder"/></svg>Files</button>
         <button class="icon-btn dialog-close" id="close-diff" title="Close" aria-label="Close diff"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button>
       </div>
     </div>
-    <div id="diff-container"></div>
+    <div class="diff-layout">
+      <nav id="diff-explorer" aria-label="Changed files">
+        <div class="diff-explorer-title">Changed files</div>
+        <div id="diff-file-tree"></div>
+      </nav>
+      <div id="diff-container"></div>
+    </div>
   </dialog>
 
 

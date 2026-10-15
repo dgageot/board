@@ -14,7 +14,9 @@ The board uses a compact layout that fills the viewport, with independently
 scrolling columns and horizontal scrolling when the pipeline cannot fit.
 **Agent** and **Diff** open fullscreen; Escape closes the diff, while in the
 agent view it is sent to the agent. Hover a card to reveal its actions, or
-press **N** to create a task.
+press **N** to create a task. In the diff view, use **Files** to show or hide the
+left-hand file explorer; this preference is remembered. Expand folders and
+select a changed file to jump to its diff.
 
 ## Harness coach
 

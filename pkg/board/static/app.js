@@ -1180,6 +1180,45 @@ const DIFF_MAX_LINES_PER_FILE = 5000;
 const DIFF_FILES_PER_FRAME = 5;
 
 let diffRenderToken = 0;
+let diffExplorerVisible = localStorage.getItem("diff-explorer") !== "false";
+
+function updateDiffExplorer() {
+  document.getElementById("diff-explorer").hidden = !diffExplorerVisible;
+  const button = document.getElementById("diff-toggle-explorer");
+  button.setAttribute("aria-expanded", String(diffExplorerVisible));
+  button.title = diffExplorerVisible ? "Hide file explorer" : "Show file explorer";
+}
+
+updateDiffExplorer();
+
+document.getElementById("diff-toggle-explorer").addEventListener("click", () => {
+  diffExplorerVisible = !diffExplorerVisible;
+  updateDiffExplorer();
+  try {
+    localStorage.setItem("diff-explorer", String(diffExplorerVisible));
+  } catch {
+    // Keep the toggle usable when browser storage is unavailable.
+  }
+});
+
+document.getElementById("diff-file-tree").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-diff-index]");
+  if (!button) return;
+  for (const item of document.querySelectorAll("#diff-file-tree button[aria-current]")) {
+    item.removeAttribute("aria-current");
+  }
+  button.setAttribute("aria-current", "true");
+  revealDiffFile(Number(button.dataset.diffIndex));
+});
+
+function revealDiffFile(index) {
+  const file = document.getElementById(`diff-file-${index}`);
+  if (!file) return false;
+  file.open = true;
+  file.scrollIntoView({ block: "start" });
+  file.querySelector("summary").focus({ preventScroll: true });
+  return true;
+}
 
 async function openDiffDialog(cardId, title) {
   const dialog = document.getElementById("diff-dialog");
@@ -1188,6 +1227,8 @@ async function openDiffDialog(cardId, title) {
   document.getElementById("diff-project").textContent =
     cards.find((c) => c.id === cardId)?.project || "";
   container.innerHTML = `<div class="diff-loading">Loading diff…</div>`;
+  container.scrollTop = 0;
+  document.getElementById("diff-file-tree").innerHTML = "";
   dialog.showModal();
 
   const token = ++diffRenderToken;
@@ -1209,6 +1250,9 @@ async function openDiffDialog(cardId, title) {
 
 function renderDiffInto(container, rawDiff, token) {
   const files = parseDiffFiles(rawDiff);
+  const tree = document.getElementById("diff-file-tree");
+  tree.innerHTML = "";
+  const directories = new Map([["", tree]]);
   if (files.length === 0) {
     container.innerHTML = `<div class="diff-empty">No changes</div>`;
     return;
@@ -1223,7 +1267,8 @@ function renderDiffInto(container, rawDiff, token) {
     const end = Math.min(i + DIFF_FILES_PER_FRAME, files.length);
     let html = "";
     for (; i < end; i++) {
-      html += renderDiffFile(files[i]);
+      appendDiffTreeFile(directories, files[i], i);
+      html += renderDiffFile(files[i], i);
     }
     container.insertAdjacentHTML("beforeend", html);
     if (i < files.length) {
@@ -1233,17 +1278,8 @@ function renderDiffInto(container, rawDiff, token) {
   requestAnimationFrame(renderBatch);
 }
 
-function renderDiffFile(file) {
-  let added = 0;
-  let removed = 0;
-  let lineCount = 0;
-  for (const hunk of file.hunks) {
-    for (const line of hunk.lines) {
-      lineCount++;
-      if (line.type === "+") added++;
-      else if (line.type === "-") removed++;
-    }
-  }
+function renderDiffFile(file, index = 0) {
+  const { added, removed, lineCount } = file;
 
   let rendered = 0;
   let truncated = false;
@@ -1277,7 +1313,7 @@ function renderDiffFile(file) {
   const openAttr = lineCount > DIFF_AUTO_COLLAPSE_LINES ? "" : " open";
 
   return `
-    <details class="diff-file"${openAttr}>
+    <details id="diff-file-${index}" class="diff-file"${openAttr}>
       <summary class="diff-file-header">
         <span class="diff-file-name">${esc(file.name)}</span>
         <span class="diff-file-stats">${badge}</span>
@@ -1291,12 +1327,8 @@ function renderDiffStats(files) {
   let totalAdded = 0;
   let totalRemoved = 0;
   for (const file of files) {
-    for (const hunk of file.hunks) {
-      for (const line of hunk.lines) {
-        if (line.type === "+") totalAdded++;
-        if (line.type === "-") totalRemoved++;
-      }
-    }
+    totalAdded += file.added;
+    totalRemoved += file.removed;
   }
   return `
     <div class="diff-stats">
@@ -1307,6 +1339,45 @@ function renderDiffStats(files) {
   `;
 }
 
+function appendDiffTreeFile(directories, file, index) {
+  const parts = file.name.split("/");
+  const name = parts.pop();
+  let path = "";
+  let parent = directories.get(path);
+  for (const part of parts) {
+    path += part + "/";
+    if (!directories.has(path)) {
+      const folder = document.createElement("details");
+      folder.open = true;
+      const label = document.createElement("summary");
+      label.textContent = part;
+      const children = document.createElement("div");
+      children.className = "diff-tree-children";
+      folder.append(label, children);
+      parent.append(folder);
+      directories.set(path, children);
+    }
+    parent = directories.get(path);
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.diffIndex = String(index);
+  button.title = file.name;
+  button.textContent = name;
+  parent.append(button);
+}
+
+// Git quotes special characters and encodes non-ASCII bytes as octal escapes.
+function decodeDiffPath(path) {
+  if (!path.startsWith('"')) return path;
+  const escapes = { a: "\x07", b: "\b", t: "\t", n: "\n", v: "\v", f: "\f", r: "\r" };
+  return path.slice(1, -1).replace(/(?:\\[0-7]{3})+|\\(.)/g, (match, escaped) => {
+    if (escaped !== undefined) return escapes[escaped] ?? escaped;
+    const bytes = match.match(/[0-7]{3}/g).map((octal) => parseInt(octal, 8));
+    return new TextDecoder("utf-8", { ignoreBOM: true }).decode(Uint8Array.from(bytes));
+  });
+}
+
 function parseDiffFiles(raw) {
   const files = [];
   const fileChunks = raw.split(/^diff --git /m).filter(Boolean);
@@ -1315,13 +1386,24 @@ function parseDiffFiles(raw) {
     const lines = chunk.split("\n");
     // Extract file name from "a/... b/..."
     const firstLine = lines[0] || "";
-    const match = firstLine.match(/b\/(.+)$/);
-    const name = match ? match[1] : firstLine;
+    const match = firstLine.match(/ ("b\/(?:\\.|[^"\\])*"|b\/.+)$/);
+    const samePath = firstLine.match(/^a\/(.+) b\/\1$/);
+    let name = samePath ? samePath[1] : match ? decodeDiffPath(match[1]).slice(2) : firstLine;
+    // Extended headers disambiguate names containing spaces or " b/".
+    const renamed = lines.find((line) => /^(rename|copy) to /.test(line));
+    const newPath = lines.find((line) => line.startsWith("+++ "))?.slice(4).split("\t")[0];
+    const oldPath = lines.find((line) => line.startsWith("--- "))?.slice(4).split("\t")[0];
+    if (renamed) name = decodeDiffPath(renamed.replace(/^(rename|copy) to /, ""));
+    else if (newPath && newPath !== "/dev/null") name = decodeDiffPath(newPath).slice(2);
+    else if (oldPath) name = decodeDiffPath(oldPath).slice(2);
 
     const hunks = [];
     let currentHunk = null;
     let oldLine = 0;
     let newLine = 0;
+    let added = 0;
+    let removed = 0;
+    let lineCount = 0;
 
     for (const line of lines.slice(1)) {
       if (line.startsWith("@@")) {
@@ -1333,16 +1415,21 @@ function parseDiffFiles(raw) {
       } else if (currentHunk) {
         if (line.startsWith("+")) {
           currentHunk.lines.push({ type: "+", text: line.slice(1), newNum: newLine++ });
+          added++;
+          lineCount++;
         } else if (line.startsWith("-")) {
           currentHunk.lines.push({ type: "-", text: line.slice(1), oldNum: oldLine++ });
+          removed++;
+          lineCount++;
         } else if (line.startsWith(" ")) {
           currentHunk.lines.push({ type: " ", text: line.slice(1), oldNum: oldLine++, newNum: newLine++ });
+          lineCount++;
         }
       }
     }
 
     const metadata = hunks.length === 0 ? lines.slice(1).filter(Boolean).join("\n") : "";
-    files.push({ name, hunks, metadata });
+    files.push({ name, hunks, metadata, added, removed, lineCount });
   }
 
   return files;
@@ -1355,6 +1442,7 @@ document.getElementById("close-diff").addEventListener("click", () => {
 document.getElementById("diff-dialog").addEventListener("close", () => {
   diffRenderToken++;
   document.getElementById("diff-container").innerHTML = "";
+  document.getElementById("diff-file-tree").innerHTML = "";
 });
 
 document.getElementById("diff-dialog").addEventListener("keydown", (e) => {
@@ -1371,7 +1459,18 @@ document.getElementById("diff-dialog").addEventListener("keydown", (e) => {
 const ESC_CHARS = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
 function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ESC_CHARS[c]);
+  const value = String(s ?? "");
+  const pattern = /[&<>"']/g;
+  let match = pattern.exec(value);
+  if (!match) return value;
+
+  let html = "";
+  let start = 0;
+  do {
+    html += value.slice(start, match.index) + ESC_CHARS[match[0]];
+    start = match.index + 1;
+  } while ((match = pattern.exec(value)));
+  return html + value.slice(start);
 }
 
 // formatCost renders a card's cumulative agent cost as a dollar amount, or an
