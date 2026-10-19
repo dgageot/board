@@ -75,7 +75,11 @@ func Run() error {
 		if err != nil {
 			return fmt.Errorf("locate Board executable: %w", err)
 		}
-		sessions = tmux.Sessions{CredentialSocket: helper.Socket, Executable: executable}
+		launcher, err := helper.InstallLauncher(executable)
+		if err != nil {
+			return err
+		}
+		sessions = tmux.Sessions{CredentialSocket: helper.Socket, Executable: launcher}
 	}
 
 	b, err := newBoard(ctx, cfg, store, sessions)

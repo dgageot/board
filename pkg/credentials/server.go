@@ -31,10 +31,11 @@ type Server struct {
 }
 
 type environment struct {
-	Values    map[string]string `json:"values"`
-	SSHSocket string            `json:"sshSocket,omitempty"`
-	Signer    string            `json:"signer,omitempty"`
-	Warning   string            `json:"warning,omitempty"`
+	Values     map[string]string `json:"values"`
+	SSHSocket  string            `json:"sshSocket,omitempty"`
+	AuthSocket *string           `json:"authSocket,omitempty"`
+	Signer     string            `json:"signer,omitempty"`
+	Warning    string            `json:"warning,omitempty"`
 }
 
 // Start starts the shared helper. source is the original SSH_AUTH_SOCK.
@@ -53,7 +54,15 @@ func Start(ctx context.Context, dir, source string, inherited []string) (_ *Serv
 	}()
 
 	references := secretReferences(inherited)
-	env := environment{Values: make(map[string]string)}
+	// tmux and shell startup files can retain an obsolete authentication socket.
+	// An empty value explicitly removes it; older helpers omit this field.
+	authSocket := ""
+	for _, entry := range inherited {
+		if value, ok := strings.CutPrefix(entry, "SSH_AUTH_SOCK="); ok {
+			authSocket = value
+		}
+	}
+	env := environment{Values: make(map[string]string), AuthSocket: &authSocket}
 	if source != "" {
 		env.SSHSocket = filepath.Join(dir, "agent.sock")
 		if source == env.SSHSocket {
@@ -67,7 +76,7 @@ func Start(ctx context.Context, dir, source string, inherited []string) (_ *Serv
 		// the signing subprocess sees the proxy; SSH fetch/push keep their agent.
 		script := filepath.Join(dir, "sign")
 		content := "#!/bin/sh\nexec env SSH_AUTH_SOCK=" + shellescape.Quote(env.SSHSocket) + " " + shellescape.Quote(signer) + " \"$@\"\n"
-		if err := os.WriteFile(script, []byte(content), 0o700); err != nil {
+		if err := writeExecutable(script, strings.NewReader(content)); err != nil {
 			return nil, fmt.Errorf("write signing helper: %w", err)
 		}
 		env.Signer = script

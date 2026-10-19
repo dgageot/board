@@ -166,6 +166,81 @@ func TestCloseInterruptsSigning(t *testing.T) {
 	}
 }
 
+func TestProxyRecoversUpstreamConnection(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		request []byte
+		reject  bool
+		retry   bool
+	}{
+		{name: "retry identity listing", request: []byte{11}, retry: true},
+		{name: "never replay signing", request: signingRequest("git")},
+		{name: "reset rejected signing", request: signingRequest("git"), reject: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := socketDir(t)
+			listener, err := listenSocket(dir + "/upstream")
+			require.NoError(t, err)
+			defer func() { _ = listener.Close() }()
+			stale, upstream := net.Pipe()
+			defer func() { _ = upstream.Close() }()
+			proxy := &signingProxy{source: listener.Addr().String(), requests: make(chan struct{}, 1), upstream: stale}
+			defer proxy.close()
+			go func() {
+				defer func() { _ = upstream.Close() }()
+				_, _ = readMessage(upstream)
+				if tc.reject {
+					_ = writeMessage(upstream, []byte{5})
+					// A rejection does not close the connection on the agent's side.
+					_, _ = io.Copy(io.Discard, upstream)
+				}
+			}()
+			freshRequest := make(chan []byte, 1)
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				defer func() { _ = conn.Close() }()
+				request, err := readMessage(conn)
+				if err == nil {
+					freshRequest <- request
+					_ = writeMessage(conn, []byte{12, 0, 0, 0, 0})
+				}
+			}()
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			response, err := proxy.exchange(ctx, tc.request)
+			switch {
+			case tc.retry:
+				require.NoError(t, err)
+				assert.Equal(t, []byte{12, 0, 0, 0, 0}, response)
+			case tc.reject:
+				require.NoError(t, err)
+				assert.Equal(t, []byte{5}, response)
+			default:
+				require.Error(t, err)
+			}
+			if !tc.retry {
+				select {
+				case <-freshRequest:
+					t.Fatal("signing request was replayed")
+				default:
+				}
+				response, err = proxy.exchange(ctx, []byte{11})
+				require.NoError(t, err)
+				assert.Equal(t, []byte{12, 0, 0, 0, 0}, response)
+			}
+			select {
+			case request := <-freshRequest:
+				assert.Equal(t, []byte{11}, request)
+			case <-ctx.Done():
+				t.Fatal("request never reached the fresh connection")
+			}
+		})
+	}
+}
+
 func FuzzPermitted(f *testing.F) {
 	f.Add(signingRequest("git"))
 	f.Add([]byte{11})

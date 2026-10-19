@@ -2,7 +2,9 @@ package credentials
 
 import (
 	"context"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -130,6 +132,106 @@ func TestCommandEnvironment(t *testing.T) {
 	_, err = commandEnvironment([]string{"GIT_CONFIG_COUNT=-1"}, shared)
 	require.Error(t, err)
 }
+
+func TestAuthenticationSocketComesFromBoard(t *testing.T) {
+	for _, socket := range []string{"/current/agent.sock", ""} {
+		t.Run(socket, func(t *testing.T) {
+			var inherited []string
+			if socket != "" {
+				inherited = []string{"SSH_AUTH_SOCK=" + socket}
+			}
+			s, err := Start(t.Context(), socketDir(t)+"/helper", "/signing-only/agent.sock", inherited)
+			require.NoError(t, err)
+			defer s.Close()
+			shared, err := fetchEnvironment(t.Context(), s.Socket)
+			require.NoError(t, err)
+			env, err := commandEnvironment([]string{"SSH_AUTH_SOCK=/stale/tmux.sock"}, shared)
+			require.NoError(t, err)
+			assert.NotContains(t, env, "SSH_AUTH_SOCK=/stale/tmux.sock")
+			assert.NotContains(t, env, "SSH_AUTH_SOCK=/signing-only/agent.sock")
+			if socket != "" {
+				assert.Contains(t, env, "SSH_AUTH_SOCK="+socket)
+			} else {
+				for _, entry := range env {
+					assert.False(t, strings.HasPrefix(entry, "SSH_AUTH_SOCK="))
+				}
+			}
+		})
+	}
+}
+
+func TestAuthenticationSocketReference(t *testing.T) {
+	dir := socketDir(t)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "op"), []byte("#!/bin/sh\ncase \"$3\" in *good*) printf /resolved/agent.sock; exit 0;; esac\nexit 1\n"), 0o700))
+	for _, name := range []string{"good", "broken"} {
+		t.Run(name, func(t *testing.T) {
+			s, err := Start(t.Context(), dir+"/"+name, "", []string{"SSH_AUTH_SOCK=op://test/" + name})
+			require.NoError(t, err)
+			defer s.Close()
+			shared, err := fetchEnvironment(t.Context(), s.Socket)
+			require.NoError(t, err)
+			env, err := commandEnvironment([]string{"SSH_AUTH_SOCK=/stale"}, shared)
+			require.NoError(t, err)
+			if name == "good" {
+				assert.Contains(t, env, "SSH_AUTH_SOCK=/resolved/agent.sock")
+			} else {
+				assert.Contains(t, env, "SSH_AUTH_SOCK=")
+			}
+		})
+	}
+}
+
+func TestLauncherSurvivesOriginalRemoval(t *testing.T) {
+	dir := socketDir(t)
+	cache := t.TempDir()
+	t.Setenv("HOME", cache)
+	t.Setenv("XDG_CACHE_HOME", cache)
+	s, err := Start(t.Context(), dir+"/helper", "", nil)
+	require.NoError(t, err)
+	defer s.Close()
+	source := filepath.Join(dir, "original")
+	require.NoError(t, os.WriteFile(source, []byte("#!/bin/sh\nprintf durable"), 0o700))
+	launcher, err := s.InstallLauncher(source)
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(source))
+	out, err := exec.CommandContext(t.Context(), launcher).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	assert.Equal(t, "durable", string(out))
+	info, err := os.Stat(launcher)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+
+	// A failed replacement must leave the working launcher intact.
+	_, err = s.InstallLauncher(source)
+	require.Error(t, err)
+	out, err = exec.CommandContext(t.Context(), launcher).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	assert.Equal(t, "durable", string(out))
+}
+
+func TestWriteExecutableReplacesAtomically(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "helper")
+	require.NoError(t, writeExecutable(path, strings.NewReader("original")))
+	// Fail after writing part of the replacement; the published file survives.
+	err := writeExecutable(path, io.MultiReader(strings.NewReader("partial"), failingReader{}))
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "original", string(content))
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Len(t, entries, 1, "temporary file must be cleaned up")
+	require.NoError(t, writeExecutable(path, strings.NewReader("replacement")))
+	content, err = os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "replacement", string(content))
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
 func TestCredentialsAbsentPreservesSigner(t *testing.T) {
 	result, err := commandEnvironment([]string{"SSH_AUTH_SOCK=/original", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=gpg.ssh.program", "GIT_CONFIG_VALUE_0=my-signer"}, environment{})

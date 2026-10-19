@@ -86,6 +86,20 @@ func (p *signingProxy) exchange(ctx context.Context, request []byte) ([]byte, er
 		return nil, err
 	}
 
+	response, err := p.exchangeOnce(ctx, request)
+	// Listing keys is safe to replay after a stale connection. Signing is not:
+	// a lost response does not mean the signature (or approval) never happened.
+	if err != nil && len(request) == 1 && request[0] == 11 {
+		return p.exchangeOnce(ctx, request)
+	}
+	return response, err
+}
+
+// exchangeOnce runs with exclusive ownership of p.requests.
+func (p *signingProxy) exchangeOnce(ctx context.Context, request []byte) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -115,15 +129,15 @@ func (p *signingProxy) exchange(ctx context.Context, request []byte) ([]byte, er
 	if err == nil {
 		response, err = readMessage(conn)
 	}
-	if err != nil {
+	if err != nil || (len(response) == 1 && response[0] == 5) {
+		// A rejected request can reflect expired authorization on this connection.
+		// Return the failure, but let the next request establish a fresh session.
 		_ = conn.Close()
 		p.mu.Lock()
 		p.upstream = nil
 		p.mu.Unlock()
-		// Never replay a failed signing request: it may already have prompted.
-		return nil, err
 	}
-	return response, nil
+	return response, err
 }
 
 func (p *signingProxy) close() {

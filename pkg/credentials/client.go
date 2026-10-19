@@ -84,6 +84,13 @@ func commandEnvironment(current []string, shared environment) ([]string, error) 
 			}
 		}
 	}
+	if shared.AuthSocket != nil {
+		delete(values, "SSH_AUTH_SOCK")
+		if *shared.AuthSocket != "" {
+			values["SSH_AUTH_SOCK"] = *shared.AuthSocket
+		}
+	}
+	// Resolved references (including empty failed lookups) take precedence.
 	maps.Copy(values, shared.Values)
 	if shared.SSHSocket != "" {
 		// Append to Git's process-local config, preserving any existing entries.

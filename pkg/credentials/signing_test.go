@@ -39,7 +39,7 @@ func TestGitSigning(t *testing.T) {
 	run(t, env, "", "ssh-add", key)
 	require.NoError(t, os.Remove(key)) // Only the agent has the private key now.
 
-	s, err := Start(t.Context(), filepath.Join(dir, "helper with spaces"), upstream, nil)
+	s, err := Start(t.Context(), filepath.Join(dir, "helper with spaces"), upstream, env)
 	require.NoError(t, err)
 	defer s.Close()
 	shared, err := fetchEnvironment(t.Context(), s.Socket)

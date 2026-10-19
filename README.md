@@ -57,8 +57,12 @@ credential helper. No agent YAML or per-card setup is needed.
   through one persistent connection owned by Board. The private key stays in
   1Password. Your existing SSH signing key and `commit.gpgsign` configuration
   still apply; Board overrides only the signing program, in each agent's
-  environment. Ordinary SSH authentication (including fetch/push) keeps its
-  original agent. For a custom socket path, set `BOARD_SSH_AUTH_SOCK` explicitly.
+  environment. Ordinary SSH authentication (including fetch/push) uses Board's
+  inherited `SSH_AUTH_SOCK`, not a stale value from tmux or the signing proxy.
+  For a custom signing socket path, set `BOARD_SSH_AUTH_SOCK` explicitly.
+  Disconnected signing connections are reopened; rejected requests reset the
+  connection for the next attempt. Signing requests are never automatically
+  replayed, so retry a failed commit after unlocking or restarting 1Password.
 - **1Password secrets:** Board discovers inherited environment variables whose
   values start with `op://`. On the first card launch, it resolves each distinct
   reference once and caches the results in memory for all cards. Variables
@@ -91,13 +95,19 @@ processes retain their environment after Board exits. Docker Agent may itself
 stage MCP credentials in temporary files; Board does not change that behavior.
 
 Board must stay running to sign. Stable socket paths let already-configured
-cards resume signing after a Board restart. Cards that were running before
-this feature was enabled need their agent relaunched to receive the setup.
+cards resume signing after a Board restart. Board also keeps a private copy of
+its credential launcher in the user cache directory, so cleaning up a `go run`
+build or replacing the original binary does not prevent new cards from starting. Cards that were
+running before this feature was enabled need their agent relaunched to receive
+the setup.
 1Password can still require approval after locking or expiration, or for every
 request if your policy requires it; the helper does not bypass that policy.
 
 Leave `BOARD_CREDENTIALS` unset (or use any value other than `1`) to preserve
 normal launch behavior without either integration. Changing this setting does
 not reconfigure already-running agents; relaunch them after restarting Board.
+Likewise, restart Board with the current `SSH_AUTH_SOCK` and relaunch affected
+agents if your authentication socket changes. Rotated `op://` secrets also need
+a Board restart and agent relaunch; they are separate from SSH signing sessions.
 Only one credential-enabled Board can run per user and temp directory. Use the
 same temp directory across restarts to preserve socket paths.
