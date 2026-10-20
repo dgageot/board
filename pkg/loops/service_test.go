@@ -2,14 +2,17 @@ package loops
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"modernc.org/sqlite"
 )
 
 type fakeRunner struct {
@@ -235,5 +238,55 @@ func TestCancelExperimentChild(t *testing.T) {
 		assert.Equal(t, "canceled", job.Status)
 	case <-time.After(time.Second):
 		t.Fatal("child cancellation did not complete")
+	}
+}
+
+func TestExperimentPublicationRegistersCancellationAtomically(t *testing.T) {
+	published := make(chan string, 1)
+	release := make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(unblock)
+	function := "publish_" + newID()
+	require.NoError(t, sqlite.RegisterScalarFunction(function, 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		id, ok := args[0].(string)
+		if !ok {
+			return nil, errors.New("invalid published id")
+		}
+		published <- id
+		<-release
+		return int64(0), nil
+	}))
+	store := testStore(t)
+	loop := testLoop(t, store)
+	require.NoError(t, func() error {
+		_, err := store.db.Exec("CREATE TRIGGER publication AFTER INSERT ON loop_jobs BEGIN SELECT " + function + "(NEW.id); END")
+		return err
+	}())
+	service, err := NewService(t.Context(), store, fakeRunner{run: func(ctx context.Context, _ Request, _ func(Result)) (Result, error) {
+		<-ctx.Done()
+		return Result{}, ctx.Err()
+	}}, "auto", func() {})
+	require.NoError(t, err)
+	// Keep the child queued even after publication completes.
+	for range cap(service.slots) {
+		service.slots <- struct{}{}
+	}
+	done := make(chan Job, 1)
+	go func() { done <- service.experimentJob(t.Context(), loop.ID, "v1", "test", "input", nil) }()
+	id := <-published
+	locked := !service.mu.TryLock()
+	if !locked {
+		service.mu.Unlock()
+	}
+	assert.True(t, locked, "Cancel must not pass publication before registration")
+	canceled := make(chan struct{})
+	go func() { service.Cancel(id); close(canceled) }()
+	unblock()
+	<-canceled
+	select {
+	case job := <-done:
+		assert.Equal(t, "canceled", job.Status)
+	case <-time.After(time.Second):
+		t.Fatal("published job ignored cancellation")
 	}
 }

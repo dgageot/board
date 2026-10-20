@@ -94,19 +94,21 @@ func (s *Service) persistRound(round Round) {
 }
 
 func (s *Service) experimentJob(ctx context.Context, loopID, versionID, kind, input string, config []byte) Job {
+	s.mu.Lock()
+	if s.closed || ctx.Err() != nil {
+		s.mu.Unlock()
+		return Job{Status: "canceled", Error: "experiment is stopping"}
+	}
 	job, err := s.store.newJob(ctx, loopID, versionID, kind, input)
 	if err != nil {
+		s.mu.Unlock()
 		return Job{Status: "failed", Error: err.Error()}
 	}
-	// A hanging provider cannot consume the whole round deadline.
+	// Publication and registration share Cancel's lock.
 	jobCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-	s.mu.Lock()
-	if s.closed {
-		cancel()
-	}
 	s.cancel[job.ID] = cancel
 	s.mu.Unlock()
+	defer cancel()
 	defer func() { s.mu.Lock(); delete(s.cancel, job.ID); s.mu.Unlock() }()
 	return s.execute(jobCtx, job, config)
 }
