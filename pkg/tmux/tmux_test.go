@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/GianlucaP106/gotmux/gotmux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -116,4 +117,15 @@ func TestLaunchCommandUsesCredentialHelper(t *testing.T) {
 	require.NoError(t, err, "%s", out)
 	assert.Equal(t, []string{"credential-exec", s.CredentialSocket, "docker", "agent", "run", "agent", "--yolo", "--session", "session", "--listen", "unix:///tmp/control"}, strings.Split(strings.TrimSpace(string(out)), "\n"))
 	assert.Equal(t, agentCommand("agent", "session", "/tmp/control", "", "", ""), Sessions{}.launchCommand("agent", "session", "/tmp/control", "", "", ""))
+}
+
+func TestKillLookupFailure(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "missing.sock")
+	err := killSessionNamed(&gotmux.Tmux{Socket: &gotmux.Socket{Path: socket}}, "not-found")
+	require.ErrorContains(t, err, "find tmux session")
+}
+
+func TestKillNoServer(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	require.NoError(t, Sessions{}.KillSession("not-found"))
 }

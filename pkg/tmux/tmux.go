@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/GianlucaP106/gotmux/gotmux"
@@ -223,13 +224,25 @@ func tmuxRun(args ...string) error {
 
 // KillSession kills a tmux session.
 func (Sessions) KillSession(sessionName string) error {
-	tmux := defaultTmux()
-
-	session, err := tmux.GetSessionByName(sessionName)
-	if err != nil || session == nil {
-		return nil // session doesn't exist, nothing to kill
+	conn, err := net.Dial("unix", SocketPath())
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
+		return nil
 	}
+	if err != nil {
+		return fmt.Errorf("connect to tmux: %w", err)
+	}
+	_ = conn.Close()
+	return killSessionNamed(defaultTmux(), sessionName)
+}
 
+func killSessionNamed(tmux *gotmux.Tmux, sessionName string) error {
+	session, err := tmux.GetSessionByName(sessionName)
+	if err != nil {
+		return fmt.Errorf("find tmux session %q: %w", sessionName, err)
+	}
+	if session == nil {
+		return nil
+	}
 	return session.Kill()
 }
 
