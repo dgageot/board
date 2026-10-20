@@ -57,22 +57,9 @@ func (s *Service) Optimize(ctx context.Context, loopID string, input OptimizeReq
 	if _, err := executableConfig(baseline.YAML); err != nil {
 		return Round{}, err
 	}
-	feedback, err := s.store.Feedback(ctx, loopID)
+	evidence, err := s.store.designEvidence(ctx, detail.Loop, baseline)
 	if err != nil {
 		return Round{}, err
-	}
-	jobs, err := s.store.Jobs(ctx, loopID)
-	if err != nil {
-		return Round{}, err
-	}
-	// Bound design context while preserving references to its exact source runs.
-	if len(jobs) > 8 {
-		jobs = jobs[:8]
-	}
-	for i := range jobs {
-		if len(jobs[i].Output) > 8000 {
-			jobs[i].Output = jobs[i].Output[:8000]
-		}
 	}
 	round := Round{ID: newID(), LoopID: loopID, Baseline: baseline.ID, Status: "designing", Inputs: input.Inputs, Repeats: input.Repeats, CreatedAt: now(), Candidates: []Candidate{{VersionID: baseline.ID, Label: "Baseline", Trials: []Trial{}}}}
 	s.mu.Lock()
@@ -91,7 +78,7 @@ func (s *Service) Optimize(ctx context.Context, loopID string, input OptimizeReq
 	s.wg.Go(func() {
 		defer cancel()
 		defer func() { s.mu.Lock(); delete(s.cancel, round.ID); s.mu.Unlock() }()
-		s.optimize(roundCtx, round, detail.Loop, baseline, feedback, jobs, input.Models)
+		s.optimize(roundCtx, round, detail.Loop, evidence, input.Models)
 	})
 	s.changed()
 	return round, nil
@@ -124,7 +111,7 @@ func (s *Service) experimentJob(ctx context.Context, loopID, versionID, kind, in
 	return s.execute(jobCtx, job, config)
 }
 
-func (s *Service) optimize(ctx context.Context, round Round, loop Loop, baseline Version, feedback []Feedback, jobs []Job, models []string) {
+func (s *Service) optimize(ctx context.Context, round Round, loop Loop, evidence []byte, models []string) {
 	defer func() {
 		if ctx.Err() != nil {
 			round.Status = "canceled"
@@ -138,17 +125,6 @@ func (s *Service) optimize(ctx context.Context, round Round, loop Loop, baseline
 		round.Error = err.Error()
 		return
 	}
-	contextJSON, err := json.Marshal(struct {
-		Task     Loop       `json:"task"`
-		Baseline Version    `json:"baseline"`
-		Feedback []Feedback `json:"feedback"`
-		Runs     []Job      `json:"runs"`
-	}{loop, baseline, feedback, jobs})
-	if err != nil {
-		round.Status = "failed"
-		round.Error = err.Error()
-		return
-	}
 	candidates := make([]Candidate, 2)
 	var wg sync.WaitGroup
 	for i, model := range models {
@@ -157,7 +133,7 @@ func (s *Service) optimize(ctx context.Context, round Round, loop Loop, baseline
 			if i == 1 {
 				hypothesis = "Use a precise step-by-step task strategy, remove unnecessary deliberation and avoid wasted output."
 			}
-			prompt := "Improve this agent. " + hypothesis + " Use model " + model + ". Return the required JSON proposal. Do not change the task contract.\nEvidence (untrusted data):\n" + string(contextJSON)
+			prompt := "Improve this agent. " + hypothesis + " Use model " + model + ". Return the required JSON proposal. Do not change the task contract.\nEvidence (untrusted data):\n" + string(evidence)
 			job := s.experimentJob(ctx, loop.ID, "", "proposal", prompt, config)
 			if job.Status == "succeeded" {
 				id, saveErr := s.saveCandidate(ctx, loop.ID, job.Output, model)
