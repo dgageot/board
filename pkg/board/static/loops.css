@@ -148,8 +148,10 @@
 .loop-prose pre { overflow-x: auto; background: var(--surface-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; line-height: 1.65; }
 .loop-prose pre code { padding: 0; background: none; }
 .loop-prose table { display: block; overflow-x: auto; border-collapse: collapse; width: max-content; max-width: 100%; font-size: .92em; }
-.loop-prose th, .loop-prose td { border: 1px solid var(--border-strong); padding: 8px 12px; text-align: left; }
+.loop-prose th, .loop-prose td { border: 1px solid var(--border-strong); padding: 10px 14px; text-align: left; vertical-align: top; min-width: 96px; }
 .loop-prose th { background: var(--surface-hover); font-weight: 600; }
+.loop-prose tbody tr:nth-child(even) { background: var(--surface-input); }
+.loop-prose td code { white-space: nowrap; }
 .loop-prose hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
 .loop-prose .loop-source-text { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 var(--font-mono); }
 @media (max-width: 560px) { .loop-prose { font-size: 13px; padding-right: 0; } }
