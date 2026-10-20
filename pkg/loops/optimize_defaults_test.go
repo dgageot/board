@@ -63,3 +63,19 @@ func TestOptimizeDefaultKeepsInitialVersionUntilOneIsPromoted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, candidate.ID, promoted.Baseline)
 }
+
+func TestCustomOptimizationAllowsKeepingEitherCandidateModel(t *testing.T) {
+	for _, models := range [][]string{{"openai/test", ""}, {"", "openai/test"}} {
+		t.Run(models[0]+"-"+models[1], func(t *testing.T) {
+			service, store, loop, input := cycleFixture(t, fakeRunner{run: func(ctx context.Context, _ Request, _ func(Result)) (Result, error) {
+				<-ctx.Done()
+				return Result{}, ctx.Err()
+			}})
+			input.Models = models
+			round, err := service.Optimize(t.Context(), loop.ID, input)
+			require.NoError(t, err)
+			service.Cancel(round.ID)
+			assert.Equal(t, "canceled", finalRound(t, service, store, loop.ID).Status)
+		})
+	}
+}

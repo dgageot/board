@@ -38,7 +38,7 @@ func (s *Service) Optimize(ctx context.Context, loopID string, input OptimizeReq
 		return Round{}, fmt.Errorf("%w: test inputs exceed 64 KiB", ErrInvalid)
 	}
 	for _, model := range input.Models {
-		if !modelReference.MatchString(model) {
+		if model != "" && !modelReference.MatchString(model) {
 			return Round{}, fmt.Errorf("%w: invalid candidate model", ErrInvalid)
 		}
 	}

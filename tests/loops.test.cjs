@@ -576,3 +576,14 @@ test('iterative candidates need confirmation and only the winner is offered for 
  round.winner='other';
  assert.match(renderRound(round,jobs,[{id:'v2',number:2}],''),/data-promote="v2"[^>]*disabled/);
 });
+
+test('custom model settings preserve blank choices without substituting auto', async () => {
+ for(const models of [['openai/test',''],['','openai/test'],['','']]) {
+  const h=loopAppHarness();await h.navigate('first');await h.action('optimize-settings');
+  h.element('loop-test-project').value='project-first';h.element('loop-test-inputs').value='input';h.element('loop-test-repeats').value='2';
+  h.element('loop-model-one').value=models[0];h.element('loop-model-two').value=models[1];
+  await h.submit('loop-optimize-form');
+  const request=h.calls.find((call)=>call.path==='/loops/first/optimize');
+  assert.deepEqual(JSON.parse(request.options.body).models,models.some(Boolean)?models:[]);
+ }
+});
