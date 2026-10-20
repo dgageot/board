@@ -68,7 +68,15 @@ func executableConfig(config string) ([]byte, error) {
 	}
 	root.MaxIterations = 3
 	parsed.Agents["root"] = root
-	return yaml.Marshal(parsed)
+	canonical, err := yaml.Marshal(parsed)
+	if err != nil {
+		return nil, err
+	}
+	// Decode before checking: YAML escapes can conceal template delimiters.
+	if bytes.Contains(canonical, []byte("${")) {
+		return nil, fmt.Errorf("%w: environment expansion is disabled in Loops", ErrInvalid)
+	}
+	return canonical, nil
 }
 
 // proposal is deliberately narrower than executable YAML.

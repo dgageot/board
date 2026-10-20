@@ -96,3 +96,15 @@ func TestProcessRunnerCanceled(t *testing.T) {
 	_, err := runner.Run(ctx, Request{ID: newID(), Input: "input"}, func(Result) {})
 	require.Error(t, err)
 }
+
+func TestExecutableConfigRejectsEscapedExpansion(t *testing.T) {
+	for _, field := range []string{"instruction", "description"} {
+		config := "agents:\n  root:\n    model: auto\n    instruction: summarize\n"
+		if field == "instruction" {
+			config = "agents:\n  root:\n    model: auto\n"
+		}
+		config += "    " + field + ": \"\\u0024{env.HOME}\"\n"
+		_, err := executableConfig(config)
+		require.ErrorIs(t, err, ErrInvalid)
+	}
+}
