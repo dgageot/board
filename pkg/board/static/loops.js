@@ -68,7 +68,7 @@ function renderActivity(activity, version) {
   if (activity.job && busyJob(activity.job)) action = `<button class="btn btn-ghost" data-cancel="${escapeHTML(activity.job.id)}">Stop</button>`;
   else if (activity.round) action = `<button class="btn btn-ghost" data-cancel-round="${escapeHTML(activity.round.id)}">Stop</button>`;
   else if (!version) action = `<button class="btn btn-primary" data-action="generate">${activity.phase === 'failed' ? 'Retry creation' : 'Create agent'}</button>`;
-  else action = `<button class="btn btn-primary" data-action="run">${activity.phase === 'failed' ? 'Retry run' : 'Run'}</button>`;
+  else action = `<button class="btn btn-primary" data-action="run">${activity.phase === 'failed' ? 'Retry analysis' : 'Run read-only'}</button>`;
   const running = ['generating', 'running', 'optimizing'].includes(activity.phase);
   return `<section class="loop-activity ${activity.phase}" aria-label="Current activity"><div class="loop-activity-mark ${running ? 'spinning' : ''}" aria-hidden="true">${running ? '↻' : activity.phase === 'failed' ? '!' : '✓'}</div>
     <div class="loop-activity-copy"><h3 role="status" aria-live="polite">${escapeHTML(activity.title)}</h3>${activity.note ? `<p>${escapeHTML(activity.note)}</p>` : ''}</div>${action}</section>`;
@@ -98,7 +98,7 @@ function renderResult(job, loopID, feedback, sourceView = false) {
 }
 
 export function renderLoopDetail(detail, selectedVersion, sourceJob = '') {
-  const { loop, versions, jobs = [], rounds = [], feedback = [] } = detail;
+  const { loop, versions, jobs = [], rounds = [], feedback = [], projectTasks = [] } = detail;
   const version = selectedLoopVersion(detail, selectedVersion);
   const activity = loopActivity(detail);
   const latestRun = activity.phase === 'running' ? activity.job : jobs.find((job) => job.kind === 'run');
@@ -106,6 +106,8 @@ export function renderLoopDetail(detail, selectedVersion, sourceJob = '') {
   return `<div class="loop-detail-heading"><div><h2>${escapeHTML(loop.name)}</h2></div>
     <span class="loop-badge">${version ? `v${version.number}${version.id === loop.activeVersion ? ' · active' : ''}` : 'No version'}</span></div>
     ${renderActivity(activity, version)}
+    <section class="loop-panel"><div class="loop-section-heading"><div><h3>Project execution</h3><p class="loop-muted">For file changes, tests and commits. Uses the project’s Board agent.</p></div><button class="btn btn-ghost" data-action="project-task">Run as Board task</button></div>
+    ${projectTasks.map((task) => renderProjectTask(task)).join('')}</section>
     ${latestRun ? renderResult(latestRun, loop.id, feedback, sourceJob === latestRun.id) : ''}
     <details class="loop-secondary loop-panel" data-inspect="task"><summary>Task</summary><div class="loop-contract"><section><h3>Task</h3><p>${escapeHTML(loop.description)}</p></section><section><h3>Success criteria</h3><p>${escapeHTML(loop.criteria)}</p></section></div></details>
     ${version ? `<section class="loop-panel"><div class="loop-section-heading"><h3>Optimization</h3><button class="btn btn-primary" data-action="optimize" ${inProgress ? 'disabled' : ''}>Optimize</button></div>
@@ -120,6 +122,15 @@ export function renderLoopDetail(detail, selectedVersion, sourceJob = '') {
     <details class="loop-secondary loop-panel" data-inspect="history"><summary>History · ${jobs.length} ${jobs.length === 1 ? 'attempt' : 'attempts'}</summary>
       ${jobs.length ? jobs.map((job) => renderJob(job, loop.id, feedback)).join('') : '<p class="loop-hint">No attempts.</p>'}</details>
     <details class="loop-secondary loop-panel" data-inspect="spend"><summary>Costs</summary>${renderSpend(jobs)}</details>`;
+}
+
+export function renderProjectTask(task) {
+  const card = task.card;
+  const label = !card ? 'Card removed' : task.status !== 'launched' ? task.status === 'reserved' || task.status === 'launch_uncertain' ? 'Launch unconfirmed — inspect before retrying' : 'Launch failed' : ({ starting: 'Starting', running: 'Running', waiting: 'Idle — verify results', paused: 'Paused', error: 'Needs attention' })[card.status] || card.status;
+  return `<div class="loop-project-task"><div class="loop-section-heading"><strong>${escapeHTML(task.projectName)}</strong><span class="loop-muted">${escapeHTML(label)}</span></div>
+    <p class="loop-project-context">${escapeHTML(task.agent)}${card ? ` · ${escapeHTML(card.branch)}` : ''}</p>
+    ${task.error ? `<p class="loop-job-error">${escapeHTML(task.error)}</p>` : ''}
+    ${card ? `<div class="loop-actions"><button class="btn btn-ghost btn-small" data-task-terminal="${escapeHTML(card.id)}">Open agent</button><button class="btn btn-ghost btn-small" data-task-diff="${escapeHTML(card.id)}">Diff</button></div>` : ''}</div>`;
 }
 
 function formatMetricCost(cost) { return cost == null ? 'Cost unknown' : `$${cost.toFixed(cost < 1 ? 4 : 2)}`; }
@@ -273,7 +284,7 @@ export function updateLoopInspector(container, detail, selectedVersion, sourceJo
   container.scrollTop = scroll;
 }
 
-export function initLoops(api) {
+export function initLoops(api, boardActions = {}) {
   const byID = (id) => document.getElementById(id);
   let detail = null;
   let selectedVersion = '';
@@ -285,6 +296,11 @@ export function initLoops(api) {
   let modalLoop = '';
   let importLoop = '';
   let sourceJob = '';
+  let taskLoop = '';
+  let taskRequestID = '';
+  let taskProjects = [];
+  let taskLoading = 0;
+  let taskSubmitting = false;
   const projectLoads = new Map();
   const startingOptimizations = new Set();
 
@@ -324,7 +340,8 @@ export function initLoops(api) {
     const request = ++sequence;
     const id = location.hash.split('/')[1] || '';
     try {
-      const [list, nextDetail] = await Promise.all([api('/loops'), id ? api(`/loops/${encodeURIComponent(id)}`) : null]);
+      const [list, nextDetail, projectTasks] = await Promise.all([api('/loops'), id ? api(`/loops/${encodeURIComponent(id)}`) : null, id ? api(`/loops/${encodeURIComponent(id)}/tasks`) : []]);
+      if (nextDetail) nextDetail.projectTasks = projectTasks;
       if (request !== sequence) return;
       detail = nextDetail;
       if (detail) selectedVersion = selectedLoopVersion(detail, selectedVersion)?.id || '';
@@ -335,7 +352,7 @@ export function initLoops(api) {
       byID('loops-welcome-title').textContent = list.length ? 'Select a loop' : 'No loops yet';
       if (detail) {
         updateLoopInspector(byID('loop-detail'), detail, selectedVersion, sourceJob);
-        if ((detail.jobs || []).some((job) => ['queued', 'running'].includes(job.status)) || (detail.rounds || []).some((round) => ['designing', 'testing'].includes(round.status))) refreshTimer = setTimeout(refreshLoops, 1000);
+        if ((detail.projectTasks || []).some((task) => task.card && ['starting', 'running', 'paused'].includes(task.card.status)) || (detail.jobs || []).some((job) => ['queued', 'running'].includes(job.status)) || (detail.rounds || []).some((round) => ['designing', 'testing'].includes(round.status))) refreshTimer = setTimeout(refreshLoops, 1000);
       }
     } catch (error) {
       if (request === sequence) notice(error.message, true);
@@ -358,6 +375,42 @@ export function initLoops(api) {
     if (button) { selectedVersion = ''; location.hash = `loops/${button.dataset.loop}`; }
   });
   byID('loop-detail').addEventListener('click', async (event) => {
+    const projectTask = event.target.closest('[data-action="project-task"]');
+    if (projectTask && detail) {
+      if (taskSubmitting) return;
+      taskLoop = detail.loop.id;
+      taskRequestID = crypto.randomUUID();
+      byID('loop-task-consent').checked = false;
+      taskProjects = [];
+      byID('loop-task-agent').textContent = '';
+      byID('loop-project-task-dialog').showModal();
+      const request = ++taskLoading;
+      const preferred = preferredProject();
+      const select = byID('loop-task-project');
+      select.disabled = true;
+      select.innerHTML = '<option value="">Loading projects…</option>';
+      try {
+        const projects = await api('/projects');
+        if (request !== taskLoading) return;
+        taskProjects = projects;
+        select.innerHTML = '<option value="">Choose a project…</option>' + projects.map((project) => `<option value="${escapeHTML(project.id)}">${escapeHTML(project.name)}</option>`).join('');
+        select.value = projects.some((project) => project.id === preferred) ? preferred : '';
+        select.disabled = false;
+        byID('loop-task-project-status').textContent = projects.length ? '' : 'Add a project in Board → Projects.';
+        showTaskAgent();
+      } catch (error) { if (request === taskLoading) byID('loop-task-project-status').textContent = error.message; }
+      return;
+    }
+    const terminal = event.target.closest('[data-task-terminal]');
+    const diff = event.target.closest('[data-task-diff]');
+    if ((terminal || diff) && detail) {
+      const id = terminal?.dataset.taskTerminal || diff.dataset.taskDiff;
+      const task = detail.projectTasks?.find((item) => item.card?.id === id);
+      if (!task) return;
+      try { await (terminal ? boardActions.openAgent?.(task.card) : boardActions.openDiff?.(task.card)); }
+      catch (error) { notice(error.message, true); }
+      return;
+    }
     const source = event.target.closest('[data-source]');
     if (source && detail) {
       sourceJob = sourceJob === source.dataset.source ? '' : source.dataset.source;
@@ -530,6 +583,31 @@ export function initLoops(api) {
         models: [byID('loop-model-one').value.trim(), byID('loop-model-two').value.trim()].some(Boolean) ? [byID('loop-model-one').value.trim(), byID('loop-model-two').value.trim()] : [],
       }) });
       await refreshLoops();
+    });
+  });
+  function showTaskAgent() {
+    const project = taskProjects.find((item) => item.id === byID('loop-task-project').value);
+    byID('loop-task-agent').textContent = project ? `${project.agent} · ${project.repoPath}` : '';
+    byID('loop-task-consent').checked = false;
+  }
+  byID('loop-task-project').addEventListener('change', () => {
+    if (taskSubmitting) return;
+    taskRequestID = crypto.randomUUID();
+    showTaskAgent();
+  });
+  byID('loop-project-task-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (taskSubmitting) return;
+    const project = taskProjects.find((item) => item.id === byID('loop-task-project').value);
+    if (!project || !byID('loop-task-consent').checked) return;
+    const loopID = taskLoop, requestId = taskRequestID;
+    taskSubmitting = true;
+    byID('loop-task-project').disabled = true;
+    submit(event.target, async () => {
+      try {
+        await api(`/loops/${loopID}/tasks`, { method: 'POST', body: JSON.stringify({ requestId, projectId: project.id, repoPath: project.repoPath, agent: project.agent, confirmed: true }) });
+        await refreshLoops();
+      } finally { taskSubmitting = false; byID('loop-task-project').disabled = false; }
     });
   });
   window.addEventListener('hashchange', route);

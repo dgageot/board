@@ -93,13 +93,26 @@
   </dialog>
 
   <dialog id="loop-run-dialog" class="dialog-large" aria-labelledby="loop-run-title">
-    <div class="dialog-header"><span id="loop-run-title">Run agent</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
+    <div class="dialog-header"><span id="loop-run-title">Read-only analysis</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
     <form id="loop-run-form" class="dialog-body" autocomplete="off">
       <label>Project<select id="loop-run-project" required><option value="">Choose a project…</option></select></label>
       <p id="loop-run-project-status" class="loop-form-help" role="note"></p>
       <label>Instructions (optional)<textarea id="loop-run-input" rows="5" maxlength="65536" placeholder="Leave blank to use the task."></textarea></label>
       <p class="loop-form-help">Read-only. Sends selected committed files to your model provider; excludes uncommitted changes and skips large, binary and common secret files. 5-minute limit.</p>
       <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Run</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="loop-project-task-dialog" class="dialog-large" aria-labelledby="loop-project-task-title">
+    <div class="dialog-header"><span id="loop-project-task-title">Run as Board task</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
+    <form id="loop-project-task-form" class="dialog-body" autocomplete="off" data-1p-ignore>
+      <label>Project<select id="loop-task-project" required autocomplete="off" data-1p-ignore><option value="">Choose a project…</option></select></label>
+      <p id="loop-task-project-status" class="loop-form-help" role="note"></p>
+      <p id="loop-task-agent" class="loop-project-context"></p>
+      <p class="loop-form-help">Uses the project’s configured agent, not the generated read-only loop agent. Starts from the project’s upstream base in a fresh worktree. This task is not an optimization trial. Idle status is not proof of passing CI; inspect the agent and actual CI result.</p>
+      <p class="loop-job-error">Normal Board privileges: local tools, network and available credentials, with automatic tool approval. The agent can edit files, run commands, sign commits or publish remotely. A worktree is not a security sandbox.</p>
+      <label class="loop-consent"><input id="loop-task-consent" type="checkbox" required autocomplete="off" data-1p-ignore> I authorize this project agent to carry out the task with those privileges.</label>
+      <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Start Board task</button></div>
     </form>
   </dialog>
 

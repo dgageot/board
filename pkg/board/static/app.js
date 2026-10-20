@@ -1744,4 +1744,10 @@ API.browse().then((d) => { homeDir = d.path; }).catch(() => {});
 refresh();
 connectSSE();
 
-initLoops(api);
+initLoops(api, {
+  async openAgent(card) {
+    const info = await API.jumpCard(card.id);
+    await openTerminal(info.session, card.title, card.id);
+  },
+  openDiff(card) { return openDiffDialog(card.id, card.title); },
+});

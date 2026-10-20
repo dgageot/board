@@ -128,3 +128,19 @@ func TestLoopsCopyKeepsOperationalGuidanceWithoutSlogans(t *testing.T) {
 	assert.Contains(t, page, "Sends selected committed files to your model provider")
 	assert.Contains(t, page, "Promotion is manual.")
 }
+
+func TestProjectTaskConsentExplainsExecutionPrivileges(t *testing.T) {
+	handler := testHandler(t)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
+	require.Equal(t, http.StatusOK, rec.Code)
+	_, dialog, found := strings.Cut(rec.Body.String(), `<dialog id="loop-project-task-dialog"`)
+	require.True(t, found)
+	dialog, _, found = strings.Cut(dialog, "</dialog>")
+	require.True(t, found)
+	assert.Contains(t, dialog, `id="loop-task-consent" type="checkbox" required`)
+	assert.Contains(t, dialog, "automatic tool approval")
+	assert.Contains(t, dialog, "not a security sandbox")
+	assert.Contains(t, dialog, "publish remotely")
+	assert.Contains(t, dialog, "not the generated read-only loop agent")
+}

@@ -248,12 +248,13 @@ function loopAppHarness(overrides = {}) {
   const context = vm.createContext({
     document:Object.assign(document,{getElementById:element,body:element('body'),querySelectorAll:()=>[]}),
     window:{addEventListener:(name,callback)=>handlers.set(name,callback)},
-    location:{hash:'#board'},setTimeout,clearTimeout,console, ...markdownModule,
+    location:{hash:'#board'},crypto:require('node:crypto').webcrypto,setTimeout,clearTimeout,console, ...markdownModule,
   });
   const api=async(path,options)=>{
     calls.push({path,options});
     if (overrides.api) { const result = overrides.api(path,options); if(result !== undefined) return result; }
-    if(path==='/projects') return [{id:'project-first',name:'<Project one>',repoPath:'/repo/one'},{id:'project-second',name:'Project two',repoPath:'/repo/two'}];
+    if(path.endsWith('/tasks') && !options?.method) return [];
+    if(path==='/projects') return [{id:'project-first',name:'<Project one>',repoPath:'/repo/one',agent:'project-agent'},{id:'project-second',name:'Project two',repoPath:'/repo/two',agent:'second-agent'}];
     if(path==='/loops') return [fixture('first').loop,fixture('second').loop];
     if(options?.method==='POST') return {id:'imported'};
     return fixture(path.split('/').at(-1));
@@ -586,4 +587,35 @@ test('custom model settings preserve blank choices without substituting auto', a
   const request=h.calls.find((call)=>call.path==='/loops/first/optimize');
   assert.deepEqual(JSON.parse(request.options.body).models,models.some(Boolean)?models:[]);
  }
+});
+
+test('project tasks require fresh explicit consent and submit the reviewed agent', async () => {
+ const h=loopAppHarness();await h.navigate('first');await h.action('project-task');
+ assert.equal(h.element('loop-project-task-dialog').open,true);
+ assert.equal(h.element('loop-task-consent').checked,false);
+ await h.submit('loop-project-task-form');
+ assert.equal(h.calls.filter((call)=>call.path.endsWith('/tasks') && call.options?.method==='POST').length,0);
+ h.element('loop-task-consent').checked=true;
+ await h.submit('loop-project-task-form');
+ const request=h.calls.find((call)=>call.path==='/loops/first/tasks' && call.options?.method==='POST');
+ assert.ok(request);
+ const input=JSON.parse(request.options.body);
+ assert.equal(input.confirmed,true);assert.equal(input.agent,'project-agent');assert.equal(input.repoPath,'/repo/one');assert.ok(input.requestId);
+});
+
+test('idle Board task status never claims verified success', async () => {
+ const {renderProjectTask}=await modulePromise;
+ const html=renderProjectTask({status:'launched',projectName:'Repo',agent:'agent',card:{id:'c',branch:'b',status:'waiting'}});
+ assert.match(html,/Idle — verify results/);
+ assert.doesNotMatch(html,/succeeded|CI passed/);
+ assert.match(html,/data-task-terminal="c"/);
+});
+
+test('project execution is separate from read-only analysis and optimization', async () => {
+ const {renderLoopDetail}=await modulePromise;
+ const detail=inspectorFixture();detail.jobs=[];
+ const html=renderLoopDetail(detail,'v1');
+ assert.match(html,/Run read-only/);
+ assert.match(html,/Run as Board task/);
+ assert.match(html,/Uses the project’s Board agent/);
 });
