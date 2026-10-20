@@ -1,0 +1,40 @@
+{
+  "markdown-it": {
+    "version": "15.0.3",
+    "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.3.tgz",
+    "integrity": "sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ==",
+    "license": "MIT",
+    "file": "markdown-it.mjs",
+    "sha256": "d5432491790141da046b1197353705db03264f40b5727f3b4b591f5aba193e30"
+  },
+  "entities": {
+    "version": "8.1.0",
+    "tarball": "https://registry.npmjs.org/entities/-/entities-8.1.0.tgz",
+    "integrity": "sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA==",
+    "license": "BSD-2-Clause"
+  },
+  "linkify-it": {
+    "version": "6.1.0",
+    "tarball": "https://registry.npmjs.org/linkify-it/-/linkify-it-6.1.0.tgz",
+    "integrity": "sha512-wJ/TwpSDTLepCrQoYWYIExIKg5Zchex2Nn5yk2mFnB+6PtdkHtyLx742md9csRjjOnGkKIS/RrbY7l8D6gT9Vw==",
+    "license": "MIT"
+  },
+  "mdurl": {
+    "version": "2.1.0",
+    "tarball": "https://registry.npmjs.org/mdurl/-/mdurl-2.1.0.tgz",
+    "integrity": "sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg==",
+    "license": "MIT"
+  },
+  "punycode.js": {
+    "version": "2.3.1",
+    "tarball": "https://registry.npmjs.org/punycode.js/-/punycode.js-2.3.1.tgz",
+    "integrity": "sha512-uxFIHU0YlHYhDQtV4R9J6a52SLx28BCjT+4ieh7IGbgwVJWO+km431c4yRlREUAsAmt/uMjQUyQHNEPf0M39CA==",
+    "license": "MIT"
+  },
+  "uc.micro": {
+    "version": "3.0.0",
+    "tarball": "https://registry.npmjs.org/uc.micro/-/uc.micro-3.0.0.tgz",
+    "integrity": "sha512-U3PppEkleoTnIfi8BozMx3yju3qc/L6SwqWo2Sw+54PX+PX0q9I+r1Um5HCmqD7n9VDX5/v3vQH/AjA6deDdtw==",
+    "license": "MIT"
+  }
+}
