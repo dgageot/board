@@ -212,10 +212,10 @@ test('live refresh restores the exact experiment control instead of a matching v
   detail.rounds=['first','second'].map((id)=>({id,baseline:'v1',status:'testing',inputs:['input'],repeats:1,candidates:[candidate]}));
   updateLoopInspector(container,detail,'v1');
   assert.equal(state.buttons.length,3);
-  doc.activeElement=state.buttons[2];
+  doc.activeElement=state.buttons.find((button)=>button.dataset.focus==='inspect-second-v1');
   detail.jobs[0].output='Changed output';
   updateLoopInspector(container,detail,'v1');
-  assert.equal(doc.activeElement,state.buttons[2]);
+  assert.equal(doc.activeElement,state.buttons.find((button)=>button.dataset.focus==='inspect-second-v1'));
   assert.equal(doc.activeElement.dataset.focus,'inspect-second-v1');
 });
 
@@ -332,4 +332,49 @@ test('loop creation sends the first-run project instead of example text', async 
  await h.submit('loop-new-form');
  const request=h.calls.find((call)=>call.path==='/loops' && call.options?.method==='POST');
  assert.deepEqual(JSON.parse(request.options.body),{name:'Review',description:'Review code',criteria:'Precise',projectId:'project-first'});
+});
+
+test('newly created loop clearly shows automatic agent creation without another generate action', async () => {
+  const { renderLoopDetail } = await modulePromise;
+  const detail={loop:{id:'new',name:'Review',description:'Review code',criteria:'Accurate'},versions:[],jobs:[{id:'generation',kind:'generate',status:'running',metrics:{}}]};
+  const html=renderLoopDetail(detail,'');
+  assert.match(html,/Creating your agent/);
+  assert.match(html,/role="status" aria-live="polite"/);
+  assert.doesNotMatch(html,/data-action="generate"/);
+  assert.match(html,/data-cancel="generation"/);
+  assert.match(html,/<details[^>]+data-inspect="agent-config"/);
+});
+
+test('running agent is distinct from agent generation and has visible live output', async () => {
+  const { renderLoopDetail, loopActivity } = await modulePromise;
+  const detail=inspectorFixture();
+  const html=renderLoopDetail(detail,'v1');
+  assert.equal(loopActivity(detail).phase,'running');
+  assert.match(html,/Agent running/);
+  assert.match(html,/Live output/);
+  assert.match(html,/First/);
+  assert.doesNotMatch(html,/data-action="generate"/);
+  assert.equal((html.match(/data-inspect="job-j1"/g)||[]).length,1);
+});
+
+test('failed generation offers retry while a ready agent offers a run', async () => {
+  const { renderLoopDetail }=await modulePromise;
+  const detail={loop:{id:'new',name:'Review',description:'Task',criteria:'Good'},versions:[],jobs:[{id:'generation',kind:'generate',status:'failed',error:'Provider unavailable',metrics:{}}]};
+  assert.match(renderLoopDetail(detail,''),/Agent creation failed/);
+  assert.match(renderLoopDetail(detail,''),/Retry agent creation/);
+  detail.jobs[0].status='succeeded';
+  detail.versions=[{id:'v1',number:1,yaml:'agents: {}'}];
+  const html=renderLoopDetail(detail,'v1');
+  assert.match(html,/Your agent is ready/);
+  assert.match(html,/Run on a project/);
+  assert.doesNotMatch(html,/Retry agent creation/);
+});
+
+test('selected loop sidebar reflects its current running activity', async () => {
+ const { renderLoopList }=await modulePromise;
+ const detail=inspectorFixture();
+ const html=renderLoopList([detail.loop],detail.loop.id,detail);
+ assert.match(html,/Agent running/);
+ assert.match(html,/loop-list-icon spinning/);
+ assert.doesNotMatch(html,/Draft/);
 });

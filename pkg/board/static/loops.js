@@ -2,11 +2,16 @@ const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => 
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[char]);
 
-export function renderLoopList(loops, selected) {
+export function renderLoopList(loops, selected, detail) {
   if (!loops.length) return '<p class="loop-empty-list">Your reusable agents will live here.</p>';
-  return loops.map((loop) => `<button class="loop-list-item ${loop.id === selected ? 'selected' : ''}" data-loop="${escapeHTML(loop.id)}" aria-pressed="${loop.id === selected}">
-    <span class="loop-list-icon" aria-hidden="true">↻</span><span><strong>${escapeHTML(loop.name)}</strong>
-    <small>${loop.activeVersion ? 'Active version' : 'Draft · ready to build'}</small></span><span aria-hidden="true">›</span></button>`).join('');
+  return loops.map((loop) => {
+    const activity = detail?.loop.id === loop.id ? loopActivity(detail) : null;
+    const label = activity?.title || (loop.activeVersion ? 'Active agent' : 'Open loop');
+    const running = activity && ['generating', 'running', 'optimizing'].includes(activity.phase);
+    return `<button class="loop-list-item ${loop.id === selected ? 'selected' : ''}" data-loop="${escapeHTML(loop.id)}" aria-pressed="${loop.id === selected}">
+    <span class="loop-list-icon ${running ? 'spinning' : ''}" aria-hidden="true">↻</span><span><strong>${escapeHTML(loop.name)}</strong>
+    <small>${escapeHTML(label)}</small></span><span aria-hidden="true">›</span></button>`;
+  }).join('');
 }
 
 export function selectedLoopVersion(detail, selectedVersion) {
@@ -38,32 +43,68 @@ function renderSpend(jobs) {
   </div>`).join('')}</section>`;
 }
 
+const busyJob = (job) => job.status === 'queued' || job.status === 'running';
+const liveRound = (round) => round.status === 'designing' || round.status === 'testing';
+
+export function loopActivity(detail) {
+  const jobs = detail.jobs || [];
+  const rounds = detail.rounds || [];
+  const generation = jobs.find((job) => job.kind === 'generate' && busyJob(job));
+  if (generation) return { phase: 'generating', title: generation.status === 'queued' ? 'Agent creation queued' : 'Creating your agent', note: 'Turning your task into a specialized agent. You can leave this page; creation continues in the background.', job: generation };
+  const round = rounds.find(liveRound);
+  if (round) return { phase: 'optimizing', title: 'Optimizing your agent', note: round.status === 'designing' ? 'Designing two alternatives to test against your current version.' : 'Running candidates and checking quality. Your active version stays unchanged.', round };
+  const run = jobs.find((job) => job.kind === 'run' && busyJob(job));
+  if (run) return { phase: 'running', title: run.status === 'queued' ? 'Run queued' : 'Agent running', note: `Working on ${run.project?.name || 'your project'}. Results appear below as they arrive.`, job: run };
+  const latest = jobs.find((job) => job.kind === 'generate' || job.kind === 'run');
+  if (latest && ['failed', 'canceled', 'interrupted'].includes(latest.status)) return { phase: 'failed', title: latest.status === 'failed' ? (latest.kind === 'generate' ? 'Agent creation failed' : 'Run failed') : (latest.kind === 'generate' ? 'Agent creation stopped' : 'Run stopped'), note: latest.error || 'This attempt did not complete. You can retry safely.', job: latest };
+  if (detail.versions.length) return { phase: 'ready', title: latest?.kind === 'run' ? 'Run complete' : 'Your agent is ready', note: latest?.kind === 'run' ? 'Review the result below, then give feedback or start another run.' : 'Run it on a project whenever you’re ready.' };
+  return { phase: 'empty', title: 'Create your agent', note: 'This older loop has no agent yet. Start agent creation to continue.' };
+}
+
+function renderActivity(activity, version) {
+  let action = '';
+  if (activity.job && busyJob(activity.job)) action = `<button class="btn btn-ghost" data-cancel="${escapeHTML(activity.job.id)}">Stop</button>`;
+  else if (activity.round) action = `<button class="btn btn-ghost" data-cancel-round="${escapeHTML(activity.round.id)}">Stop experiment</button>`;
+  else if (!version || activity.job?.kind === 'generate') action = '<button class="btn btn-primary" data-action="generate">Retry agent creation</button>';
+  else action = `<button class="btn btn-primary" data-action="run">${activity.phase === 'failed' ? 'Retry run' : 'Run on a project'} →</button>`;
+  const running = ['generating', 'running', 'optimizing'].includes(activity.phase);
+  return `<section class="loop-activity ${activity.phase}" aria-label="Current activity"><div class="loop-activity-mark ${running ? 'spinning' : ''}" aria-hidden="true">${running ? '↻' : activity.phase === 'failed' ? '!' : '✓'}</div>
+    <div class="loop-activity-copy"><h3 role="status" aria-live="polite">${escapeHTML(activity.title)}</h3><p>${escapeHTML(activity.note)}</p></div>${action}</section>`;
+}
+
+function renderResult(job, loopID, feedback) {
+  return `<section class="loop-panel loop-result"><div class="loop-section-heading"><h3>${busyJob(job) ? 'Live output' : 'Latest result'}</h3><span class="loop-muted">${formatMetricCost(job.metrics?.cost)} · ${((job.metrics?.durationMs || 0) / 1000).toFixed(1)}s</span></div>
+    ${job.project ? `<p class="loop-project-context">${escapeHTML(job.project.name)} · ${escapeHTML(job.project.revision.slice(0, 8))}</p>` : ''}
+    <pre class="loop-output" data-inspect="latest-output-${escapeHTML(job.id)}">${escapeHTML(job.output || (busyJob(job) ? 'Waiting for the first response…' : 'No output was produced.'))}</pre>
+    ${!busyJob(job) ? `<button class="btn btn-ghost" data-feedback="${escapeHTML(job.id)}">Give feedback</button>` : ''}
+    ${feedback.filter((item) => item.jobId === job.id).map((item) => `<p class="loop-feedback-note">${item.rating === 'good' ? '✓' : '✕'} ${escapeHTML(item.note || item.rating)}</p>`).join('')}
+    <details class="loop-secondary" data-inspect="result-details-${escapeHTML(job.id)}"><summary>Run details & logs</summary><p class="loop-muted">${escapeHTML(job.metrics?.model || 'Model not reported')} · ${job.metrics?.calls || 0} calls · ${job.metrics?.inputTokens || 0} input / ${job.metrics?.outputTokens || 0} output tokens</p>
+    <pre class="loop-output" data-inspect="latest-input-${escapeHTML(job.id)}">${escapeHTML(job.input)}</pre>
+    <div class="loop-actions"><a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/events" download>Raw events ↓</a><a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/stderr" download>Process log ↓</a></div></details></section>`;
+}
+
 export function renderLoopDetail(detail, selectedVersion) {
   const { loop, versions, jobs = [], rounds = [], feedback = [] } = detail;
   const version = selectedLoopVersion(detail, selectedVersion);
-  return `<div class="loop-detail-heading"><div><div class="loop-eyebrow">REUSABLE INTELLIGENCE</div><h2>${escapeHTML(loop.name)}</h2></div>
-    <span class="loop-badge">${versions.length} ${versions.length === 1 ? 'version' : 'versions'}</span></div>
-    ${renderSpend(jobs)}
-    <div class="loop-contract"><section><h3>The task</h3><p>${escapeHTML(loop.description)}</p></section>
-    <section><h3>What good looks like</h3><p>${escapeHTML(loop.criteria)}</p></section></div>
-    <section class="loop-panel"><div class="loop-section-heading"><div><h3>Agent versions</h3><p>Immutable snapshots. Experiment without losing what worked.</p></div>
-      <div class="loop-actions"><button class="btn btn-ghost" data-action="import">Import YAML</button><button class="btn btn-primary" data-action="generate" ${jobs.some((job) => job.kind === 'generate' && ['queued', 'running'].includes(job.status)) ? 'disabled' : ''}>✦ Generate agent</button></div></div>
+  const activity = loopActivity(detail);
+  const latestRun = jobs.find((job) => job.kind === 'run');
+  const inProgress = ['generating', 'running', 'optimizing'].includes(activity.phase);
+  return `<div class="loop-detail-heading"><div><div class="loop-eyebrow">LOOP</div><h2>${escapeHTML(loop.name)}</h2></div>
+    <span class="loop-badge">${version ? `v${version.number}${version.id === loop.activeVersion ? ' · active' : ''}` : 'Preparing agent'}</span></div>
+    ${renderActivity(activity, version)}
+    ${latestRun ? renderResult(latestRun, loop.id, feedback) : ''}
+    <details class="loop-secondary loop-panel" data-inspect="task"><summary>Task & quality criteria</summary><div class="loop-contract"><section><h3>The task</h3><p>${escapeHTML(loop.description)}</p></section><section><h3>What good looks like</h3><p>${escapeHTML(loop.criteria)}</p></section></div></details>
+    ${version ? `<section class="loop-panel"><div class="loop-section-heading"><div><h3>Improve this agent</h3><p>Compare alternatives without replacing the version you use.</p></div><button class="btn btn-ghost" data-action="optimize" ${inProgress ? 'disabled' : ''}>Optimize</button></div>
+    ${rounds.map((round) => `<details class="loop-secondary" data-inspect="experiment-${escapeHTML(round.id)}" ${liveRound(round) ? 'open' : ''}><summary>Experiment · ${escapeHTML(round.status)}</summary>${renderRound(round, jobs, versions, loop.activeVersion)}</details>`).join('')}</section>` : ''}
+    <details class="loop-secondary loop-panel" data-inspect="agent-config"><summary>Agent configuration${version ? ` · v${version.number}` : ''}</summary>
+      <div class="loop-section-heading"><p class="loop-muted">${versions.length} ${versions.length === 1 ? 'version' : 'versions'} · immutable snapshots</p><button class="btn btn-ghost" data-action="import">Import YAML</button></div>
       ${version ? `<div class="loop-version-tabs">${versions.map((item) => `<button class="btn ${item.id === version.id ? 'btn-primary' : 'btn-ghost'}" data-version="${escapeHTML(item.id)}" data-focus="version-tab-${escapeHTML(item.id)}">v${item.number}${item.id === loop.activeVersion ? ' · active' : ''}</button>`).join('')}</div>
-      <p class="loop-rationale">${escapeHTML(version.rationale || 'Imported configuration')}</p>
-      <pre class="loop-code" data-inspect="config-${escapeHTML(version.id)}"><code>${escapeHTML(version.yaml)}</code></pre>
-      <div class="loop-section-heading"><span class="loop-muted">Saved ${escapeHTML(new Date(version.createdAt).toLocaleString())}</span>
-      <div class="loop-actions"><button class="btn btn-ghost" data-action="promote" ${version.id === loop.activeVersion ? 'disabled' : ''}>${version.id === loop.activeVersion ? '✓ Active' : 'Use this version'}</button><a class="btn btn-ghost" href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(version.id)}/export" download="agent.yaml">↓ Export agent</a></div></div>` :
-      `<div class="loop-empty-inline"><span aria-hidden="true">◇</span><h3>A good agent starts with a clear task.</h3><p>Your contract is saved. Generate a specialized agent, or import one you already have.</p></div>`}
-    </section>
-    <section class="loop-panel"><div class="loop-section-heading"><div><h3>Try this agent</h3><p>Choose a project for each run. Its committed files become read-only context.</p></div>
-      <button class="btn btn-primary" data-action="run" ${version ? '' : 'disabled'}>▷ Run ${version ? `v${version.number}` : ''}</button></div>
-      <p class="loop-example">${escapeHTML(loop.description)}</p></section>
-    <section class="loop-panel"><div class="loop-section-heading"><div><h3>Make the next version better</h3><p>Test two hypotheses alongside the baseline. Your active agent stays unchanged.</p></div>
-      <button class="btn btn-primary" data-action="optimize" ${version ? '' : 'disabled'}>↻ Optimize</button></div>
-      ${rounds.map((round) => renderRound(round, jobs, versions, loop.activeVersion)).join('')}
-      ${!rounds.length ? '<p class="loop-hint">Feedback → candidate agents → repeated tests → independent judgment → your decision.</p>' : ''}</section>
-    <section class="loop-panel"><div class="loop-section-heading"><div><h3>Activity & results</h3><p>Execution success is not a quality score. Inspect each result before trusting it.</p></div></div>
-      ${jobs.length ? jobs.map((job) => renderJob(job, loop.id, feedback)).join('') : '<div class="loop-empty-inline"><p>No runs yet. Generate an agent, then run it on a project.</p></div>'}</section>`;
+      <p class="loop-rationale">${escapeHTML(version.rationale || 'Imported configuration')}</p><pre class="loop-code" data-inspect="config-${escapeHTML(version.id)}"><code>${escapeHTML(version.yaml)}</code></pre>
+      <div class="loop-actions"><button class="btn btn-ghost" data-action="promote" ${version.id === loop.activeVersion ? 'disabled' : ''}>${version.id === loop.activeVersion ? '✓ Active' : 'Use this version'}</button><a class="btn btn-ghost" href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(version.id)}/export" download="agent.yaml">Export YAML ↓</a></div>` : ''}
+    </details>
+    <details class="loop-secondary loop-panel" data-inspect="history"><summary>Activity history · ${jobs.length} ${jobs.length === 1 ? 'attempt' : 'attempts'}</summary>
+      ${jobs.length ? jobs.map((job) => renderJob(job, loop.id, feedback)).join('') : '<p class="loop-hint">No attempts recorded yet.</p>'}</details>
+    <details class="loop-secondary loop-panel" data-inspect="spend"><summary>Cost breakdown</summary>${renderSpend(jobs)}</details>`;
 }
 
 function formatMetricCost(cost) { return cost == null ? 'Cost unknown' : `$${cost.toFixed(cost < 1 ? 4 : 2)}`; }
@@ -235,7 +276,7 @@ export function initLoops(api) {
       if (request !== sequence) return;
       detail = nextDetail;
       if (detail) selectedVersion = selectedLoopVersion(detail, selectedVersion)?.id || '';
-      byID('loops-list').innerHTML = renderLoopList(list, id);
+      byID('loops-list').innerHTML = renderLoopList(list, id, detail);
       byID('loops-count').textContent = `${list.length} ${list.length === 1 ? 'loop' : 'loops'}`;
       byID('loop-detail').hidden = !detail;
       byID('loops-welcome').hidden = !!detail;
@@ -329,11 +370,13 @@ export function initLoops(api) {
     const button = form.querySelector('[type="submit"]');
     if (button.disabled) return;
     button.disabled = true;
+    const originalLabel = button.textContent;
+    if (form.id === 'loop-new-form') button.textContent = 'Starting agent creation…';
     const status = form.querySelector('[role="status"]');
     status.textContent = '';
     try { await action(); form.closest('dialog').close(); form.reset(); notice(); }
     catch (error) { status.textContent = error.message; }
-    finally { button.disabled = false; }
+    finally { button.disabled = false; button.textContent = originalLabel; }
   }
   byID('loop-new-form').addEventListener('submit', (event) => {
     event.preventDefault();

@@ -101,3 +101,28 @@
 }
 .loop-project-context { margin: 12px 0; color: var(--text-muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .loop-project-context strong { color: var(--text); }
+.loop-activity { display: flex; align-items: center; gap: 18px; padding: 24px; margin-bottom: 22px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface); }
+.loop-activity.generating, .loop-activity.running, .loop-activity.optimizing { border-color: var(--accent); background: linear-gradient(120deg, var(--bg-tint-1), var(--surface)); }
+.loop-activity.failed { border-color: var(--danger); }
+.loop-activity-mark { flex: 0 0 auto; color: var(--accent); font-size: 32px; width: 40px; text-align: center; }
+.loop-activity.failed .loop-activity-mark { color: var(--danger); }
+.loop-activity-copy { flex: 1; min-width: 0; }
+.loop-activity-copy h3 { font-size: 18px; margin-bottom: 8px; }
+.loop-activity-copy p { color: var(--text-muted); line-height: 1.65; overflow-wrap: anywhere; }
+.loop-activity .spinning { animation: loop-spin 1.8s linear infinite; }
+@keyframes loop-spin { to { transform: rotate(360deg); } }
+.loop-secondary > summary { color: var(--text-muted); font-weight: 600; cursor: pointer; padding: 4px 0; }
+.loop-secondary[open] > summary { color: var(--text); margin-bottom: 20px; }
+.loop-secondary .loop-contract { margin: 0; }
+.loop-secondary .loop-spend { margin: 0; }
+.loop-secondary .loop-experiment { margin-top: 0; padding-top: 0; border-top: 0; }
+.loop-result > .loop-output { max-height: 520px; }
+.loop-result > .loop-secondary { margin-top: 18px; }
+@media (prefers-reduced-motion: reduce) { .loop-activity .spinning { animation: none; } }
+@media (max-width: 560px) {
+  .loop-activity { flex-wrap: wrap; padding: 18px; gap: 12px; }
+  .loop-activity-copy { flex-basis: calc(100% - 56px); }
+  .loop-activity > .btn { margin-left: 52px; }
+}
+.loop-list-icon.spinning { animation: loop-spin 1.8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .loop-list-icon.spinning { animation: none; } }
