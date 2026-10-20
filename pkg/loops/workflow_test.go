@@ -2,6 +2,8 @@ package loops
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -102,4 +104,27 @@ func TestRepeatedGenerateDoesNotStartConcurrentPaidJobs(t *testing.T) {
 	jobs, err := store.Jobs(t.Context(), loop.ID)
 	require.NoError(t, err)
 	assert.Len(t, jobs, 1)
+}
+
+func TestLiveProjectWorkflowInstruction(t *testing.T) {
+	if os.Getenv("BOARD_LOOPS_SMOKE") != "1" {
+		t.Skip("set BOARD_LOOPS_SMOKE=1 for a provider call")
+	}
+	store := testStore(t)
+	project := testProject(t, store)
+	service, err := NewService(t.Context(), store, &ProcessRunner{Directory: t.TempDir()}, "auto", func() {})
+	require.NoError(t, err)
+	t.Cleanup(service.Close)
+	loop, err := service.Create(t.Context(), Loop{Name: "Update dependencies", Description: "Bump direct Go dependencies, adapt source, run tests and make a signed commit.", Criteria: "Actual changed files, passing tests and signed commit.", ProjectID: project.ID, Mode: ModeProject})
+	require.NoError(t, err)
+	service.Wait()
+	detail, err := store.Get(t.Context(), loop.ID)
+	require.NoError(t, err)
+	require.Len(t, detail.Versions, 1)
+	instruction, err := ProjectInstruction(detail.Versions[0])
+	require.NoError(t, err)
+	assert.Equal(t, ModeProject, detail.Versions[0].Mode)
+	assert.Contains(t, strings.ToLower(instruction), "commit")
+	assert.NotContains(t, strings.ToLower(instruction), "you are a read-only")
+	t.Log("Project workflow generated and validated without executing repository changes")
 }
