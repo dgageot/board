@@ -48,7 +48,7 @@ export function renderLoopDetail(detail, selectedVersion) {
     <section><h3>What good looks like</h3><p>${escapeHTML(loop.criteria)}</p></section></div>
     <section class="loop-panel"><div class="loop-section-heading"><div><h3>Agent versions</h3><p>Immutable snapshots. Experiment without losing what worked.</p></div>
       <div class="loop-actions"><button class="btn btn-ghost" data-action="import">Import YAML</button><button class="btn btn-primary" data-action="generate" ${jobs.some((job) => job.kind === 'generate' && ['queued', 'running'].includes(job.status)) ? 'disabled' : ''}>✦ Generate agent</button></div></div>
-      ${version ? `<div class="loop-version-tabs">${versions.map((item) => `<button class="btn ${item.id === version.id ? 'btn-primary' : 'btn-ghost'}" data-version="${escapeHTML(item.id)}">v${item.number}${item.id === loop.activeVersion ? ' · active' : ''}</button>`).join('')}</div>
+      ${version ? `<div class="loop-version-tabs">${versions.map((item) => `<button class="btn ${item.id === version.id ? 'btn-primary' : 'btn-ghost'}" data-version="${escapeHTML(item.id)}" data-focus="version-tab-${escapeHTML(item.id)}">v${item.number}${item.id === loop.activeVersion ? ' · active' : ''}</button>`).join('')}</div>
       <p class="loop-rationale">${escapeHTML(version.rationale || 'Imported configuration')}</p>
       <pre class="loop-code" data-inspect="config-${escapeHTML(version.id)}"><code>${escapeHTML(version.yaml)}</code></pre>
       <div class="loop-section-heading"><span class="loop-muted">Saved ${escapeHTML(new Date(version.createdAt).toLocaleString())}</span>
@@ -132,7 +132,7 @@ export function renderRound(round, jobs, versions, active) {
       return `<tr><td><strong>${escapeHTML(candidate.label)}</strong><small>${version ? `v${version.number}` : 'Design pending'}</small></td>
       <td><span class="${summary.qualified ? 'loop-good' : ''}">${summary.passed} / ${summary.expected}</span><small>${result}</small>${candidate.error ? `<small>${escapeHTML(candidate.error)}</small>` : ''}</td>
       <td>${formatMetricCost(summary.cost)}${costDelta ? `<small>${costDelta}</small>` : ''}</td><td>${summary.duration == null ? '—' : `${(summary.duration / 1000).toFixed(1)}s`}${timeDelta ? `<small>${timeDelta}</small>` : ''}</td>
-      <td>${version ? `<button class="btn btn-ghost btn-small" data-version="${escapeHTML(version.id)}">Inspect</button><button class="btn btn-ghost btn-small" data-promote="${escapeHTML(version.id)}" ${!summary.qualified || round.status !== 'completed' || active === version.id ? 'disabled' : ''}>${active === version.id ? '✓ Active' : 'Use version'}</button>` : ''}</td></tr>`;
+      <td>${version ? `<button class="btn btn-ghost btn-small" data-version="${escapeHTML(version.id)}" data-focus="inspect-${escapeHTML(round.id)}-${escapeHTML(version.id)}">Inspect</button><button class="btn btn-ghost btn-small" data-promote="${escapeHTML(version.id)}" data-focus="promote-${escapeHTML(round.id)}-${escapeHTML(version.id)}" ${!summary.qualified || round.status !== 'completed' || active === version.id ? 'disabled' : ''}>${active === version.id ? '✓ Active' : 'Use version'}</button>` : ''}</td></tr>`;
     }).join('')}</tbody></table></div>
     <details class="loop-verdicts" data-inspect="verdicts-${escapeHTML(round.id)}"><summary>Quality evidence</summary>${round.candidates.map((candidate) => `<h4>${escapeHTML(candidate.label)}</h4>${candidate.trials.map((trial) => `<p><span class="${trial.passed ? 'loop-good' : 'loop-bad'}">${trial.passed ? '✓' : '✕'}</span> Input ${trial.case + 1}, repeat ${trial.repeat + 1}: ${escapeHTML(trial.reason)}</p>`).join('')}`).join('')}</details>
     </div>`;
@@ -142,6 +142,7 @@ const inspectorRenders = new WeakMap();
 
 function focusIdentity(element) {
   if (!element) return '';
+  if (element.dataset.focus) return `control:${element.dataset.focus}`;
   if (element.tagName === 'SUMMARY') return `summary:${element.parentElement.dataset.inspect || ''}`;
   for (const key of ['version', 'action', 'promote', 'cancel', 'feedback', 'cancelRound']) {
     if (element.dataset[key]) return `${key}:${element.dataset[key]}`;

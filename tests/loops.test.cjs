@@ -58,7 +58,7 @@ test('comparison fails closed on incomplete, failed and duplicate evidence', asy
 test('experiments never offer promotion for failing candidates', async () => {
   const { renderRound } = await modulePromise;
   const html = renderRound({id:'r',status:'completed',inputs:['a'],repeats:1,candidates:[{label:'<candidate>',versionId:'v',trials:[{jobId:'j',case:0,repeat:0,passed:false,reason:'<failed>'}]}]}, [], [{id:'v',number:2}], '');
-  assert.match(html, /data-promote="v" disabled/);
+  assert.match(html, /data-promote="v"[^>]* disabled/);
   assert.match(html, /&lt;failed&gt;/);
   assert.match(html, /not a guarantee/);
 });
@@ -142,7 +142,7 @@ function inspectorHarness() {
         tagName: match[1].toUpperCase(), dataset: { inspect: match[2] }, open: /\sopen[\s>]/.test(match[0]), scrollTop: 0, scrollLeft: 0,
       }));
       state.buttons = [...html.matchAll(/<button[^>]*data-version="([^"]+)"[^>]*>/g)].map((match) => {
-        const button = { tagName: 'BUTTON', dataset: { version: match[1] }, getAttribute: () => null, focus() { doc.activeElement = button; } };
+        const button = { tagName: 'BUTTON', dataset: { version: match[1], focus: match[0].match(/data-focus="([^"]+)"/)?.[1] }, getAttribute: () => null, focus() { doc.activeElement = button; } };
         return button;
       });
     },
@@ -202,4 +202,19 @@ test('identically rendered draft loops still reset the inspection context', asyn
   updateLoopInspector(container,detail,'');
   assert.equal(container.scrollTop,0);
   assert.equal(state.writes,2);
+});
+
+test('live refresh restores the exact experiment control instead of a matching version tab', async () => {
+  const { updateLoopInspector } = await modulePromise;
+  const { container, state, doc } = inspectorHarness();
+  const detail=inspectorFixture();
+  const candidate={versionId:'v1',label:'Baseline',trials:[]};
+  detail.rounds=['first','second'].map((id)=>({id,baseline:'v1',status:'testing',inputs:['input'],repeats:1,candidates:[candidate]}));
+  updateLoopInspector(container,detail,'v1');
+  assert.equal(state.buttons.length,3);
+  doc.activeElement=state.buttons[2];
+  detail.jobs[0].output='Changed output';
+  updateLoopInspector(container,detail,'v1');
+  assert.equal(doc.activeElement,state.buttons[2]);
+  assert.equal(doc.activeElement.dataset.focus,'inspect-second-v1');
 });
