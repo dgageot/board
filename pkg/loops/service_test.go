@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -204,4 +205,28 @@ func TestPromotionRejectsSummaryWithoutPersistedEvidence(t *testing.T) {
 	round := Round{ID: newID(), LoopID: loop.ID, Status: "completed", Inputs: []string{"input"}, Repeats: 1, Candidates: []Candidate{{VersionID: version.ID, Trials: []Trial{{JobID: "missing", JudgeID: "missing-judge", Passed: true}}}}}
 	require.NoError(t, store.saveRound(t.Context(), round))
 	require.ErrorIs(t, store.Promote(t.Context(), loop.ID, version.ID, ""), ErrConflict)
+}
+
+func TestCancelExperimentChild(t *testing.T) {
+	store := testStore(t)
+	loop := testLoop(t, store)
+	started := make(chan string, 1)
+	service, err := NewService(t.Context(), store, fakeRunner{run: func(ctx context.Context, req Request, _ func(Result)) (Result, error) {
+		started <- req.ID
+		<-ctx.Done()
+		return Result{}, ctx.Err()
+	}}, "auto", func() {})
+	require.NoError(t, err)
+	done := make(chan Job, 1)
+	go func() {
+		done <- service.experimentJob(t.Context(), loop.ID, "version", "test", "input", []byte("config"))
+	}()
+	id := <-started
+	service.Cancel(id)
+	select {
+	case job := <-done:
+		assert.Equal(t, "canceled", job.Status)
+	case <-time.After(time.Second):
+		t.Fatal("child cancellation did not complete")
+	}
 }

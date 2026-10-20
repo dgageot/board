@@ -114,6 +114,13 @@ func (s *Service) experimentJob(ctx context.Context, loopID, versionID, kind, in
 	// A hanging provider cannot consume the whole round deadline.
 	jobCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
+	s.mu.Lock()
+	if s.closed {
+		cancel()
+	}
+	s.cancel[job.ID] = cancel
+	s.mu.Unlock()
+	defer func() { s.mu.Lock(); delete(s.cancel, job.ID); s.mu.Unlock() }()
 	return s.execute(jobCtx, job, config)
 }
 
