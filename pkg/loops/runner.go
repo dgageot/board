@@ -74,7 +74,7 @@ func (r *ProcessRunner) Run(ctx context.Context, request Request, progress func(
 	cmd := exec.CommandContext(ctx, command[0], args...)
 	cmd.Dir = filepath.Join(dir, "work")
 	cmd.Stdin = strings.NewReader(request.Input)
-	cmd.Stderr = stderr
+	cmd.Stderr = &boundedLog{writer: stderr, remaining: 1024 * 1024}
 	cmd.Env = processEnvironment(dir)
 	cmd.WaitDelay = 3 * time.Second
 	isolateProcess(cmd)
@@ -274,4 +274,27 @@ func regexpID(id string) bool {
 		}
 	}
 	return true
+}
+
+// Consume stderr after the cap so verbose tools cannot fill disk or block the process.
+type boundedLog struct {
+	writer    io.Writer
+	remaining int
+}
+
+func (w *boundedLog) Write(data []byte) (int, error) {
+	total := len(data)
+	if w.remaining <= 0 {
+		return total, nil
+	}
+	chunk := data[:min(len(data), w.remaining)]
+	n, err := w.writer.Write(chunk)
+	w.remaining -= n
+	if err != nil {
+		return n, err
+	}
+	if n != len(chunk) {
+		return n, io.ErrShortWrite
+	}
+	return total, nil
 }

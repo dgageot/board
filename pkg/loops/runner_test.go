@@ -132,3 +132,15 @@ func TestProcessRunnerCancelsDescendants(t *testing.T) {
 	_, err = os.Stat(marker)
 	assert.ErrorIs(t, err, os.ErrNotExist)
 }
+
+func TestProcessLogIsBoundedWithoutBlockingWriter(t *testing.T) {
+	var output strings.Builder
+	writer := boundedLog{writer: &output, remaining: 4}
+	n, err := writer.Write([]byte("abcdef"))
+	require.NoError(t, err)
+	assert.Equal(t, 6, n)
+	n, err = writer.Write([]byte("more"))
+	require.NoError(t, err)
+	assert.Equal(t, 4, n)
+	assert.Equal(t, "abcd", output.String())
+}
