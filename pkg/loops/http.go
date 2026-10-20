@@ -25,6 +25,7 @@ func Register(mux *http.ServeMux, store *Store, changed func(), services ...*Ser
 	}
 	mux.HandleFunc("POST /api/loops/{id}/generate", h.generate)
 	mux.HandleFunc("POST /api/loops/{id}/optimize", h.optimize)
+	mux.HandleFunc("POST /api/loops/{id}/optimize/default", h.optimizeDefault)
 	mux.HandleFunc("POST /api/loops/{id}/promote", h.promote)
 	mux.HandleFunc("POST /api/loops/{id}/feedback", h.feedback)
 	mux.HandleFunc("POST /api/loops/{id}/rounds/{round}/cancel", h.cancelRound)
@@ -331,4 +332,22 @@ func (h *Handler) cancelRound(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	fail(w, ErrNotFound)
+}
+
+func (h *Handler) optimizeDefault(w http.ResponseWriter, r *http.Request) {
+	if !h.available(w) {
+		return
+	}
+	var input struct {
+		Version string `json:"version"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	round, err := h.service.OptimizeDefault(r.Context(), r.PathValue("id"), input.Version)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusAccepted, round)
 }

@@ -75,6 +75,15 @@ func (s *Service) Optimize(ctx context.Context, loopID string, input OptimizeReq
 	if len(s.cancel) >= 8 {
 		return Round{}, fmt.Errorf("%w: experiment queue is full", ErrConflict)
 	}
+	rounds, err := s.store.Rounds(ctx, loopID)
+	if err != nil {
+		return Round{}, err
+	}
+	for _, existing := range rounds {
+		if existing.Status == "designing" || existing.Status == "testing" {
+			return Round{}, fmt.Errorf("%w: an optimization is already running for this loop", ErrConflict)
+		}
+	}
 	if err := s.store.saveRound(ctx, round); err != nil {
 		return Round{}, err
 	}
