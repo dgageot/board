@@ -15,11 +15,35 @@ export function selectedLoopVersion(detail, selectedVersion) {
     || detail.versions.at(-1);
 }
 
+export function summarizeSpend(jobs) {
+  const groups = {
+    execution: { label: 'Runs', cost: 0, unknown: 0, count: 0 },
+    optimization: { label: 'Design & experiments', cost: 0, unknown: 0, count: 0 },
+    judging: { label: 'Quality judging', cost: 0, unknown: 0, count: 0 },
+  };
+  for (const job of jobs) {
+    const group = job.kind === 'run' ? groups.execution : job.kind === 'judge' ? groups.judging : groups.optimization;
+    group.count++;
+    const cost = job.metrics?.cost;
+    if (Number.isFinite(cost) && cost >= 0) group.cost += cost;
+    else group.unknown++;
+  }
+  return groups;
+}
+
+function renderSpend(jobs) {
+  return `<section class="loop-spend" aria-label="Recorded spend">${Object.values(summarizeSpend(jobs)).map((group) => `<div class="loop-spend-card">
+    <span>${group.label}</span><strong>${group.count === 0 ? '—' : group.unknown === group.count ? 'Unknown' : formatMetricCost(group.cost)}</strong>
+    <small>${group.count} ${group.count === 1 ? 'attempt' : 'attempts'}${group.unknown ? ` · ${group.unknown} unpriced${group.unknown < group.count ? ' · subtotal only' : ''}` : ''}</small>
+  </div>`).join('')}</section>`;
+}
+
 export function renderLoopDetail(detail, selectedVersion) {
   const { loop, versions, jobs = [], rounds = [], feedback = [] } = detail;
   const version = selectedLoopVersion(detail, selectedVersion);
   return `<div class="loop-detail-heading"><div><div class="loop-eyebrow">REUSABLE INTELLIGENCE</div><h2>${escapeHTML(loop.name)}</h2></div>
     <span class="loop-badge">${versions.length} ${versions.length === 1 ? 'version' : 'versions'}</span></div>
+    ${renderSpend(jobs)}
     <div class="loop-contract"><section><h3>The task</h3><p>${escapeHTML(loop.description)}</p></section>
     <section><h3>What good looks like</h3><p>${escapeHTML(loop.criteria)}</p></section></div>
     <section class="loop-panel"><div class="loop-section-heading"><div><h3>Agent versions</h3><p>Immutable snapshots. Experiment without losing what worked.</p></div>
@@ -81,19 +105,33 @@ export function summarizeCandidate(round, candidate, jobs) {
     duration: complete && runs.every((job) => job?.status === 'succeeded' && Number.isFinite(job.metrics?.durationMs)) ? runs.reduce((sum, job) => sum + job.metrics.durationMs, 0) / expected : null };
 }
 
+export function metricDelta(value, baseline, dimension) {
+  if (!Number.isFinite(value) || value < 0 || !Number.isFinite(baseline) || baseline <= 0) return '';
+  const change = Math.round((value / baseline - 1) * 100);
+  if (change === 0) return 'Similar to baseline';
+  const direction = dimension === 'cost' ? (change < 0 ? 'lower cost' : 'higher cost') : (change < 0 ? 'faster' : 'slower');
+  return `${Math.abs(change)}% ${direction}`;
+}
+
 export function renderRound(round, jobs, versions, active) {
   const busy = ['designing', 'testing'].includes(round.status);
+  const baseline = round.candidates.find((candidate) => candidate.versionId === round.baseline) || round.candidates[0];
+  const baseMetrics = baseline ? summarizeCandidate(round, baseline, jobs) : null;
   return `<div class="loop-experiment"><div class="loop-section-heading"><h4>Experiment · ${escapeHTML(round.status)}</h4>
     ${busy ? `<button class="btn btn-ghost btn-small" data-cancel-round="${escapeHTML(round.id)}">Stop experiment</button>` : ''}</div>
-    <p class="loop-hint">${round.inputs.length} inputs × ${round.repeats} repetitions. AI-judged evidence, not a guarantee. Parallel-run timings include contention.</p>
+    <p class="loop-hint">${round.inputs.length} inputs × ${round.repeats} repetitions. AI-judged evidence, not a guarantee. Cost and time are observed averages; parallel-run timings include contention.</p>
     ${round.error ? `<p class="loop-job-error">${escapeHTML(round.error)}</p>` : ''}
     <div class="loop-table-scroll"><table class="loop-comparison"><thead><tr><th>Version</th><th>Quality checks</th><th>Cost / run</th><th>Time / run</th><th></th></tr></thead><tbody>
     ${round.candidates.map((candidate) => {
       const summary = summarizeCandidate(round, candidate, jobs);
       const version = versions.find((item) => item.id === candidate.versionId);
+      const comparable = round.status === 'completed' && summary.qualified && baseMetrics?.qualified && candidate !== baseline;
+      const costDelta = comparable ? metricDelta(summary.cost, baseMetrics.cost, 'cost') : '';
+      const timeDelta = comparable ? metricDelta(summary.duration, baseMetrics.duration, 'duration') : '';
+      const result = candidate.error ? 'Design failed' : summary.qualified ? 'All checks passed' : candidate.trials.length < summary.expected ? 'Incomplete evidence' : 'Quality gate not met';
       return `<tr><td><strong>${escapeHTML(candidate.label)}</strong><small>${version ? `v${version.number}` : 'Design pending'}</small></td>
-      <td><span class="${summary.qualified ? 'loop-good' : ''}">${summary.passed} / ${summary.expected}</span>${candidate.error ? `<small>${escapeHTML(candidate.error)}</small>` : ''}</td>
-      <td>${formatMetricCost(summary.cost)}</td><td>${summary.duration == null ? '—' : `${(summary.duration / 1000).toFixed(1)}s`}</td>
+      <td><span class="${summary.qualified ? 'loop-good' : ''}">${summary.passed} / ${summary.expected}</span><small>${result}</small>${candidate.error ? `<small>${escapeHTML(candidate.error)}</small>` : ''}</td>
+      <td>${formatMetricCost(summary.cost)}${costDelta ? `<small>${costDelta}</small>` : ''}</td><td>${summary.duration == null ? '—' : `${(summary.duration / 1000).toFixed(1)}s`}${timeDelta ? `<small>${timeDelta}</small>` : ''}</td>
       <td>${version ? `<button class="btn btn-ghost btn-small" data-version="${escapeHTML(version.id)}">Inspect</button><button class="btn btn-ghost btn-small" data-promote="${escapeHTML(version.id)}" ${!summary.qualified || round.status !== 'completed' || active === version.id ? 'disabled' : ''}>${active === version.id ? '✓ Active' : 'Use version'}</button>` : ''}</td></tr>`;
     }).join('')}</tbody></table></div>
     <details class="loop-verdicts"><summary>Quality evidence</summary>${round.candidates.map((candidate) => `<h4>${escapeHTML(candidate.label)}</h4>${candidate.trials.map((trial) => `<p><span class="${trial.passed ? 'loop-good' : 'loop-bad'}">${trial.passed ? '✓' : '✕'}</span> Input ${trial.case + 1}, repeat ${trial.repeat + 1}: ${escapeHTML(trial.reason)}</p>`).join('')}`).join('')}</details>

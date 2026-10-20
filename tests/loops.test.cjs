@@ -86,3 +86,45 @@ test('missing, failed and interrupted persisted jobs never qualify in the UI', a
  candidate.trials[0].case=99;
  assert.equal(summarizeCandidate(round,candidate,jobs).qualified,false);
 });
+
+test('spend separates run, optimization and judge costs including failed attempts', async () => {
+  const { summarizeSpend } = await modulePromise;
+  const result = summarizeSpend([
+    {kind:'run',status:'failed',metrics:{cost:.1}},
+    {kind:'run',status:'running',metrics:{cost:null}},
+    {kind:'proposal',metrics:{cost:.3}},
+    {kind:'test',metrics:{cost:.2}},
+    {kind:'judge',metrics:{cost:.05}},
+    {kind:'judge',metrics:{cost:0}},
+  ]);
+  assert.deepEqual(result.execution,{label:'Runs',cost:.1,unknown:1,count:2});
+  assert.equal(result.optimization.cost,.5);
+  assert.equal(result.judging.cost,.05);
+  assert.equal(result.judging.unknown,0);
+});
+
+test('relative metrics avoid inventing improvements for missing or zero baselines', async () => {
+  const { metricDelta } = await modulePromise;
+  assert.equal(metricDelta(.05,.1,'cost'),'50% lower cost');
+  assert.equal(metricDelta(200,100,'duration'),'100% slower');
+  assert.equal(metricDelta(100,100,'duration'),'Similar to baseline');
+  for (const baseline of [0,null,undefined,NaN]) assert.equal(metricDelta(.1,baseline,'cost'),'');
+  for (const value of [null,undefined,NaN,-1]) assert.equal(metricDelta(value,.1,'cost'),'');
+});
+
+test('comparisons show observed deltas only after both quality gates pass', async () => {
+  const { renderRound } = await modulePromise;
+  const candidates = ['base','candidate'].map((versionId,index) => ({versionId,label:versionId,trials:[{jobId:`run${index}`,judgeId:`judge${index}`,case:0,repeat:0,passed:true}]}));
+  const round = {id:'r',baseline:'base',status:'completed',inputs:['input'],repeats:1,candidates};
+  const jobs = candidates.flatMap((candidate,index) => [
+    {id:`run${index}`,kind:'test',versionId:candidate.versionId,status:'succeeded',metrics:{cost:index ? .05 : .1,durationMs:index ? 500 : 1000}},
+    {id:`judge${index}`,kind:'judge',versionId:candidate.versionId,status:'succeeded'},
+  ]);
+  const versions = candidates.map((candidate,index) => ({id:candidate.versionId,number:index+1}));
+  assert.match(renderRound(round,jobs,versions,''),/50% lower cost/);
+  assert.match(renderRound(round,jobs,versions,''),/50% faster/);
+  candidates[1].trials[0].passed=false;
+  const failed = renderRound(round,jobs,versions,'');
+  assert.doesNotMatch(failed,/50% lower cost|50% faster/);
+  assert.match(failed,/Quality gate not met/);
+});
