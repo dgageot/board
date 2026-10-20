@@ -541,3 +541,38 @@ test('empty finished results replace the live waiting placeholder', async () => 
   assert.doesNotMatch(h.body().childNodes[0].content,/Waiting/);
  }
 });
+
+test('iterative optimization reports blocked and exhausted outcomes instead of success', async () => {
+ const {roundLabel,renderRound}=await modulePromise;
+ assert.match(roundLabel({status:'blocked'}),/runtime cannot meet/);
+ assert.match(roundLabel({status:'exhausted'}),/not met/);
+ assert.match(roundLabel({status:'completed',outcome:'unchanged'}),/Kept the passing baseline/);
+ const html=renderRound({id:'r',status:'blocked',inputs:['input'],repeats:2,candidates:[],error:'Cannot create signed commits in read-only mode'},[],[],'');
+ assert.match(html,/Cannot create signed commits/);
+ assert.doesNotMatch(html,/Passing improvement found/);
+});
+
+test('optimizer progress includes pass number and current stage', async () => {
+ const {loopActivity}=await modulePromise;
+ const detail=inspectorFixture();
+ detail.jobs=[];
+ detail.rounds=[{status:'testing',pass:3,maxPasses:4,stage:'Evaluating candidates'}];
+ assert.equal(loopActivity(detail).note,'Pass 3/4 · Evaluating candidates');
+});
+
+test('iterative candidates need confirmation and only the winner is offered for promotion', async () => {
+ const {summarizeCandidate,renderRound}=await modulePromise;
+ const trial={jobId:'run',judgeId:'judge',case:0,repeat:0,passed:true,reason:'Correct'};
+ const candidate={versionId:'v2',pass:1,label:'Candidate',trials:[trial]};
+ const round={id:'round',status:'completed',outcome:'improved',maxPasses:4,winner:'v2',inputs:['input'],repeats:1,candidates:[candidate]};
+ const jobs=[{id:'run',kind:'test',status:'succeeded',versionId:'v2',metrics:{cost:.1,durationMs:100}},{id:'judge',kind:'judge',status:'succeeded',versionId:'v2'}];
+ assert.equal(summarizeCandidate(round,candidate,jobs).qualified,false);
+ candidate.confirmation=[{...trial,jobId:'confirm',judgeId:'confirm-judge'}];
+ jobs.push({...jobs[0],id:'confirm'},{...jobs[1],id:'confirm-judge'});
+ assert.equal(summarizeCandidate(round,candidate,jobs).qualified,true);
+ const html=renderRound(round,jobs,[{id:'v2',number:2}],'');
+ assert.match(html,/Recommended: v2/);
+ assert.match(html,/Confirmation · input 1/);
+ round.winner='other';
+ assert.match(renderRound(round,jobs,[{id:'v2',number:2}],''),/data-promote="v2"[^>]*disabled/);
+});

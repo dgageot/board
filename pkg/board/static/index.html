@@ -118,8 +118,8 @@
       <label>Test cases<textarea id="loop-test-inputs" rows="7" required maxlength="65536"></textarea></label>
       <p class="loop-form-help">Separate cases with a line containing ---. Up to 8 cases, all using the same committed snapshot.</p>
       <label>Repetitions<select id="loop-test-repeats"><option value="2">2</option><option value="3">3</option><option value="1">1</option></select></label>
-      <div class="loop-contract"><label>Candidate 1 model<input id="loop-model-one" value="auto" required placeholder="provider/model"></label><label>Candidate 2 model<input id="loop-model-two" value="auto" required placeholder="provider/model"></label></div>
-      <p class="loop-form-help">Uses provider credits. Up to 72 test runs plus judging and design calls; 4 concurrent calls, 20-minute limit. Promotion is manual.</p>
+      <div class="loop-contract"><label>Candidate 1 model<input id="loop-model-one" value="" placeholder="Keep current model"></label><label>Candidate 2 model<input id="loop-model-two" value="" placeholder="Keep current model"></label></div>
+      <p class="loop-form-help">Uses provider credits. Baseline check, then up to 4 passes of small edits; 4 concurrent calls, 20-minute limit. Leave both model fields blank to keep the current model. Promotion is manual.</p>
       <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Optimize</button></div>
     </form>
   </dialog>
