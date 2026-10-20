@@ -50,6 +50,17 @@ func notFound(err error) error {
 
 // Create records the task before any generation or model calls take place.
 func (s *Store) Create(ctx context.Context, loop Loop) (Loop, error) {
+	loop, err := s.prepareLoop(ctx, loop)
+	if err != nil {
+		return Loop{}, err
+	}
+	_, err = s.db.ExecContext(ctx, insertLoopSQL, loop.ID, loop.Name, loop.Description, loop.Criteria, loop.Example, loop.CreatedAt, loop.ProjectID)
+	return loop, err
+}
+
+const insertLoopSQL = `INSERT INTO loops (id,name,description,criteria,example,created_at,project_id) VALUES (?,?,?,?,?,?,?)`
+
+func (s *Store) prepareLoop(ctx context.Context, loop Loop) (Loop, error) {
 	loop.Name = strings.TrimSpace(loop.Name)
 	loop.Description = strings.TrimSpace(loop.Description)
 	loop.Criteria = strings.TrimSpace(loop.Criteria)
@@ -66,9 +77,35 @@ func (s *Store) Create(ctx context.Context, loop Loop) (Loop, error) {
 		}
 	}
 	loop.ID, loop.CreatedAt, loop.ActiveVersion = newID(), now(), ""
-	_, err := s.db.ExecContext(ctx, `INSERT INTO loops (id,name,description,criteria,example,created_at,project_id) VALUES (?,?,?,?,?,?,?)`,
-		loop.ID, loop.Name, loop.Description, loop.Criteria, loop.Example, loop.CreatedAt, loop.ProjectID)
-	return loop, err
+	return loop, nil
+}
+
+// createGenerating saves the loop and its initial job together, or neither.
+func (s *Store) createGenerating(ctx context.Context, loop Loop) (Loop, Job, error) {
+	loop, err := s.prepareLoop(ctx, loop)
+	if err != nil {
+		return Loop{}, Job{}, err
+	}
+	input, err := generationInput(loop)
+	if err != nil {
+		return Loop{}, Job{}, err
+	}
+	job := Job{ID: newID(), LoopID: loop.ID, Kind: "generate", Status: "queued", Input: input, CreatedAt: now()}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Loop{}, Job{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, insertLoopSQL, loop.ID, loop.Name, loop.Description, loop.Criteria, loop.Example, loop.CreatedAt, loop.ProjectID); err != nil {
+		return Loop{}, Job{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO loop_jobs (id,loop_id,version_id,kind,status,input,created_at) VALUES (?,?,?,?,?,?,?)`, job.ID, job.LoopID, "", job.Kind, job.Status, job.Input, job.CreatedAt); err != nil {
+		return Loop{}, Job{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Loop{}, Job{}, err
+	}
+	return loop, job, nil
 }
 
 // List returns the newest loops first.

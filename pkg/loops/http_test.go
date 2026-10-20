@@ -1,6 +1,7 @@
 package loops
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,8 +16,12 @@ func TestLoopHTTP(t *testing.T) {
 	store := testStore(t)
 	project := testProject(t, store)
 	mux := http.NewServeMux()
+	service, err := NewService(t.Context(), store, fakeRunner{run: func(context.Context, Request, func(Result)) (Result, error) {
+		return Result{Output: `{"instruction":"Summarize","model":"auto","rationale":"First"}`}, nil
+	}}, "auto", func() {})
+	require.NoError(t, err)
 	changes := 0
-	Register(mux, store, func() { changes++ })
+	Register(mux, store, func() { changes++ }, service)
 	request := func(method, path, body string) *httptest.ResponseRecorder {
 		t.Helper()
 		rec := httptest.NewRecorder()
@@ -31,7 +36,8 @@ func TestLoopHTTP(t *testing.T) {
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	var version Version
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &version))
-	assert.Equal(t, 2, changes)
+	assert.Equal(t, 1, changes)
+	service.Wait()
 	rec = request("GET", "/api/loops/"+loop.ID+"/versions/"+version.ID+"/export", "")
 	assert.Equal(t, version.YAML, rec.Body.String())
 	assert.Contains(t, rec.Header().Get("Content-Disposition"), "agent.yaml")
@@ -44,7 +50,9 @@ func TestCreateLoopRequiresFirstProject(t *testing.T) {
 	store := testStore(t)
 	_ = testProject(t, store)
 	mux := http.NewServeMux()
-	Register(mux, store, func() {})
+	service, err := NewService(t.Context(), store, fakeRunner{}, "auto", func() {})
+	require.NoError(t, err)
+	Register(mux, store, func() {}, service)
 	for _, body := range []string{`{"name":"Task","description":"Work","criteria":"Good"}`, `{"name":"Task","description":"Work","criteria":"Good","projectId":"missing"}`} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/loops", strings.NewReader(body)))

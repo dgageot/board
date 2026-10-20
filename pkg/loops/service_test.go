@@ -298,3 +298,63 @@ func TestExperimentPublicationRegistersCancellationAtomically(t *testing.T) {
 		t.Fatal("published job ignored cancellation")
 	}
 }
+
+func TestCreateAutomaticallyGeneratesAgent(t *testing.T) {
+	store := testStore(t)
+	project := testProject(t, store)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	service, err := NewService(t.Context(), store, fakeRunner{run: func(ctx context.Context, _ Request, _ func(Result)) (Result, error) {
+		close(started)
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return Result{}, ctx.Err()
+		}
+		return Result{Output: `{"instruction":"Summarize","model":"auto","rationale":"Purpose built"}`}, nil
+	}}, "auto", func() {})
+	require.NoError(t, err)
+	t.Cleanup(service.Close)
+	loop, err := service.Create(t.Context(), Loop{Name: "Notes", Description: "Summarize", Criteria: "Accurate", ProjectID: project.ID})
+	require.NoError(t, err)
+	<-started
+	jobs, err := store.Jobs(t.Context(), loop.ID)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, "generate", jobs[0].Kind)
+	assert.Equal(t, "running", jobs[0].Status)
+	close(release)
+	service.Wait()
+	detail, err := store.Get(t.Context(), loop.ID)
+	require.NoError(t, err)
+	require.Len(t, detail.Versions, 1)
+}
+
+func TestCreateRollsBackIfInitialJobCannotBeSaved(t *testing.T) {
+	store := testStore(t)
+	project := testProject(t, store)
+	_, err := store.db.Exec(`CREATE TRIGGER reject_new_job BEFORE INSERT ON loop_jobs BEGIN SELECT RAISE(FAIL,'disk failure'); END`)
+	require.NoError(t, err)
+	service, err := NewService(t.Context(), store, fakeRunner{}, "auto", func() {})
+	require.NoError(t, err)
+	_, err = service.Create(t.Context(), Loop{Name: "Notes", Description: "Summarize", Criteria: "Accurate", ProjectID: project.ID})
+	require.ErrorContains(t, err, "disk failure")
+	all, err := store.List(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, all)
+}
+
+func TestCreateRejectsAdmissionBeforeSavingLoop(t *testing.T) {
+	store := testStore(t)
+	project := testProject(t, store)
+	service, err := NewService(t.Context(), store, fakeRunner{}, "auto", func() {})
+	require.NoError(t, err)
+	for range 16 {
+		service.cancel[newID()] = func() {}
+	}
+	_, err = service.Create(t.Context(), Loop{Name: "Notes", Description: "Summarize", Criteria: "Accurate", ProjectID: project.ID})
+	require.ErrorIs(t, err, ErrConflict)
+	all, err := store.List(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, all)
+}

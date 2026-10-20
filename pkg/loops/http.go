@@ -86,6 +86,9 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
+	if !h.available(w) {
+		return
+	}
 	var input struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
@@ -100,12 +103,11 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, fmt.Errorf("%w: choose a project for the first run", ErrInvalid))
 		return
 	}
-	loop, err := h.store.Create(r.Context(), Loop{Name: input.Name, Description: input.Description, Criteria: input.Criteria, Example: input.Example, ProjectID: input.ProjectID})
+	loop, err := h.service.Create(r.Context(), Loop{Name: input.Name, Description: input.Description, Criteria: input.Criteria, Example: input.Example, ProjectID: input.ProjectID})
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	h.changed()
 	respond(w, http.StatusCreated, loop)
 }
 

@@ -48,6 +48,37 @@ func (s *Service) Close() {
 	s.wg.Wait()
 }
 
+// Create always admits the initial generation before returning the new loop.
+func (s *Service) Create(ctx context.Context, loop Loop) (Loop, error) {
+	if loop.ProjectID == "" {
+		return Loop{}, fmt.Errorf("%w: choose a project for the first run", ErrInvalid)
+	}
+	config, err := designerConfig(s.model)
+	if err != nil {
+		return Loop{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.checkAdmission(); err != nil {
+		return Loop{}, err
+	}
+	created, job, err := s.store.createGenerating(ctx, loop)
+	if err != nil {
+		return Loop{}, err
+	}
+	s.launchLocked(job, config)
+	s.changed()
+	return created, nil
+}
+
+func generationInput(loop Loop) (string, error) {
+	data, err := json.Marshal(loop)
+	if err != nil {
+		return "", err
+	}
+	return "Design the initial agent for this task contract.\n" + string(data), nil
+}
+
 // Generate creates an initial agent without running arbitrary generated YAML.
 func (s *Service) Generate(ctx context.Context, loopID string) (Job, error) {
 	detail, err := s.store.Get(ctx, loopID)
@@ -58,11 +89,10 @@ func (s *Service) Generate(ctx context.Context, loopID string) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	data, err := json.Marshal(detail.Loop)
+	input, err := generationInput(detail.Loop)
 	if err != nil {
 		return Job{}, err
 	}
-	input := "Design the initial agent for this task contract.\n" + string(data)
 	return s.start(ctx, loopID, "", "generate", input, config)
 }
 
@@ -98,16 +128,29 @@ func (s *Service) Run(ctx context.Context, loopID, versionID, input, projectID s
 func (s *Service) start(ctx context.Context, loopID, versionID, kind, input string, config []byte, projects ...*ProjectSnapshot) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed || s.ctx.Err() != nil {
-		return Job{}, errors.New("board is shutting down")
-	}
-	if len(s.cancel) >= 16 {
-		return Job{}, fmt.Errorf("%w: experiment queue is full", ErrConflict)
+	if err := s.checkAdmission(); err != nil {
+		return Job{}, err
 	}
 	job, err := s.store.newJob(ctx, loopID, versionID, kind, input, projects...)
 	if err != nil {
 		return Job{}, err
 	}
+	s.launchLocked(job, config)
+	s.changed()
+	return job, nil
+}
+
+func (s *Service) checkAdmission() error {
+	if s.closed || s.ctx.Err() != nil {
+		return errors.New("board is shutting down")
+	}
+	if len(s.cancel) >= 16 {
+		return fmt.Errorf("%w: experiment queue is full", ErrConflict)
+	}
+	return nil
+}
+
+func (s *Service) launchLocked(job Job, config []byte) {
 	jobCtx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
 	s.cancel[job.ID] = cancel
 	s.wg.Go(func() {
@@ -115,8 +158,6 @@ func (s *Service) start(ctx context.Context, loopID, versionID, kind, input stri
 		defer func() { s.mu.Lock(); delete(s.cancel, job.ID); s.mu.Unlock() }()
 		s.execute(jobCtx, job, config)
 	})
-	s.changed()
-	return job, nil
 }
 
 func (s *Service) persist(job Job) error {
