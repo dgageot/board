@@ -77,6 +77,7 @@ func (r *ProcessRunner) Run(ctx context.Context, request Request, progress func(
 	cmd.Stderr = stderr
 	cmd.Env = processEnvironment(dir)
 	cmd.WaitDelay = 3 * time.Second
+	isolateProcess(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return result, err
@@ -84,6 +85,9 @@ func (r *ProcessRunner) Run(ctx context.Context, request Request, progress func(
 	if err := cmd.Start(); err != nil {
 		return result, fmt.Errorf("start docker agent: %w", err)
 	}
+	// Closing the pipe also unblocks Scan if a descendant retained stdout.
+	stopClose := context.AfterFunc(ctx, func() { _ = stdout.Close() })
+	defer stopClose()
 	collector := newCollector()
 	scan := bufio.NewScanner(stdout)
 	scan.Buffer(nil, 1024*1024)
@@ -116,7 +120,7 @@ func (r *ProcessRunner) Run(ctx context.Context, request Request, progress func(
 		streamErr = err
 	}
 	if streamErr != nil {
-		_ = cmd.Process.Kill()
+		_ = cmd.Cancel()
 	}
 	waitErr := cmd.Wait()
 	result = collector.result()

@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -107,4 +109,26 @@ func TestExecutableConfigRejectsEscapedExpansion(t *testing.T) {
 		_, err := executableConfig(config)
 		require.ErrorIs(t, err, ErrInvalid)
 	}
+}
+
+func TestProcessRunnerCancelsDescendants(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX subprocess fixture")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "wrapper")
+	child := filepath.Join(dir, "child")
+	marker := filepath.Join(dir, "escaped")
+	require.NoError(t, os.WriteFile(child, []byte("#!/bin/sh\nsleep 2\ntouch "+marker+"\n"), 0o700))
+	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\n"+child+" &\nwait\n"), 0o700))
+	runner := &ProcessRunner{Directory: filepath.Join(dir, "runs"), Command: []string{script}}
+	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := runner.Run(ctx, Request{ID: newID(), Input: "test"}, func(Result) {})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(started), time.Second)
+	time.Sleep(2100 * time.Millisecond)
+	_, err = os.Stat(marker)
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
