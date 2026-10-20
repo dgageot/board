@@ -102,3 +102,32 @@ func TestClosedTaskCannotStartCoach(t *testing.T) {
 	_, err := b.startCoach(t.Context(), card)
 	require.ErrorIs(t, err, errBadInput)
 }
+
+func TestDeletingProjectTaskRetainsRecoveryDataWhenStopFails(t *testing.T) {
+	b, store, loop, _ := taskFixture(t)
+	task, card := reservedTask(t, store, loop.ID)
+	sessions := &closeTaskSessions{fail: true}
+	b.sessions = sessions
+	b.controller.sessions = sessions
+	request := httptest.NewRequest(http.MethodDelete, "/api/cards/"+card.ID, http.NoBody)
+	request.SetPathValue("id", card.ID)
+	recorder := httptest.NewRecorder()
+	b.handleDeleteCard(recorder, request)
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+	_, err := store.GetCard(card.ID)
+	require.NoError(t, err)
+	saved, err := store.GetProjectTask(task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "closing", saved.Status)
+	assert.FileExists(t, filepath.Join(card.Worktree, "result.txt"))
+}
+
+func TestClosingMissingProjectCardDoesNotClaimSuccess(t *testing.T) {
+	b, store, loop, _ := taskFixture(t)
+	task, card := reservedTask(t, store, loop.ID)
+	require.NoError(t, store.DeleteCard(card.ID))
+	require.ErrorContains(t, b.controller.finishTaskClose(store, task), "cannot verify")
+	saved, err := store.GetProjectTask(task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "launched", saved.Status)
+}

@@ -11,7 +11,7 @@ import (
 func (c *Controller) finishTaskClose(store projectTaskStore, task *ProjectTask) error {
 	card, err := c.store.GetCard(task.CardID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return store.UpdateProjectTask(task.ID, "closed", "")
+		return errors.New("cannot verify project task termination: its card is missing")
 	}
 	if err != nil {
 		return err

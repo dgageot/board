@@ -335,12 +335,10 @@ func (b *Board) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := b.store.DeleteCard(card.ID); err != nil {
-		writeError(w, fmt.Errorf("delete card: %w", err))
+	if err := b.deleteCard(card); err != nil {
+		writeError(w, err)
 		return
 	}
-
-	b.deleteCardResources(card)
 
 	b.broadcast()
 	w.WriteHeader(http.StatusNoContent)
@@ -400,11 +398,9 @@ func (b *Board) handleClearColumn(w http.ResponseWriter, r *http.Request) {
 
 	var errs []error
 	for _, card := range cards {
-		if err := b.store.DeleteCard(card.ID); err != nil {
-			errs = append(errs, fmt.Errorf("delete card %s: %w", card.ID, err))
-			continue
+		if err := b.deleteCard(card); err != nil {
+			errs = append(errs, err)
 		}
-		b.deleteCardResources(card)
 	}
 
 	b.broadcast()
@@ -414,4 +410,35 @@ func (b *Board) handleClearColumn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Linked project runs must stop successfully before their recovery record disappears.
+func (b *Board) deleteCard(card *Card) error {
+	if err := b.stopLinkedTask(card); err != nil {
+		return err
+	}
+	if err := b.store.DeleteCard(card.ID); err != nil {
+		return fmt.Errorf("delete card: %w", err)
+	}
+	b.deleteCardResources(card)
+	return nil
+}
+
+func (b *Board) stopLinkedTask(card *Card) error {
+	store, ok := b.store.(projectTaskStore)
+	if !ok {
+		return nil
+	}
+	task, err := store.ProjectTaskForCard(card.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := store.UpdateProjectTask(task.ID, "closing", task.Error); err != nil {
+		return err
+	}
+	b.controller.Stop(card.ID)
+	return b.controller.finishTaskClose(store, task)
 }
