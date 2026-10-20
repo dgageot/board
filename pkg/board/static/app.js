@@ -429,7 +429,7 @@ function prLinkContent(url, { status = "open", approved = false } = {}) {
 
 const CARD_STATUS_LABELS = {
   starting: "Starting", running: "Running", waiting: "Ready",
-  error: "Error", paused: "Paused", idle: "Idle", done: "Done",
+  error: "Error", paused: "Paused", idle: "Idle", done: "Done", closed: "Closed",
 };
 
 function renderCard(card, colId) {
@@ -463,7 +463,7 @@ function renderCard(card, colId) {
     <div class="card-title">${esc(card.title)}</div>
     ${costHtml || prLink ? `<div class="card-footer">${costHtml}${prLink}</div>` : ""}
     <div class="card-actions">
-      <button class="icon-btn" data-action="jump" data-id="${card.id}" title="Open agent session" aria-label="Open agent session">${icon("terminal")}</button>
+      <button class="icon-btn" data-action="jump" data-id="${card.id}" ${card.status === "closed" ? "disabled" : ""} title="Open agent session" aria-label="Open agent session">${icon("terminal")}</button>
       <button class="icon-btn" data-action="diff" data-id="${card.id}" title="View worktree diff" aria-label="View worktree diff">${icon("diff")}</button>
       <button class="icon-btn" data-action="vscode" data-id="${card.id}" title="Open in VSCode" aria-label="Open in VSCode">${icon("code")}</button>
       <button class="icon-btn icon-btn-danger btn-delete" data-action="delete" data-id="${card.id}" title="Delete task and worktree" aria-label="Delete task and worktree" data-arm-label="Delete?">${icon("trash")}</button>

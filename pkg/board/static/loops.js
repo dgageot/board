@@ -49,7 +49,7 @@ const busyJob = (job) => job.status === 'queued' || job.status === 'running';
 const liveRound = (round) => round.status === 'designing' || round.status === 'testing';
 
 export function loopActivity(detail) {
-  const jobs = detail.jobs || [];
+  const jobs = (detail.jobs || []).filter((job) => !job.closedAt);
   const rounds = detail.rounds || [];
   const generation = jobs.find((job) => job.kind === 'generate' && busyJob(job));
   if (generation) return { phase: 'generating', title: generation.status === 'queued' ? 'Agent creation queued' : 'Creating agent', note: generation.status === 'queued' ? 'Waiting for a worker.' : '', job: generation };
@@ -86,7 +86,7 @@ function renderResult(job, loopID, feedback, sourceView = false) {
     <p class="loop-result-status"><span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span>${failed ? ' Partial output' : ''}</p>
     ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
     ${job.project ? `<p class="loop-project-context">${escapeHTML(job.project.name)} · ${escapeHTML(job.project.revision.slice(0, 8))}</p>` : ''}
-    <div class="loop-result-toolbar"><button class="btn btn-ghost btn-small" data-source="${escapeHTML(job.id)}" aria-pressed="${sourceView}" ${!output ? 'disabled' : ''}>${sourceView ? 'Rendered' : 'Source'}</button><button class="btn btn-ghost btn-small" data-copy-result="${escapeHTML(job.id)}" ${!output ? 'disabled' : ''}>Copy</button></div>
+    <div class="loop-result-toolbar"><button class="btn btn-ghost btn-small" data-close-run="${escapeHTML(job.id)}" title="Close run and keep its results">Close</button><button class="btn btn-ghost btn-small" data-source="${escapeHTML(job.id)}" aria-pressed="${sourceView}" ${!output ? 'disabled' : ''}>${sourceView ? 'Rendered' : 'Source'}</button><button class="btn btn-ghost btn-small" data-copy-result="${escapeHTML(job.id)}" ${!output ? 'disabled' : ''}>Copy</button></div>
     <div class="loop-prose" data-result-body="${escapeHTML(job.id)}" data-inspect="latest-output-${escapeHTML(job.id)}">${content}</div>
     ${truncated ? '<p class="loop-hint">Preview limited to 64K characters. Copy includes the full result.</p>' : ''}
     ${markdown?.tablesAsText ? '<p class="loop-hint">Large tables shown as text.</p>' : ''}
@@ -101,13 +101,14 @@ export function renderLoopDetail(detail, selectedVersion, sourceJob = '') {
   const { loop, versions, jobs = [], rounds = [], feedback = [], projectTasks = [] } = detail;
   const version = selectedLoopVersion(detail, selectedVersion);
   const activity = loopActivity(detail);
-  const latestRun = activity.phase === 'running' ? activity.job : jobs.find((job) => job.kind === 'run');
+  const latestRun = activity.phase === 'running' ? activity.job : jobs.find((job) => job.kind === 'run' && !job.closedAt);
   const inProgress = ['generating', 'running', 'optimizing'].includes(activity.phase);
   return `<div class="loop-detail-heading"><div><h2>${escapeHTML(loop.name)}</h2></div>
     <span class="loop-badge">${version ? `v${version.number}${version.id === loop.activeVersion ? ' · active' : ''}` : 'No version'}</span></div>
     ${renderActivity(activity, version)}
     <section class="loop-panel"><div class="loop-section-heading"><div><h3>Project execution</h3><p class="loop-muted">For file changes, tests and commits. Uses the project’s Board agent.</p></div><button class="btn btn-ghost" data-action="project-task">Run as Board task</button></div>
-    ${projectTasks.map((task) => renderProjectTask(task)).join('')}</section>
+    ${projectTasks.filter((task) => task.status !== 'closed').map((task) => renderProjectTask(task)).join('')}
+    ${projectTasks.some((task) => task.status === 'closed') ? `<details class="loop-secondary" data-inspect="closed-project-tasks"><summary>Closed runs</summary>${projectTasks.filter((task) => task.status === 'closed').map((task) => renderProjectTask(task)).join('')}</details>` : ''}</section>
     ${latestRun ? renderResult(latestRun, loop.id, feedback, sourceJob === latestRun.id) : ''}
     <details class="loop-secondary loop-panel" data-inspect="task"><summary>Task</summary><div class="loop-contract"><section><h3>Task</h3><p>${escapeHTML(loop.description)}</p></section><section><h3>Success criteria</h3><p>${escapeHTML(loop.criteria)}</p></section></div></details>
     ${version ? `<section class="loop-panel"><div class="loop-section-heading"><h3>Optimization</h3><button class="btn btn-primary" data-action="optimize" ${inProgress ? 'disabled' : ''}>Optimize</button></div>
@@ -126,11 +127,12 @@ export function renderLoopDetail(detail, selectedVersion, sourceJob = '') {
 
 export function renderProjectTask(task) {
   const card = task.card;
-  const label = !card ? 'Card removed' : task.status !== 'launched' ? task.status === 'reserved' || task.status === 'launch_uncertain' ? 'Launch unconfirmed — inspect before retrying' : 'Launch failed' : ({ starting: 'Starting', running: 'Running', waiting: 'Idle — verify results', paused: 'Paused', error: 'Needs attention' })[card.status] || card.status;
+  const closed = task.status === 'closed';
+  const label = closed ? 'Closed' : task.status === 'closing' ? 'Closing — retry if needed' : !card ? 'Card removed' : task.status !== 'launched' ? task.status === 'reserved' || task.status === 'launch_uncertain' ? 'Launch unconfirmed — inspect before retrying' : 'Launch failed' : ({ starting: 'Starting', running: 'Running', waiting: 'Idle — verify results', paused: 'Paused', error: 'Needs attention' })[card.status] || card.status;
   return `<div class="loop-project-task"><div class="loop-section-heading"><strong>${escapeHTML(task.projectName)}</strong><span class="loop-muted">${escapeHTML(label)}</span></div>
     <p class="loop-project-context">${escapeHTML(task.agent)}${card ? ` · ${escapeHTML(card.branch)}` : ''}</p>
     ${task.error ? `<p class="loop-job-error">${escapeHTML(task.error)}</p>` : ''}
-    ${card ? `<div class="loop-actions"><button class="btn btn-ghost btn-small" data-task-terminal="${escapeHTML(card.id)}">Open agent</button><button class="btn btn-ghost btn-small" data-task-diff="${escapeHTML(card.id)}">Diff</button></div>` : ''}</div>`;
+    <div class="loop-actions">${card && !closed && task.status !== 'closing' ? `<button class="btn btn-ghost btn-small" data-task-terminal="${escapeHTML(card.id)}">Open agent</button>` : ''}${card ? `<button class="btn btn-ghost btn-small" data-task-diff="${escapeHTML(card.id)}">Diff</button>` : ''}${!closed ? `<button class="btn btn-ghost btn-small" data-close-task="${escapeHTML(task.id)}">${task.status === 'closing' ? 'Retry close' : 'Close'}</button>` : ''}</div></div>`;
 }
 
 function formatMetricCost(cost) { return cost == null ? 'Cost unknown' : `$${cost.toFixed(cost < 1 ? 4 : 2)}`; }
@@ -139,7 +141,7 @@ export function renderJob(job, loopID, feedback = []) {
   const busy = ['queued', 'running'].includes(job.status);
   const metrics = job.metrics || {};
   return `<details class="loop-job" ${busy || job.status === 'failed' ? 'open' : ''} data-job="${escapeHTML(job.id)}" data-inspect="job-${escapeHTML(job.id)}"><summary>
-    <span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span><strong>${({ generate: '✦ Agent design', proposal: '✦ Candidate design', capability: '◇ Capability check', test: '▷ Evaluation run', judge: '◇ Quality judge' })[job.kind] || '▷ Agent run'}</strong>
+    <span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span>${job.closedAt ? '<span class="loop-muted">Closed</span>' : ''}<strong>${({ generate: '✦ Agent design', proposal: '✦ Candidate design', capability: '◇ Capability check', test: '▷ Evaluation run', judge: '◇ Quality judge' })[job.kind] || '▷ Agent run'}</strong>
     <span class="loop-job-metrics">${formatMetricCost(metrics.cost)} · ${((metrics.durationMs || 0) / 1000).toFixed(1)}s</span></summary>
     ${job.project ? `<p class="loop-project-context"><strong>${escapeHTML(job.project.name)}</strong> · ${escapeHTML(job.project.revision.slice(0, 8))}<br><span>${escapeHTML(job.project.path)} · ${job.project.files.length} files included · ${job.project.omitted} omitted</span></p>` : ''}
     ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
@@ -149,7 +151,7 @@ export function renderJob(job, loopID, feedback = []) {
     <div class="loop-actions"><a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/events" download>Raw events ↓</a>
     <a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/stderr" download>Process log ↓</a>
     ${!busy && ['run', 'test'].includes(job.kind) ? `<button class="btn btn-ghost btn-small" data-feedback="${escapeHTML(job.id)}">＋ Feedback</button>` : ''}
-    ${busy ? `<button class="btn btn-ghost btn-small" data-cancel="${escapeHTML(job.id)}">Cancel</button>` : ''}</div>
+    ${busy ? `<button class="btn btn-ghost btn-small" data-cancel="${escapeHTML(job.id)}">Cancel</button>` : ''}${job.kind === 'run' && !job.closedAt ? `<button class="btn btn-ghost btn-small" data-close-run="${escapeHTML(job.id)}">Close</button>` : ''}</div>
     ${feedback.filter((item) => item.jobId === job.id).map((item) => `<p class="loop-feedback-note">${item.rating === 'good' ? '✓' : '✕'} ${escapeHTML(item.note || item.rating)}</p>`).join('')}</details>`;
 }
 
@@ -231,7 +233,7 @@ function focusIdentity(element) {
   if (!element) return '';
   if (element.dataset.focus) return `control:${element.dataset.focus}`;
   if (element.tagName === 'SUMMARY') return `summary:${element.parentElement.dataset.inspect || ''}`;
-  for (const key of ['version', 'action', 'promote', 'cancel', 'feedback', 'cancelRound', 'source', 'copyResult']) {
+  for (const key of ['version', 'action', 'promote', 'cancel', 'feedback', 'cancelRound', 'source', 'copyResult', 'closeRun', 'closeTask']) {
     if (element.dataset[key]) return `${key}:${element.dataset[key]}`;
   }
   return element.getAttribute('href') || '';
@@ -303,6 +305,7 @@ export function initLoops(api, boardActions = {}) {
   let taskSubmitting = false;
   const projectLoads = new Map();
   const startingOptimizations = new Set();
+  const closingRuns = new Set();
 
   function notice(message = '', error = false) {
     byID('loops-notice').textContent = message;
@@ -352,7 +355,7 @@ export function initLoops(api, boardActions = {}) {
       byID('loops-welcome-title').textContent = list.length ? 'Select a loop' : 'No loops yet';
       if (detail) {
         updateLoopInspector(byID('loop-detail'), detail, selectedVersion, sourceJob);
-        if ((detail.projectTasks || []).some((task) => task.card && ['starting', 'running', 'paused'].includes(task.card.status)) || (detail.jobs || []).some((job) => ['queued', 'running'].includes(job.status)) || (detail.rounds || []).some((round) => ['designing', 'testing'].includes(round.status))) refreshTimer = setTimeout(refreshLoops, 1000);
+        if ((detail.projectTasks || []).some((task) => task.status !== 'closed' && task.card && ['starting', 'running', 'paused'].includes(task.card.status)) || (detail.jobs || []).some((job) => ['queued', 'running'].includes(job.status)) || (detail.rounds || []).some((round) => ['designing', 'testing'].includes(round.status))) refreshTimer = setTimeout(refreshLoops, 1000);
       }
     } catch (error) {
       if (request === sequence) notice(error.message, true);
@@ -375,6 +378,29 @@ export function initLoops(api, boardActions = {}) {
     if (button) { selectedVersion = ''; location.hash = `loops/${button.dataset.loop}`; }
   });
   byID('loop-detail').addEventListener('click', async (event) => {
+    const closeRun = event.target.closest('[data-close-run]');
+    const closeTask = event.target.closest('[data-close-task]');
+    if ((closeRun || closeTask) && detail) {
+      const button = closeRun || closeTask;
+      const id = closeRun?.dataset.closeRun || closeTask.dataset.closeTask;
+      const loopID = detail.loop.id;
+      const key = `${loopID}/${closeRun ? 'run' : 'task'}/${id}`;
+      if (closingRuns.has(key)) return;
+      const job = detail.jobs?.find((item) => item.id === id);
+      const question = closeTask ? 'Stop this Board task and close it? Its worktree, commits and history will be kept.' : 'Stop this run and close it? Its results will be kept in history.';
+      if ((closeTask || (job && busyJob(job))) && !window.confirm(question)) return;
+      closingRuns.add(key);
+      const label = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Closing…';
+      try {
+        await api(`/loops/${loopID}/${closeRun ? 'runs' : 'tasks'}/${encodeURIComponent(id)}/close`, { method: 'POST' });
+        if (detail?.loop.id === loopID) notice('Run closed. Results kept in history.');
+        await refreshLoops();
+      } catch (error) { if (detail?.loop.id === loopID) notice(error.message, true); }
+      finally { closingRuns.delete(key); button.disabled = false; button.textContent = label; }
+      return;
+    }
     const projectTask = event.target.closest('[data-action="project-task"]');
     if (projectTask && detail) {
       if (taskSubmitting) return;

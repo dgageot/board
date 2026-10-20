@@ -247,7 +247,7 @@ function loopAppHarness(overrides = {}) {
   };
   const context = vm.createContext({
     document:Object.assign(document,{getElementById:element,body:element('body'),querySelectorAll:()=>[]}),
-    window:{addEventListener:(name,callback)=>handlers.set(name,callback)},
+    window:{addEventListener:(name,callback)=>handlers.set(name,callback),confirm:()=>true},
     location:{hash:'#board'},crypto:require('node:crypto').webcrypto,setTimeout,clearTimeout,console, ...markdownModule,
   });
   const api=async(path,options)=>{
@@ -263,6 +263,10 @@ function loopAppHarness(overrides = {}) {
   vm.runInContext(source.replace(/^import .*;\n/gm,'').replace(/^export /gm,'')+'\ninitLoops(api);',context);
   return {
     calls,element,
+    async click(selector,dataset) {
+      await element('loop-detail').handlers.click({target:{closest:(value)=>value===selector?{dataset,disabled:false,textContent:'Close'}:null}});
+      await new Promise(setImmediate);
+    },
     async action(name) {
       await element('loop-detail').handlers.click({target:{closest:(selector)=>selector===`[data-action="${name}"]` ? {} : null}});
       await new Promise(setImmediate);
@@ -618,4 +622,34 @@ test('project execution is separate from read-only analysis and optimization', a
  assert.match(html,/Run read-only/);
  assert.match(html,/Run as Board task/);
  assert.match(html,/Uses the project’s Board agent/);
+});
+
+test('closing a result uses the close endpoint and does not delete evidence', async () => {
+ const h=loopAppHarness();await h.navigate('first');
+ await h.click('[data-close-run]',{closeRun:'run-one'});
+ const request=h.calls.find((call)=>call.path==='/loops/first/runs/run-one/close');
+ assert.equal(request.options.method,'POST');
+ assert.equal(h.calls.filter((call)=>call.options?.method==='DELETE').length,0);
+});
+
+test('closed results leave the active view but remain in history and accounting', async () => {
+ const {renderLoopDetail,loopActivity,summarizeSpend}=await modulePromise;
+ const detail=inspectorFixture();
+ detail.jobs[0].status='succeeded';detail.jobs[0].closedAt='2026-10-20T00:00:00Z';detail.jobs[0].metrics.cost=.1;
+ assert.equal(loopActivity(detail).title,'Ready');
+ const html=renderLoopDetail(detail,'v1');
+ assert.doesNotMatch(html,/data-result-body="j1"/);
+ assert.match(html,/data-job="j1"/);
+ assert.match(html,/Closed/);
+ assert.equal(summarizeSpend(detail.jobs).execution.cost,.1);
+});
+
+test('closed project tasks retain diff access without offering a live terminal', async () => {
+ const {renderProjectTask,renderLoopDetail}=await modulePromise;
+ const task={id:'task',status:'closed',projectName:'Repo',agent:'agent',card:{id:'card',branch:'branch',status:'closed'}};
+ const html=renderProjectTask(task);
+ assert.match(html,/Closed/);assert.match(html,/data-task-diff="card"/);
+ assert.doesNotMatch(html,/data-task-terminal|data-close-task/);
+ const detail=inspectorFixture();detail.projectTasks=[task];
+ assert.match(renderLoopDetail(detail,'v1'),/data-inspect="closed-project-tasks"/);
 });
