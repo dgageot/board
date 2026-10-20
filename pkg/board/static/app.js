@@ -125,7 +125,9 @@ async function api(path, opts = {}) {
   });
   if (!res.ok && res.status !== 204) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    const error = new Error(text || res.statusText);
+    error.status = res.status;
+    throw error;
   }
   if (res.status === 204) return null;
   return res.json();

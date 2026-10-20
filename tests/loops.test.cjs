@@ -20,7 +20,7 @@ test('loop inspector preserves YAML safely and marks active versions', async () 
   const html = renderLoopDetail({
     loop: { id: 'loop', name: 'Notes', description: 'Summarize', criteria: '<b>accurate</b>', example: 'fix', activeVersion: 'v1' },
     versions: [{ id: 'v1', number: 1, yaml: 'instruction: </code><script>bad</script>', rationale: 'First', createdAt: '2026-10-20T00:00:00Z' }],
-  }, 'v1');
+  }, 'v1', '', 'agent');
   assert.match(html, /v1 · active/);
   assert.match(html, /&lt;\/code&gt;&lt;script&gt;/);
   assert.match(html, /versions\/v1\/export/);
@@ -29,8 +29,8 @@ test('loop inspector preserves YAML safely and marks active versions', async () 
 test('empty loops offer a first version without inventing metrics', async () => {
   const { renderLoopDetail } = await modulePromise;
   const html = renderLoopDetail({ loop: { id: 'a', name: 'Notes', description: 'Task', criteria: 'Good', example: 'Input' }, versions: [] });
-  assert.match(html, /Import YAML/);
-  assert.match(html, /0 versions/);
+  assert.match(html, /data-action="generate"/);
+  assert.match(html, /No version/);
   assert.doesNotMatch(html, /\$0|100%/);
 });
 
@@ -165,22 +165,23 @@ test('live inspection preserves collapsed runs, nested scroll and keyboard focus
   const { updateLoopInspector } = await modulePromise;
   const { container, state, doc } = inspectorHarness();
   const detail = inspectorFixture();
-  updateLoopInspector(container, detail, 'v1');
+  detail.loadedJob=detail.jobs[0];
+  updateLoopInspector(container, detail, 'v1', '', 'settings', 'j1');
   state.elements.find((element) => element.dataset.inspect === 'job-j1').open = false;
   const output = state.elements.find((element) => element.dataset.inspect === 'output-j1');
   output.scrollTop = 50;
   output.scrollLeft = 12;
   container.scrollTop = 200;
-  doc.activeElement = state.buttons[0];
+
   detail.jobs[0].output = 'More output';
-  updateLoopInspector(container, detail, 'v1');
+  updateLoopInspector(container, detail, 'v1', '', 'settings', 'j1');
   assert.equal(state.elements.find((element) => element.dataset.inspect === 'job-j1').open, false);
   assert.equal(state.elements.find((element) => element.dataset.inspect === 'output-j1').scrollTop, 50);
   assert.equal(state.elements.find((element) => element.dataset.inspect === 'output-j1').scrollLeft, 12);
   assert.equal(container.scrollTop, 200);
-  assert.equal(doc.activeElement, state.buttons[0]);
+
   assert.equal(state.writes, 2);
-  updateLoopInspector(container, detail, 'v1');
+  updateLoopInspector(container, detail, 'v1', '', 'settings', 'j1');
   assert.equal(state.writes, 2, 'unchanged refresh does not replace the DOM');
 });
 
@@ -213,11 +214,11 @@ test('live refresh restores the exact experiment control instead of a matching v
   const detail=inspectorFixture();
   const candidate={versionId:'v1',label:'Baseline',trials:[]};
   detail.rounds=['first','second'].map((id)=>({id,baseline:'v1',status:'testing',inputs:['input'],repeats:1,candidates:[candidate]}));
-  updateLoopInspector(container,detail,'v1');
-  assert.equal(state.buttons.length,3);
+  updateLoopInspector(container,detail,'v1','','optimize');
+  assert.equal(state.buttons.length,2);
   doc.activeElement=state.buttons.find((button)=>button.dataset.focus==='inspect-second-v1');
   detail.jobs[0].output='Changed output';
-  updateLoopInspector(container,detail,'v1');
+  updateLoopInspector(container,detail,'v1','','optimize');
   assert.equal(doc.activeElement,state.buttons.find((button)=>button.dataset.focus==='inspect-second-v1'));
   assert.equal(doc.activeElement.dataset.focus,'inspect-second-v1');
 });
@@ -257,12 +258,13 @@ function loopAppHarness(overrides = {}) {
     if(path==='/projects') return [{id:'project-first',name:'<Project one>',repoPath:'/repo/one',agent:'project-agent'},{id:'project-second',name:'Project two',repoPath:'/repo/two',agent:'second-agent'}];
     if(path==='/loops') return [fixture('first').loop,fixture('second').loop];
     if(options?.method==='POST') return {id:'imported'};
-    return fixture(path.split('/').at(-1));
+    return fixture(path.endsWith('/overview')?path.split('/').at(-2):path.split('/').at(-1));
   };
   context.api=api;
   vm.runInContext(source.replace(/^import .*;\n/gm,'').replace(/^export /gm,'')+'\ninitLoops(api);',context);
   return {
     calls,element,
+    async refresh(){handlers.get('board-refresh')();await new Promise(setImmediate);},
     async click(selector,dataset) {
       await element('loop-detail').handlers.click({target:{closest:(value)=>value===selector?{dataset,disabled:false,textContent:'Close'}:null}});
       await new Promise(setImmediate);
@@ -280,7 +282,7 @@ function loopAppHarness(overrides = {}) {
       handlers.get('hashchange')();
       await new Promise(setImmediate);
       assert.equal(element('loops-notice').textContent || '', '', 'navigation rendered successfully');
-      assert.match(element('loop-detail').innerHTML, new RegExp(`${id}-v1`));
+      assert.match(element('loop-detail').innerHTML,new RegExp(`<h2>${id}</h2>`));
     },
     async selectVersion(id) {
       await element('loop-detail').handlers.click({target:{closest:(selector)=>selector==='[data-version]'?{dataset:{version:id}}:null}});
@@ -336,10 +338,10 @@ test('project list failure and empty projects are visible rather than silently u
 
 test('loop creation sends the first-run project instead of example text', async () => {
  const h=loopAppHarness();
- h.element('loop-name').value='Review';h.element('loop-task').value='Review code';h.element('loop-criteria').value='Precise';h.element('loop-first-project').value='project-first';
+ h.element('loop-mode').value='analysis';h.element('loop-name').value='Review';h.element('loop-task').value='Review code';h.element('loop-criteria').value='Precise';h.element('loop-first-project').value='project-first';
  await h.submit('loop-new-form');
  const request=h.calls.find((call)=>call.path==='/loops' && call.options?.method==='POST');
- assert.deepEqual(JSON.parse(request.options.body),{name:'Review',description:'Review code',criteria:'Precise',projectId:'project-first'});
+ assert.deepEqual(JSON.parse(request.options.body),{name:'Review',description:'Review code',criteria:'Precise',projectId:'project-first',mode:'analysis'});
 });
 
 test('newly created loop clearly shows automatic agent creation without another generate action', async () => {
@@ -350,7 +352,7 @@ test('newly created loop clearly shows automatic agent creation without another 
   assert.match(html,/role="status" aria-live="polite"/);
   assert.doesNotMatch(html,/data-action="generate"/);
   assert.match(html,/data-cancel="generation"/);
-  assert.match(html,/<details[^>]+data-inspect="agent-config"/);
+  assert.match(html,/data-loop-panel="agent"/);
 });
 
 test('running agent is distinct from agent generation and has visible live output', async () => {
@@ -362,7 +364,7 @@ test('running agent is distinct from agent generation and has visible live outpu
   assert.match(html,/Live output/);
   assert.match(html,/First/);
   assert.doesNotMatch(html,/data-action="generate"/);
-  assert.equal((html.match(/data-inspect="job-j1"/g)||[]).length,1);
+  assert.equal((html.match(/data-result-body="j1"/g)||[]).length,1);
 });
 
 test('failed generation offers retry while a ready agent offers a run', async () => {
@@ -373,7 +375,7 @@ test('failed generation offers retry while a ready agent offers a run', async ()
   detail.jobs[0].status='succeeded';
   detail.versions=[{id:'v1',number:1,yaml:'agents: {}'}];
   const html=renderLoopDetail(detail,'v1');
-  assert.match(html,/Ready/);
+  assert.match(html,/data-action="run"/);
   assert.match(html,/data-action="run"/);
   assert.doesNotMatch(html,/Retry creation/);
 });
@@ -401,9 +403,8 @@ test('explicit version inspection reveals configuration instead of only changing
  const h=loopAppHarness();
  await h.navigate('first');
  await h.selectVersion('first-v2');
- const config=h.element('loop-detail:[data-inspect="agent-config"]');
- assert.equal(config.open,true);
- assert.equal(config.scrolled,true);
+ assert.match(h.element('loop-detail').innerHTML,/Workflow instruction|Agent configuration/);
+ assert.match(h.element('loop-detail').innerHTML,/data-version="first-v2"/);
 });
 
 test('live output and stop action refer to the same active run when a newer run has finished', async () => {
@@ -470,11 +471,13 @@ test('loop status is concise without hiding failures or primary actions', async 
  assert.equal(loopActivity(detail).note,'');
  const ready=renderLoopDetail(detail,'v1');
  assert.match(ready,/data-action="run"/);
- assert.match(ready,/data-action="optimize"/);
- assert.match(ready,/uses provider credits/);
+ const optimize=renderLoopDetail(detail,'v1','','optimize');
+ assert.match(optimize,/data-action="optimize"/);
+ assert.match(optimize,/uses provider credits/);
  assert.doesNotMatch(ready,/whenever you’re ready|Improve this agent|immutable snapshots|REUSABLE INTELLIGENCE/);
  detail.jobs=[{id:'g',kind:'generate',status:'failed',error:'Provider unavailable',metrics:{}}];
- assert.match(renderLoopDetail(detail,'v1'),/Provider unavailable/);
+ detail.loadedJob=detail.jobs[0];
+ assert.match(renderLoopDetail(detail,'v1','','settings',detail.jobs[0].id),/Provider unavailable/);
 });
 
 test('latest result renders safe Markdown with Source and Copy controls', async () => {
@@ -619,9 +622,9 @@ test('project execution is separate from read-only analysis and optimization', a
  const {renderLoopDetail}=await modulePromise;
  const detail=inspectorFixture();detail.jobs=[];
  const html=renderLoopDetail(detail,'v1');
- assert.match(html,/Run read-only/);
- assert.match(html,/Run as Board task/);
- assert.match(html,/Uses the project’s Board agent/);
+ assert.match(html,/Analysis · read-only/);
+ detail.loop.mode='project';detail.versions[0].mode='project';
+ assert.match(renderLoopDetail(detail,'v1'),/data-action="project-task"/);
 });
 
 test('closing a result uses the close endpoint and does not delete evidence', async () => {
@@ -638,9 +641,8 @@ test('closed results leave the active view but remain in history and accounting'
  detail.jobs[0].status='succeeded';detail.jobs[0].closedAt='2026-10-20T00:00:00Z';detail.jobs[0].metrics.cost=.1;
  assert.equal(loopActivity(detail).title,'Ready');
  const html=renderLoopDetail(detail,'v1');
- assert.doesNotMatch(html,/data-result-body="j1"/);
- assert.match(html,/data-job="j1"/);
- assert.match(html,/Closed/);
+ assert.match(html,/data-select-run="j1"/);
+ assert.match(html,/closed/);
  assert.equal(summarizeSpend(detail.jobs).execution.cost,.1);
 });
 
@@ -651,5 +653,99 @@ test('closed project tasks retain diff access without offering a live terminal',
  assert.match(html,/Closed/);assert.match(html,/data-task-diff="card"/);
  assert.doesNotMatch(html,/data-task-terminal|data-close-task/);
  const detail=inspectorFixture();detail.projectTasks=[task];
- assert.match(renderLoopDetail(detail,'v1'),/data-inspect="closed-project-tasks"/);
+ assert.match(renderLoopDetail(detail,'v1'),/data-select-run=/);
+});
+
+test('workflow selection uses only matching execution type', async () => {
+ const {selectedLoopVersion,renderLoopDetail}=await modulePromise;
+ const detail={loop:{id:'l',name:'Work',mode:'project'},versions:[{id:'a',mode:'analysis',number:2},{id:'p',mode:'project',number:1,yaml:'agents: {}'}],jobs:[]};
+ assert.equal(selectedLoopVersion(detail,'a').id,'p');
+ const html=renderLoopDetail(detail,'p');
+ assert.match(html,/data-action="project-task"/);
+ assert.doesNotMatch(html,/data-action="run"/);
+ const optimization=renderLoopDetail(detail,'p','','optimize');
+ assert.match(optimization,/Project optimization is not yet available/);
+ assert.doesNotMatch(optimization,/data-action="optimize"/);
+});
+
+test('run history lets a closed result be selected without losing the current execution', async () => {
+ const {renderLoopDetail}=await modulePromise;
+ const detail=inspectorFixture();
+ detail.jobs=[{id:'new',kind:'run',status:'running',output:'Current'},{id:'old',kind:'run',status:'succeeded',closedAt:'yesterday',output:'Archived result'}];
+ detail.loadedJob=detail.jobs[1];
+ const html=renderLoopDetail(detail,'v1','','runs','old');
+ assert.match(html,/Archived result/);
+ assert.match(html,/Agent running/);
+ assert.match(html,/data-select-run="old" aria-pressed="true"/);
+ assert.match(html,/data-select-run="new"/);
+});
+
+test('Runs view is focused while advanced controls remain in their tabs', async () => {
+ const {renderLoopDetail}=await modulePromise;
+ const detail=inspectorFixture();
+ const runs=renderLoopDetail(detail,'v1');
+ assert.match(runs,/data-loop-panel="agent"/);
+ assert.match(runs,/data-loop-panel="settings"/);
+ assert.doesNotMatch(runs,/<pre class="loop-code"/);
+ const agent=renderLoopDetail(detail,'v1','','agent');
+ assert.match(agent,/<pre class="loop-code"/);
+ assert.match(agent,/Generate new version/);
+ const settings=renderLoopDetail(detail,'v1','','settings');
+ assert.match(settings,/data-mode="project"/);
+ assert.match(settings,/Import analysis agent/);
+});
+
+test('slow selected-result requests are coalesced across refreshes', async () => {
+ let resolve;const pending=new Promise(r=>resolve=r);
+ const summary={loop:{id:'first',name:'first',mode:'analysis'},versions:[{id:'first-v1',number:1}],jobs:[{id:'run',kind:'run',status:'succeeded',outputSize:10,createdAt:'now'}],rounds:[],feedback:[]};
+ const h=loopAppHarness({api:(path)=>path==='/loops/first/overview'?summary:path==='/loops/first/jobs/run'?pending:undefined});
+ await h.navigate('first');await h.refresh();await h.refresh();
+ assert.equal(h.calls.filter(c=>c.path==='/loops/first/jobs/run').length,1);
+ resolve({...summary.jobs[0],output:'Loaded result'});await new Promise(setImmediate);
+ assert.match(h.element('loop-detail').innerHTML,/Loaded result/);
+});
+
+test('technical-job selection does not replace Runs selection', async () => {
+ const summary={loop:{id:'first',name:'first'},versions:[{id:'first-v1',number:1}],jobs:[{id:'run',kind:'run',status:'succeeded',outputSize:3},{id:'design',kind:'generate',status:'succeeded',outputSize:3}],rounds:[],feedback:[]};
+ const h=loopAppHarness({api:(path)=>path==='/loops/first/overview'?summary:path==='/loops/first/jobs/run'?{...summary.jobs[0],output:'Run answer'}:path==='/loops/first/jobs/design'?{...summary.jobs[1],output:'Design answer'}:undefined});
+ await h.navigate('first');
+ await h.click('[data-loop-panel]',{loopPanel:'settings'});
+ await h.click('[data-select-run], [data-select-job]',{selectJob:'design'});
+ await h.click('[data-loop-panel]',{loopPanel:'runs'});
+ assert.match(h.element('loop-detail').innerHTML,/Run answer/);
+ assert.doesNotMatch(h.element('loop-detail').innerHTML,/Design answer/);
+});
+
+test('newly submitted run becomes the selected result', async () => {
+ const summary={loop:{id:'first',name:'first'},versions:[{id:'first-v1',number:1}],jobs:[{id:'old',kind:'run',status:'succeeded',outputSize:3}],rounds:[],feedback:[]};
+ const h=loopAppHarness({api:(path,opts)=>{
+  if(path==='/loops/first/overview')return summary;
+  if(path==='/loops/first/runs'&&opts?.method==='POST'){summary.jobs.unshift({id:'new',kind:'run',status:'succeeded',outputSize:3});return{id:'new'};}
+  if(path.startsWith('/loops/first/jobs/'))return{...summary.jobs.find(j=>j.id===path.split('/').at(-1)),output:path.endsWith('/new')?'New answer':'Old answer'};
+ }});
+ await h.navigate('first');await h.action('run');h.element('loop-run-project').value='project-first';await h.submit('loop-run-form');await new Promise(setImmediate);
+ assert.match(h.element('loop-detail').innerHTML,/New answer/);
+ assert.doesNotMatch(h.element('loop-detail').innerHTML,/Old answer/);
+});
+
+test('returning to a pending result renders its response without requiring another refresh', async () => {
+ let resolve;const pending=new Promise(r=>resolve=r);
+ const summary={loop:{id:'first',name:'first'},versions:[{id:'first-v1',number:1}],jobs:[{id:'a',kind:'run',status:'succeeded',outputSize:3},{id:'b',kind:'run',status:'succeeded',outputSize:3}],rounds:[]};
+ const h=loopAppHarness({api:(path)=>path==='/loops/first/overview'?summary:path==='/loops/first/jobs/a'?pending:path==='/loops/first/jobs/b'?{...summary.jobs[1],output:'B answer'}:undefined});
+ await h.navigate('first');
+ await h.click('[data-select-run], [data-select-job]',{selectRun:'b'});
+ await h.click('[data-select-run], [data-select-job]',{selectRun:'a'});
+ resolve({...summary.jobs[0],output:'A answer'});await new Promise(setImmediate);
+ assert.match(h.element('loop-detail').innerHTML,/A answer/);
+});
+
+test('a mode change completing after navigation leaves the other loop selection intact', async () => {
+ let resolve;const pending=new Promise(r=>resolve=r);
+ const h=loopAppHarness({api:(path,opts)=>path==='/loops/first/mode'&&opts?.method==='PUT'?pending:undefined});
+ await h.navigate('first');
+ const changing=h.click('[data-mode]',{mode:'project'});
+ await new Promise(setImmediate);
+ await h.navigate('second');await h.selectVersion('second-v2');
+ resolve({mode:'project'});await changing;
+ assert.match(h.element('loop-detail').innerHTML,/btn-primary" data-version="second-v2"/);
 });

@@ -71,6 +71,7 @@
   <dialog id="loop-new-dialog" class="dialog-large" aria-labelledby="loop-new-title">
     <div class="dialog-header"><span id="loop-new-title">New loop</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
     <form id="loop-new-form" class="dialog-body" autocomplete="off" data-1p-ignore>
+      <label>Execution<select id="loop-mode" autocomplete="off" data-1p-ignore><option value="project">Project work — edit, test and commit</option><option value="analysis">Analysis — read-only, supports automatic optimization</option></select></label>
       <label>Name<input autocomplete="off" data-1p-ignore id="loop-name" required maxlength="160" placeholder="Release notes"></label>
       <label>First project<select autocomplete="off" data-1p-ignore id="loop-first-project" required><option value="">Choose a project…</option></select></label>
       <p id="loop-first-project-status" class="loop-form-help" role="note"></p>
@@ -109,7 +110,7 @@
       <label>Project<select id="loop-task-project" required autocomplete="off" data-1p-ignore><option value="">Choose a project…</option></select></label>
       <p id="loop-task-project-status" class="loop-form-help" role="note"></p>
       <p id="loop-task-agent" class="loop-project-context"></p>
-      <p class="loop-form-help">Uses the project’s configured agent, not the generated read-only loop agent. Starts from the project’s upstream base in a fresh worktree. This task is not an optimization trial. Idle status is not proof of passing CI; inspect the agent and actual CI result.</p>
+      <p class="loop-form-help">Uses the selected workflow instruction with the project’s configured agent and tools. Starts from the project’s upstream base in a fresh worktree. This task is not an optimization trial. Idle status is not proof of passing CI; inspect the agent and actual CI result.</p>
       <p class="loop-job-error">Normal Board privileges: local tools, network and available credentials, with automatic tool approval. The agent can edit files, run commands, sign commits or publish remotely. A worktree is not a security sandbox.</p>
       <label class="loop-consent"><input id="loop-task-consent" type="checkbox" required autocomplete="off" data-1p-ignore> I authorize this project agent to carry out the task with those privileges.</label>
       <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Start Board task</button></div>

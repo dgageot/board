@@ -158,3 +158,12 @@
 .loop-consent { display: flex; align-items: flex-start; gap: 10px; line-height: 1.6; }
 .loop-consent input[type="checkbox"] { width: auto; flex: 0 0 auto; margin-top: 4px; }
 .loop-project-task { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+.loop-tabs { display:flex; gap:22px; border-bottom:1px solid var(--border); margin:0 0 18px; }
+.loop-tabs button { background:none; border:0; border-bottom:2px solid transparent; padding:12px 2px; color:var(--text-muted); cursor:pointer; }
+.loop-tabs button.selected { color:var(--text); border-bottom-color:var(--accent); }
+.loop-mode-label { color:var(--text-muted); font-size:11px; margin-top:7px; }
+.loop-run-list { display:flex; flex-direction:column; gap:2px; max-height:220px; overflow:auto; margin-bottom:18px; }
+.loop-run-row { display:flex; justify-content:space-between; align-items:center; gap:14px; width:100%; padding:12px; background:transparent; color:var(--text); border:1px solid transparent; border-radius:var(--radius-sm); text-align:left; cursor:pointer; }
+.loop-run-row.selected { background:var(--surface);border-color:var(--border-strong); }
+.loop-run-row:hover { background:var(--surface-hover); }
+.loop-run-row small { display:block; color:var(--text-muted); font-size:11px;margin-top:5px; }

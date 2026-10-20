@@ -9,7 +9,7 @@ export function renderLoopList(loops, selected, detail) {
   return loops.map((loop) => {
     const activity = detail?.loop.id === loop.id ? loopActivity(detail) : null;
     const label = activity?.title || (loop.activeVersion ? 'Active agent' : 'Open loop');
-    const running = activity && ['generating', 'running', 'optimizing'].includes(activity.phase);
+    const running = activity && ['generating', 'running', 'optimizing', 'project-running'].includes(activity.phase);
     return `<button class="loop-list-item ${loop.id === selected ? 'selected' : ''}" data-loop="${escapeHTML(loop.id)}" aria-pressed="${loop.id === selected}">
     <span class="loop-list-icon ${running ? 'spinning' : ''}" aria-hidden="true">↻</span><span><strong>${escapeHTML(loop.name)}</strong>
     <small>${escapeHTML(label)}</small></span><span aria-hidden="true">›</span></button>`;
@@ -17,9 +17,11 @@ export function renderLoopList(loops, selected, detail) {
 }
 
 export function selectedLoopVersion(detail, selectedVersion) {
-  return detail.versions.find((item) => item.id === selectedVersion)
-    || detail.versions.find((item) => item.id === detail.loop.activeVersion)
-    || detail.versions.at(-1);
+  const mode = detail.loop.mode || 'analysis';
+  const versions = detail.versions.filter((item) => (item.mode || 'analysis') === mode);
+  return versions.find((item) => item.id === selectedVersion)
+    || versions.find((item) => item.id === detail.loop.activeVersion)
+    || versions.at(-1);
 }
 
 export function summarizeSpend(jobs) {
@@ -57,26 +59,29 @@ export function loopActivity(detail) {
   if (round) return { phase: 'optimizing', title: 'Optimizing', note: [round.pass ? `Pass ${round.pass}/${round.maxPasses || 4}` : '', round.stage || (round.status === 'designing' ? 'Designing candidates' : 'Evaluating candidates')].filter(Boolean).join(' · '), round };
   const run = jobs.find((job) => job.kind === 'run' && busyJob(job));
   if (run) return { phase: 'running', title: run.status === 'queued' ? 'Run queued' : 'Agent running', note: run.project?.name || '', job: run };
+  const task = detail.projectTasks?.find((item) => item.status !== 'closed' && item.card && ['starting','running','paused'].includes(item.card.status));
+  if(task) return {phase:'project-running',title:task.card.status==='paused'?'Project run paused':'Project run active',note:task.projectName,task};
   const latest = jobs.find((job) => job.kind === 'generate' || job.kind === 'run');
   if (latest && ['failed', 'canceled', 'interrupted'].includes(latest.status)) return { phase: 'failed', title: latest.status === 'failed' ? (latest.kind === 'generate' ? 'Agent creation failed' : 'Run failed') : (latest.kind === 'generate' ? 'Agent creation stopped' : 'Run stopped'), note: latest.error || 'Attempt incomplete.', job: latest };
-  if (detail.versions.length) return { phase: 'ready', title: latest?.kind === 'run' ? 'Run complete' : 'Ready', note: '' };
-  return { phase: 'empty', title: 'No agent', note: '' };
+  if (selectedLoopVersion(detail)) return { phase: 'ready', title: latest?.kind === 'run' ? 'Run complete' : 'Ready', note: '' };
+  return { phase: 'empty', title: 'Generate a workflow for this execution type', note: '' };
 }
 
 function renderActivity(activity, version) {
   let action = '';
   if (activity.job && busyJob(activity.job)) action = `<button class="btn btn-ghost" data-cancel="${escapeHTML(activity.job.id)}">Stop</button>`;
+  else if (activity.task) action = `<button class="btn btn-ghost" data-task-terminal="${escapeHTML(activity.task.card.id)}">Open agent</button>`;
   else if (activity.round) action = `<button class="btn btn-ghost" data-cancel-round="${escapeHTML(activity.round.id)}">Stop</button>`;
   else if (!version) action = `<button class="btn btn-primary" data-action="generate">${activity.phase === 'failed' ? 'Retry creation' : 'Create agent'}</button>`;
-  else action = `<button class="btn btn-primary" data-action="run">${activity.phase === 'failed' ? 'Retry analysis' : 'Run read-only'}</button>`;
-  const running = ['generating', 'running', 'optimizing'].includes(activity.phase);
-  return `<section class="loop-activity ${activity.phase}" aria-label="Current activity"><div class="loop-activity-mark ${running ? 'spinning' : ''}" aria-hidden="true">${running ? '↻' : activity.phase === 'failed' ? '!' : '✓'}</div>
+  else action = '';
+  const running = ['generating', 'running', 'optimizing', 'project-running'].includes(activity.phase);
+  return `<section class="loop-activity ${activity.phase}" aria-label="Current activity"><div class="loop-activity-mark ${running ? 'spinning' : ''}" aria-hidden="true">${running ? '↻' : activity.phase === 'failed' ? '!' : activity.phase === 'empty' ? '○' : '✓'}</div>
     <div class="loop-activity-copy"><h3 role="status" aria-live="polite">${escapeHTML(activity.title)}</h3>${activity.note ? `<p>${escapeHTML(activity.note)}</p>` : ''}</div>${action}</section>`;
 }
 
 function renderResult(job, loopID, feedback, sourceView = false) {
   const failed = ['failed', 'canceled', 'interrupted'].includes(job.status);
-  const title = busyJob(job) ? 'Live output' : failed ? 'Incomplete result' : 'Latest result';
+  const title = busyJob(job) ? 'Live output' : failed ? 'Incomplete result' : 'Result';
   const output = job.output || '';
   const markdown = sourceView ? null : renderResultMarkdown(output);
   const truncated = output.length > previewLimit;
@@ -86,7 +91,7 @@ function renderResult(job, loopID, feedback, sourceView = false) {
     <p class="loop-result-status"><span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span>${failed ? ' Partial output' : ''}</p>
     ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
     ${job.project ? `<p class="loop-project-context">${escapeHTML(job.project.name)} · ${escapeHTML(job.project.revision.slice(0, 8))}</p>` : ''}
-    <div class="loop-result-toolbar"><button class="btn btn-ghost btn-small" data-close-run="${escapeHTML(job.id)}" title="Close run and keep its results">Close</button><button class="btn btn-ghost btn-small" data-source="${escapeHTML(job.id)}" aria-pressed="${sourceView}" ${!output ? 'disabled' : ''}>${sourceView ? 'Rendered' : 'Source'}</button><button class="btn btn-ghost btn-small" data-copy-result="${escapeHTML(job.id)}" ${!output ? 'disabled' : ''}>Copy</button></div>
+    <div class="loop-result-toolbar">${job.closedAt ? '<span class="loop-muted">Closed</span>' : `<button class="btn btn-ghost btn-small" data-close-run="${escapeHTML(job.id)}" title="Close run and keep its results">Close</button>`}<button class="btn btn-ghost btn-small" data-source="${escapeHTML(job.id)}" aria-pressed="${sourceView}" ${!output ? 'disabled' : ''}>${sourceView ? 'Rendered' : 'Source'}</button><button class="btn btn-ghost btn-small" data-copy-result="${escapeHTML(job.id)}" ${!output ? 'disabled' : ''}>Copy</button></div>
     <div class="loop-prose" data-result-body="${escapeHTML(job.id)}" data-inspect="latest-output-${escapeHTML(job.id)}">${content}</div>
     ${truncated ? '<p class="loop-hint">Preview limited to 64K characters. Copy includes the full result.</p>' : ''}
     ${markdown?.tablesAsText ? '<p class="loop-hint">Large tables shown as text.</p>' : ''}
@@ -97,32 +102,30 @@ function renderResult(job, loopID, feedback, sourceView = false) {
     <div class="loop-actions"><a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/events" download>Raw events ↓</a><a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/stderr" download>Process log ↓</a></div></details></section>`;
 }
 
-export function renderLoopDetail(detail, selectedVersion, sourceJob = '') {
+export function renderLoopDetail(detail, selectedVersion, sourceJob = '', panel = 'runs', selectedRun = '') {
   const { loop, versions, jobs = [], rounds = [], feedback = [], projectTasks = [] } = detail;
   const version = selectedLoopVersion(detail, selectedVersion);
+  const projectMode = loop.mode === 'project';
   const activity = loopActivity(detail);
-  const latestRun = activity.phase === 'running' ? activity.job : jobs.find((job) => job.kind === 'run' && !job.closedAt);
-  const inProgress = ['generating', 'running', 'optimizing'].includes(activity.phase);
-  return `<div class="loop-detail-heading"><div><h2>${escapeHTML(loop.name)}</h2></div>
-    <span class="loop-badge">${version ? `v${version.number}${version.id === loop.activeVersion ? ' · active' : ''}` : 'No version'}</span></div>
-    ${renderActivity(activity, version)}
-    <section class="loop-panel"><div class="loop-section-heading"><div><h3>Project execution</h3><p class="loop-muted">For file changes, tests and commits. Uses the project’s Board agent.</p></div><button class="btn btn-ghost" data-action="project-task">Run as Board task</button></div>
-    ${projectTasks.filter((task) => task.status !== 'closed').map((task) => renderProjectTask(task)).join('')}
-    ${projectTasks.some((task) => task.status === 'closed') ? `<details class="loop-secondary" data-inspect="closed-project-tasks"><summary>Closed runs</summary>${projectTasks.filter((task) => task.status === 'closed').map((task) => renderProjectTask(task)).join('')}</details>` : ''}</section>
-    ${latestRun ? renderResult(latestRun, loop.id, feedback, sourceJob === latestRun.id) : ''}
-    <details class="loop-secondary loop-panel" data-inspect="task"><summary>Task</summary><div class="loop-contract"><section><h3>Task</h3><p>${escapeHTML(loop.description)}</p></section><section><h3>Success criteria</h3><p>${escapeHTML(loop.criteria)}</p></section></div></details>
-    ${version ? `<section class="loop-panel"><div class="loop-section-heading"><h3>Optimization</h3><button class="btn btn-primary" data-action="optimize" ${inProgress ? 'disabled' : ''}>Optimize</button></div>
-    <p class="loop-hint">Small edits · up to 4 passes · quality checked first · uses provider credits. <button class="btn btn-ghost btn-small" data-action="optimize-settings" ${inProgress ? 'disabled' : ''}>Custom settings</button></p>
-    ${rounds.map((round) => `<details class="loop-secondary" data-inspect="experiment-${escapeHTML(round.id)}" ${liveRound(round) || ['blocked', 'exhausted', 'failed'].includes(round.status) ? 'open' : ''}><summary>${escapeHTML(roundLabel(round))}</summary>${renderRound(round, jobs, versions, loop.activeVersion)}</details>`).join('')}</section>` : ''}
-    <details class="loop-secondary loop-panel" data-inspect="agent-config"><summary>Agent${version ? ` · v${version.number}` : ''}</summary>
-      <div class="loop-section-heading"><p class="loop-muted">${versions.length} ${versions.length === 1 ? 'version' : 'versions'}</p><button class="btn btn-ghost" data-action="import">Import YAML</button></div>
-      ${version ? `<div class="loop-version-tabs">${versions.map((item) => `<button class="btn ${item.id === version.id ? 'btn-primary' : 'btn-ghost'}" data-version="${escapeHTML(item.id)}" data-focus="version-tab-${escapeHTML(item.id)}">v${item.number}${item.id === loop.activeVersion ? ' · active' : ''}</button>`).join('')}</div>
-      <p class="loop-rationale">${escapeHTML(version.rationale || 'Imported configuration')}</p><pre class="loop-code" data-inspect="config-${escapeHTML(version.id)}"><code>${escapeHTML(version.yaml)}</code></pre>
-      <div class="loop-actions"><button class="btn btn-ghost" data-action="promote" ${version.id === loop.activeVersion ? 'disabled' : ''}>${version.id === loop.activeVersion ? '✓ Active' : 'Use this version'}</button><a class="btn btn-ghost" href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(version.id)}/export" download="agent.yaml">Export YAML ↓</a></div>` : ''}
-    </details>
-    <details class="loop-secondary loop-panel" data-inspect="history"><summary>History · ${jobs.length} ${jobs.length === 1 ? 'attempt' : 'attempts'}</summary>
-      ${jobs.length ? jobs.map((job) => renderJob(job, loop.id, feedback)).join('') : '<p class="loop-hint">No attempts.</p>'}</details>
-    <details class="loop-secondary loop-panel" data-inspect="spend"><summary>Costs</summary>${renderSpend(jobs)}</details>`;
+  const inProgress = ['generating', 'running', 'optimizing', 'project-running'].includes(activity.phase);
+  const runs = [...jobs.filter((job) => job.kind === 'run').map((job) => ({id: job.id, type: 'analysis', time: job.createdAt || '', job})),
+    ...projectTasks.map((task) => ({id: task.id, type: 'project', time: task.createdAt || '', task}))].sort((a,b) => b.time.localeCompare(a.time));
+  const selected = runs.find((run) => run.id === selectedRun) || runs.find((run) => run.type==='analysis' && busyJob(run.job) || run.type==='project' && ['starting','running','paused'].includes(run.task.card?.status)) || runs.find((run) => run.type === 'analysis' ? !run.job.closedAt : run.task.status !== 'closed') || runs[0];
+  const runList = `<div class="loop-run-list" aria-label="Run history">${runs.map((run) => {
+    const status = run.type === 'analysis' ? run.job.closedAt ? 'closed' : run.job.status : run.task.status === 'closed' ? 'closed' : run.task.card?.status || run.task.status;
+    const title = run.type === 'analysis' ? run.job.project?.name || 'Analysis' : run.task.projectName;
+    return `<button class="loop-run-row ${selected?.id === run.id ? 'selected' : ''}" data-select-run="${escapeHTML(run.id)}" aria-pressed="${selected?.id === run.id}"><span><strong>${escapeHTML(title)}</strong><small>${run.type === 'analysis' ? 'Analysis' : 'Project work'} · ${escapeHTML(run.time ? new Date(run.time).toLocaleString() : '')}</small></span><span class="loop-status ${escapeHTML(status)}">${escapeHTML(status)}</span></button>`;
+  }).join('')}</div>`;
+  let result = '<div class="loop-empty-inline">No runs yet.</div>';
+  if (selected?.type === 'project') result = renderProjectTask(selected.task);
+  else if (selected?.job) result = (detail.loadedJob?.id === selected.id || selected.job.output !== undefined && selected.job.outputSize === undefined) ? renderResult(detail.loadedJob?.id===selected.id?detail.loadedJob:selected.job, loop.id, feedback, sourceJob === selected.id) : '<div class="loop-empty-inline">Loading result…</div>';
+  return `<div class="loop-detail-heading"><div><h2>${escapeHTML(loop.name)}</h2><p class="loop-mode-label">${projectMode ? 'Project work · configured agent + versioned workflow' : 'Analysis · read-only project snapshot'}</p></div><div class="loop-actions"><span class="loop-badge">${version ? `v${version.number}` : 'No version'}</span>${version ? `<button class="btn btn-primary" data-action="${projectMode ? 'project-task' : 'run'}" ${inProgress ? 'disabled' : ''}>Run</button>` : ''}</div></div>
+    ${inProgress || activity.phase === 'failed' || !version ? renderActivity(activity, version) : ''}
+    <nav class="loop-tabs" aria-label="Loop views">${[['runs','Runs'],['agent','Agent'],['optimize','Optimize'],['settings','Settings']].map(([id,label])=>`<button class="${panel===id?'selected':''}" data-loop-panel="${id}" aria-pressed="${panel===id}">${label}</button>`).join('')}</nav>
+    ${panel === 'runs' ? `${runList}${result}` : ''}
+    ${panel === 'agent' ? `<section class="loop-panel"><div class="loop-section-heading"><h3>${projectMode?'Workflow instruction':'Agent configuration'}</h3><button class="btn btn-ghost" data-action="generate" ${inProgress?'disabled':''}>Generate new version</button></div><div class="loop-version-tabs">${versions.filter((item)=>(item.mode||'analysis')===(loop.mode||'analysis')).map((item)=>`<button class="btn ${item.id===version?.id?'btn-primary':'btn-ghost'}" data-version="${escapeHTML(item.id)}" data-focus="version-tab-${escapeHTML(item.id)}">v${item.number}${item.id===loop.activeVersion?' · active':''}</button>`).join('')}</div>${version?`<p class="loop-rationale">${escapeHTML(version.rationale)}</p><pre class="loop-code" data-inspect="config-${escapeHTML(version.id)}"><code>${escapeHTML(version.yaml)}</code></pre><div class="loop-actions"><button class="btn btn-ghost" data-action="promote">Use version</button><a class="btn btn-ghost" href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(version.id)}/export" download="agent.yaml">Export YAML</a></div>`:'<p class="loop-hint">Generate a workflow for this execution type.</p>'}</section>` : ''}
+    ${panel === 'optimize' ? projectMode ? '<section class="loop-panel"><h3>Project optimization is not yet available</h3><p class="loop-hint">Project runs use real tools and may publish changes. They are not replayed as unattended optimization trials. Review the run’s diff and actual CI results.</p></section>' : `<section class="loop-panel"><div class="loop-section-heading"><h3>Analysis optimization</h3><button class="btn btn-primary" data-action="optimize" ${inProgress||!version?'disabled':''}>Optimize</button></div><p class="loop-hint">Small edits · up to 4 passes · uses provider credits.</p><button class="btn btn-ghost btn-small" data-action="optimize-settings" ${inProgress||!version?'disabled':''}>Custom settings</button>${rounds.map((round)=>`<details class="loop-secondary" data-inspect="experiment-${escapeHTML(round.id)}" ${liveRound(round)||['blocked','exhausted','failed'].includes(round.status)?'open':''}><summary>${escapeHTML(roundLabel(round))}</summary>${renderRound(round,jobs,versions,loop.activeVersion)}</details>`).join('')}</section>` : ''}
+    ${panel === 'settings' ? `<section class="loop-panel"><h3>Task</h3><p class="loop-example">${escapeHTML(loop.description)}</p><h3>Success criteria</h3><p class="loop-example">${escapeHTML(loop.criteria)}</p><div class="loop-actions"><button class="btn btn-ghost" data-mode="${projectMode?'analysis':'project'}">Switch to ${projectMode?'analysis':'project work'}</button><button class="btn btn-ghost" data-action="import">Import analysis agent</button></div></section>${renderSpend(jobs)}<details class="loop-secondary loop-panel" data-inspect="history"><summary>Technical activity · ${jobs.length} attempts</summary>${jobs.map((job)=>`<button class="loop-run-row" data-select-job="${escapeHTML(job.id)}">${escapeHTML(job.kind)} · ${escapeHTML(job.status)}</button>`).join('')}</details>${detail.loadedJob&&selectedRun===detail.loadedJob.id?renderJob(detail.loadedJob,loop.id,feedback):''}` : ''}`;
 }
 
 export function renderProjectTask(task) {
@@ -143,7 +146,7 @@ export function renderJob(job, loopID, feedback = []) {
   return `<details class="loop-job" ${busy || job.status === 'failed' ? 'open' : ''} data-job="${escapeHTML(job.id)}" data-inspect="job-${escapeHTML(job.id)}"><summary>
     <span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span>${job.closedAt ? '<span class="loop-muted">Closed</span>' : ''}<strong>${({ generate: '✦ Agent design', proposal: '✦ Candidate design', capability: '◇ Capability check', test: '▷ Evaluation run', judge: '◇ Quality judge' })[job.kind] || '▷ Agent run'}</strong>
     <span class="loop-job-metrics">${formatMetricCost(metrics.cost)} · ${((metrics.durationMs || 0) / 1000).toFixed(1)}s</span></summary>
-    ${job.project ? `<p class="loop-project-context"><strong>${escapeHTML(job.project.name)}</strong> · ${escapeHTML(job.project.revision.slice(0, 8))}<br><span>${escapeHTML(job.project.path)} · ${job.project.files.length} files included · ${job.project.omitted} omitted</span></p>` : ''}
+    ${job.project ? `<p class="loop-project-context"><strong>${escapeHTML(job.project.name)}</strong> · ${escapeHTML(job.project.revision.slice(0, 8))}<br><span>${escapeHTML(job.project.path)} · ${job.project.files?.length ?? 'snapshot'} files included · ${job.project.omitted} omitted</span></p>` : ''}
     ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
     <div class="loop-job-facts"><span>${escapeHTML(metrics.model || 'Model pending')}</span><span>${metrics.calls || 0} calls</span><span>${metrics.inputTokens || 0} in / ${metrics.outputTokens || 0} out</span></div>
     ${job.kind !== 'generate' ? `<details data-inspect="input-${escapeHTML(job.id)}"><summary>Input</summary><pre class="loop-output" data-inspect="input-text-${escapeHTML(job.id)}">${escapeHTML(job.input)}</pre></details>` : ''}
@@ -233,14 +236,14 @@ function focusIdentity(element) {
   if (!element) return '';
   if (element.dataset.focus) return `control:${element.dataset.focus}`;
   if (element.tagName === 'SUMMARY') return `summary:${element.parentElement.dataset.inspect || ''}`;
-  for (const key of ['version', 'action', 'promote', 'cancel', 'feedback', 'cancelRound', 'source', 'copyResult', 'closeRun', 'closeTask']) {
+  for (const key of ['version', 'action', 'promote', 'cancel', 'feedback', 'cancelRound', 'source', 'copyResult', 'closeRun', 'closeTask', 'loopPanel', 'selectRun', 'selectJob', 'mode']) {
     if (element.dataset[key]) return `${key}:${element.dataset[key]}`;
   }
   return element.getAttribute('href') || '';
 }
 
-export function updateLoopInspector(container, detail, selectedVersion, sourceJob = '') {
-  const html = renderLoopDetail(detail, selectedVersion, sourceJob);
+export function updateLoopInspector(container, detail, selectedVersion, sourceJob = '', panel = 'runs', selectedRun = '') {
+  const html = renderLoopDetail(detail, selectedVersion, sourceJob, panel, selectedRun);
   const previous = inspectorRenders.get(container);
   if (previous?.loop === detail.loop.id && previous.html === html) return;
   const sameLoop = previous?.loop === detail.loop.id;
@@ -255,7 +258,7 @@ export function updateLoopInspector(container, detail, selectedVersion, sourceJo
   const scroll = sameLoop ? container.scrollTop : 0;
   // Reuse unchanged rich content; keep code and table scrolling across updates.
   const body = container.querySelector('[data-result-body]');
-  const latest = detail.jobs?.find((job) => job.id === body?.dataset.resultBody);
+  const latest = detail.loadedJob && detail.loadedJob.id === body?.dataset.resultBody ? detail.loadedJob : detail.jobs?.find((job) => job.id === body?.dataset.resultBody);
   const keepBody = sameLoop && body && latest?.output && previous.output === latest.output && previous.sourceJob === sourceJob;
   const bodyScroll = body ? [...body.querySelectorAll('pre, table')].map((element) => ({ top: element.scrollTop, left: element.scrollLeft })) : [];
   const parked = keepBody ? body.ownerDocument.createElement('div') : null;
@@ -271,7 +274,7 @@ export function updateLoopInspector(container, detail, selectedVersion, sourceJo
       if (saved) { element.scrollTop = saved.top; element.scrollLeft = saved.left; }
     });
   }
-  inspectorRenders.set(container, { loop: detail.loop.id, html, sourceJob, output: detail.jobs?.find((job) => job.id === nextBody?.dataset.resultBody)?.output });
+  inspectorRenders.set(container, { loop: detail.loop.id, html, sourceJob, output: detail.loadedJob && detail.loadedJob.id === nextBody?.dataset.resultBody ? detail.loadedJob.output : detail.jobs?.find((job) => job.id === nextBody?.dataset.resultBody)?.output });
   for (const element of container.querySelectorAll('[data-inspect]')) {
     const saved = positions.get(element.dataset.inspect);
     if (!saved) continue;
@@ -298,7 +301,15 @@ export function initLoops(api, boardActions = {}) {
   let modalLoop = '';
   let importLoop = '';
   let sourceJob = '';
+  let panel = 'runs';
+  let selectedRun = '';
+  let selectedJob = '';
+  const jobLoads = new Map();
+  const loadedJobs = new Map();
+  let runLoad = 0;
+  let refreshError = false;
   let taskLoop = '';
+  let taskVersion = '';
   let taskRequestID = '';
   let taskProjects = [];
   let taskLoading = 0;
@@ -340,29 +351,68 @@ export function initLoops(api, boardActions = {}) {
   async function refreshLoops() {
     if (!location.hash.startsWith('#loops')) return;
     clearTimeout(refreshTimer);
-    const request = ++sequence;
-    const id = location.hash.split('/')[1] || '';
+    const request=++sequence;
+    const id=location.hash.split('/')[1]||'';
     try {
-      const [list, nextDetail, projectTasks] = await Promise.all([api('/loops'), id ? api(`/loops/${encodeURIComponent(id)}`) : null, id ? api(`/loops/${encodeURIComponent(id)}/tasks`) : []]);
-      if (nextDetail) nextDetail.projectTasks = projectTasks;
-      if (request !== sequence) return;
-      detail = nextDetail;
-      if (detail) selectedVersion = selectedLoopVersion(detail, selectedVersion)?.id || '';
-      byID('loops-list').innerHTML = renderLoopList(list, id, detail);
-      byID('loops-count').textContent = `${list.length} ${list.length === 1 ? 'loop' : 'loops'}`;
-      byID('loop-detail').hidden = !detail;
-      byID('loops-welcome').hidden = !!detail;
-      byID('loops-welcome-title').textContent = list.length ? 'Select a loop' : 'No loops yet';
-      if (detail) {
-        updateLoopInspector(byID('loop-detail'), detail, selectedVersion, sourceJob);
-        if ((detail.projectTasks || []).some((task) => task.status !== 'closed' && task.card && ['starting', 'running', 'paused'].includes(task.card.status)) || (detail.jobs || []).some((job) => ['queued', 'running'].includes(job.status)) || (detail.rounds || []).some((round) => ['designing', 'testing'].includes(round.status))) refreshTimer = setTimeout(refreshLoops, 1000);
-      }
-    } catch (error) {
-      if (request === sequence) notice(error.message, true);
+      const list=await api('/loops');
+      if(request!==sequence)return;
+      byID('loops-list').innerHTML=renderLoopList(list,id,detail?.loop.id===id?detail:null);
+      byID('loops-count').textContent=`${list.length} ${list.length===1?'loop':'loops'}`;
+      byID('loops-welcome-title').textContent=list.length?'Select a loop':'No loops yet';
+      if(!id){detail=null;byID('loop-detail').hidden=true;byID('loops-welcome').hidden=false;return;}
+      const [nextDetail,projectTasks]=await Promise.all([api(`/loops/${encodeURIComponent(id)}/overview`),api(`/loops/${encodeURIComponent(id)}/tasks`)]);
+      if(request!==sequence)return;
+      if(refreshError){notice();refreshError=false;}
+      detail=nextDetail;detail.projectTasks=projectTasks;
+      const selected=panel==='settings'?selectedJob:selectedRun;
+      detail.loadedJob=loadedJobs.get(`${id}/${selected}`);
+      selectedVersion=selectedLoopVersion(detail,selectedVersion)?.id||'';
+      byID('loop-detail').hidden=false;byID('loops-welcome').hidden=true;
+      byID('loops-list').innerHTML=renderLoopList(list,id,detail);
+      updateLoopInspector(byID('loop-detail'),detail,selectedVersion,sourceJob,panel,selected);
+      loadSelectedRun();
+      if((projectTasks||[]).some(t=>t.status!=='closed'&&['starting','running','paused'].includes(t.card?.status)) || (detail.jobs||[]).some(busyJob) || (detail.rounds||[]).some(liveRound))refreshTimer=setTimeout(refreshLoops,1000);
+    }catch(error){
+      if(request!==sequence)return;
+      refreshError=true;notice(error.message,true);
+      if(error.status===404){detail=null;byID('loop-detail').hidden=true;byID('loops-welcome').hidden=false;}
+      else refreshTimer=setTimeout(refreshLoops,3000);
     }
   }
 
+  async function loadSelectedRun() {
+    if(!detail || !['runs','settings'].includes(panel))return;
+    const id=detail.loop.id;
+    if(panel==='runs'&&!selectedRun){
+      const candidates=[...(detail.jobs||[]).filter(j=>j.kind==='run').map(j=>({id:j.id,time:j.createdAt||'',closed:!!j.closedAt,busy:busyJob(j)})),...(detail.projectTasks||[]).map(t=>({id:t.id,time:t.createdAt||'',closed:t.status==='closed',busy:['starting','running','paused'].includes(t.card?.status)}))].sort((a,b)=>b.time.localeCompare(a.time));
+      selectedRun=(candidates.find(r=>r.busy)||candidates.find(r=>!r.closed)||candidates[0])?.id||'';
+    }
+    const selection=panel==='settings'?selectedJob:selectedRun;
+    const job=(detail.jobs||[]).find(j=>j.id===selection);
+    if(!job)return;
+    const key=`${id}/${job.id}`;
+    const cached=loadedJobs.get(key);
+    if(cached&&!busyJob(job)&&cached.status===job.status&&cached.closedAt===job.closedAt){detail.loadedJob=cached;updateLoopInspector(byID('loop-detail'),detail,selectedVersion,sourceJob,panel,selection);return;}
+    if(jobLoads.has(key))return;
+    const request=runLoad;
+    jobLoads.set(key,true);
+    try{
+      const loaded=await api(`/loops/${id}/jobs/${job.id}`);
+      if(loadedJobs.size>=8)loadedJobs.delete(loadedJobs.keys().next().value);
+      loadedJobs.set(key,loaded);
+      const current=panel==='settings'?selectedJob:selectedRun;
+      if(detail?.loop.id!==id||current!==job.id)return;
+      detail.loadedJob=loaded;
+      updateLoopInspector(byID('loop-detail'),detail,selectedVersion,sourceJob,panel,current);
+    }catch(error){if(request===runLoad&&detail?.loop.id===id)notice(error.message,true);}
+    finally{jobLoads.delete(key);}
+  }
+
+  let routeLoop='';
   function route() {
+    const id=location.hash.split('/')[1]||'';
+    if(routeLoop!==id){routeLoop=id;selectedRun='';selectedJob='';selectedVersion='';runLoad++;detail=null;byID('loop-detail').hidden=true;}
+
     const active = location.hash.startsWith('#loops');
     document.body.classList.toggle('loops-mode', active);
     byID('board').hidden = active;
@@ -375,9 +425,20 @@ export function initLoops(api, boardActions = {}) {
 
   byID('loops-list').addEventListener('click', (event) => {
     const button = event.target.closest('[data-loop]');
-    if (button) { selectedVersion = ''; location.hash = `loops/${button.dataset.loop}`; }
+    if (button) { selectedVersion = ''; selectedRun=''; panel='runs'; location.hash = `loops/${button.dataset.loop}`; }
   });
   byID('loop-detail').addEventListener('click', async (event) => {
+    const tab=event.target.closest('[data-loop-panel]');
+    if(tab&&detail){panel=tab.dataset.loopPanel;runLoad++;detail.loadedJob=loadedJobs.get(`${detail.loop.id}/${panel==='settings'?selectedJob:selectedRun}`);updateLoopInspector(byID('loop-detail'),detail,selectedVersion,sourceJob,panel,panel==='settings'?selectedJob:selectedRun);loadSelectedRun();return;}
+    const run=event.target.closest('[data-select-run], [data-select-job]');
+    if(run&&detail){if(run.dataset.selectJob){selectedJob=run.dataset.selectJob;}else{selectedRun=run.dataset.selectRun;}runLoad++;detail.loadedJob=null;updateLoopInspector(byID('loop-detail'),detail,selectedVersion,sourceJob,panel,panel==='settings'?selectedJob:selectedRun);loadSelectedRun();return;}
+    const mode=event.target.closest('[data-mode]');
+    if(mode&&detail){
+      if(!window.confirm(`Switch to ${mode.dataset.mode==='project'?'project work':'read-only analysis'}? Generate a new matching workflow before running. Previous versions and runs are retained.`))return;
+      const id=detail.loop.id;
+      try{await api(`/loops/${id}/mode`,{method:'PUT',body:JSON.stringify({mode:mode.dataset.mode})});if(detail?.loop.id===id){selectedVersion='';panel='agent';await refreshLoops();}}catch(error){if(detail?.loop.id===id)notice(error.message,true);}return;
+    }
+
     const closeRun = event.target.closest('[data-close-run]');
     const closeTask = event.target.closest('[data-close-task]');
     if ((closeRun || closeTask) && detail) {
@@ -405,6 +466,8 @@ export function initLoops(api, boardActions = {}) {
     if (projectTask && detail) {
       if (taskSubmitting) return;
       taskLoop = detail.loop.id;
+      taskVersion = selectedLoopVersion(detail,selectedVersion)?.id || '';
+      if(!taskVersion){notice('Generate a project workflow first.',true);return;}
       taskRequestID = crypto.randomUUID();
       byID('loop-task-consent').checked = false;
       taskProjects = [];
@@ -440,12 +503,12 @@ export function initLoops(api, boardActions = {}) {
     const source = event.target.closest('[data-source]');
     if (source && detail) {
       sourceJob = sourceJob === source.dataset.source ? '' : source.dataset.source;
-      updateLoopInspector(byID('loop-detail'), detail, selectedVersion, sourceJob);
+      updateLoopInspector(byID('loop-detail'), detail, selectedVersion, sourceJob, panel, panel === 'settings' ? selectedJob : selectedRun);
       return;
     }
     const copy = event.target.closest('[data-copy-result]');
     if (copy && detail) {
-      const job = detail.jobs?.find((item) => item.id === copy.dataset.copyResult);
+      const job = detail.loadedJob?.id===copy.dataset.copyResult?detail.loadedJob:detail.jobs?.find((item) => item.id === copy.dataset.copyResult);
       if (!job || copy.disabled) return;
       const loopID = detail.loop.id;
       copy.disabled = true;
@@ -460,7 +523,8 @@ export function initLoops(api, boardActions = {}) {
     const version = event.target.closest('[data-version]');
     if (version && detail) {
       selectedVersion = version.dataset.version;
-      updateLoopInspector(byID('loop-detail'), detail, selectedVersion, sourceJob);
+      panel='agent';
+      updateLoopInspector(byID('loop-detail'), detail, selectedVersion, sourceJob, panel, panel === 'settings' ? selectedJob : selectedRun);
       const config = byID('loop-detail').querySelector('[data-inspect="agent-config"]');
       if (config) {
         config.open = true;
@@ -562,9 +626,9 @@ export function initLoops(api, boardActions = {}) {
     submit(event.target, async () => {
       const loop = await api('/loops', { method: 'POST', body: JSON.stringify({
         name: byID('loop-name').value, description: byID('loop-task').value,
-        criteria: byID('loop-criteria').value, projectId: byID('loop-first-project').value,
+        criteria: byID('loop-criteria').value, mode:byID('loop-mode').value, projectId: byID('loop-first-project').value,
       }) });
-      selectedVersion = '';
+      selectedVersion = ''; selectedRun='';panel='runs';
       location.hash = `loops/${loop.id}`;
     });
   });
@@ -587,7 +651,8 @@ export function initLoops(api, boardActions = {}) {
     const id = modalLoop;
     if (!version || !id) return;
     submit(event.target, async () => {
-      await api(`/loops/${id}/runs`, { method: 'POST', body: JSON.stringify({ version, projectId: byID('loop-run-project').value, input: byID('loop-run-input').value }) });
+      const job=await api(`/loops/${id}/runs`, { method: 'POST', body: JSON.stringify({ version, projectId: byID('loop-run-project').value, input: byID('loop-run-input').value }) });
+      if(detail?.loop.id===id){selectedRun=job.id;panel='runs';runLoad++;}
       await refreshLoops();
     });
   });
@@ -626,12 +691,13 @@ export function initLoops(api, boardActions = {}) {
     if (taskSubmitting) return;
     const project = taskProjects.find((item) => item.id === byID('loop-task-project').value);
     if (!project || !byID('loop-task-consent').checked) return;
-    const loopID = taskLoop, requestId = taskRequestID;
+    const loopID = taskLoop, requestId = taskRequestID, versionId=taskVersion;
     taskSubmitting = true;
     byID('loop-task-project').disabled = true;
     submit(event.target, async () => {
       try {
-        await api(`/loops/${loopID}/tasks`, { method: 'POST', body: JSON.stringify({ requestId, projectId: project.id, repoPath: project.repoPath, agent: project.agent, confirmed: true }) });
+        const task=await api(`/loops/${loopID}/tasks`, { method: 'POST', body: JSON.stringify({ requestId, versionId, projectId: project.id, repoPath: project.repoPath, agent: project.agent, confirmed: true }) });
+        if(detail?.loop.id===loopID){selectedRun=task.id;panel='runs';runLoad++;}
         await refreshLoops();
       } finally { taskSubmitting = false; byID('loop-task-project').disabled = false; }
     });

@@ -108,7 +108,7 @@ func TestNewLoopFieldsDisablePasswordCompletion(t *testing.T) {
 	dialog, _, found = strings.Cut(dialog, "</dialog>")
 	require.True(t, found)
 	fields := regexp.MustCompile(`<(?:input|select|textarea)\b[^>]*>`).FindAllString(dialog, -1)
-	require.Len(t, fields, 4)
+	require.Len(t, fields, 5)
 	for _, field := range fields {
 		assert.Contains(t, field, `autocomplete="off"`)
 		assert.Contains(t, field, `data-1p-ignore`)
@@ -142,5 +142,5 @@ func TestProjectTaskConsentExplainsExecutionPrivileges(t *testing.T) {
 	assert.Contains(t, dialog, "automatic tool approval")
 	assert.Contains(t, dialog, "not a security sandbox")
 	assert.Contains(t, dialog, "publish remotely")
-	assert.Contains(t, dialog, "not the generated read-only loop agent")
+	assert.Contains(t, dialog, "selected workflow instruction")
 }
