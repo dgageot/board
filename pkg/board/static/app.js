@@ -420,8 +420,9 @@ const PR_STATUS_LABEL = {
 // status icon so approval reads independently of CI/merge state.
 const PR_APPROVED_SVG = `<svg class="card-pr-approved" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>`;
 
-function prLinkContent(url) {
-  return `${prIconSvg("open")}<span class="card-pr-label">${esc(prLabel(url))}</span>`;
+function prLinkContent(url, { status = "open", approved = false } = {}) {
+  const approval = approved && status !== "merged" ? PR_APPROVED_SVG : "";
+  return `${prIconSvg(status)}<span class="card-pr-label">${esc(prLabel(url))}</span>${approval}`;
 }
 
 const CARD_STATUS_LABELS = {
@@ -441,9 +442,7 @@ function renderCard(card, colId) {
   const cost = formatCost(card.cost);
   const costHtml = cost ? `<span class="card-cost" title="Total agent cost">${cost}</span>` : "";
 
-  // Show a link to the pull request once the Push column has opened one. The
-  // GitHub-mark icon is uncolored initially; its merge/CI status is fetched
-  // per card after render (see loadPRStatus) and applied as a modifier class.
+  // Show the PR's last known status while fetching its current state.
   const prLink = card.prUrl
     ? `<a class="card-pr" href="${esc(card.prUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(card.prUrl)}">${prLinkContent(card.prUrl)}</a>`
     : "";
@@ -483,8 +482,7 @@ function renderCard(card, colId) {
     el.classList.remove("dragging");
   });
 
-  // Load the PR's merge/CI status on render (no auto-refresh): a card with a
-  // PR link gets its GitHub icon colored once the status comes back.
+  // Restore the cached status synchronously, before the card is displayed.
   if (card.prUrl) {
     loadPRStatus(card.id, el.querySelector(".card-pr"));
   }
@@ -492,36 +490,40 @@ function renderCard(card, colId) {
   return el;
 }
 
-// loadPRStatus fetches a card's pull request status, then swaps the link's
-// icon to the matching octicon, applies a color class, and appends a green
-// check mark when the PR is approved. It is best-effort: any error, or an
-// empty status, leaves the default (open-PR) icon in place. The link element
-// may be detached by a re-render before the fetch resolves; the update is
-// applied to whatever element was passed, which is then discarded harmlessly
-// if stale.
+// Keep the last known state across renders and share in-flight lookups by PR
+// URL. Failed or empty responses must not erase a previously loaded status.
+const prStatusCache = new Map();
+
+function applyPRStatus(linkEl, url, info) {
+  const { status, approved } = info;
+  linkEl.className = `card-pr card-pr-${status}`;
+  linkEl.innerHTML = prLinkContent(url, info);
+  linkEl.title = `${url} — ${PR_STATUS_LABEL[status] || status}`;
+  if (approved && status !== "merged") linkEl.title += " — Approved";
+}
+
 async function loadPRStatus(id, linkEl) {
   if (!linkEl) return;
   const href = linkEl.getAttribute("href");
   const request = String(Number(linkEl.dataset.prStatusRequest || 0) + 1);
   linkEl.dataset.prStatusRequest = request;
-  let status, approved;
+  let cached = prStatusCache.get(href);
+  if (!cached) {
+    cached = {};
+    prStatusCache.set(href, cached);
+  }
+  if (cached.info) applyPRStatus(linkEl, href, cached.info);
   try {
-    ({ status, approved } = await API.prStatus(id));
+    cached.pending ??= API.prStatus(id).then((info) => {
+      if (info.status) cached.info = info;
+      return info;
+    }).finally(() => { cached.pending = null; });
+    const info = await cached.pending;
+    if (!info.status || linkEl.getAttribute("href") !== href || linkEl.dataset.prStatusRequest !== request) return;
+    applyPRStatus(linkEl, href, info);
   } catch {
-    return; // best-effort: leave the default icon
+    // Best-effort: keep the last known status, or the default on first load.
   }
-  if (!status || linkEl.getAttribute("href") !== href || linkEl.dataset.prStatusRequest !== request) return;
-  linkEl.classList.add(`card-pr-${status}`);
-  const icon = linkEl.querySelector(".card-pr-icon");
-  if (icon) icon.outerHTML = prIconSvg(status);
-  let title = `${linkEl.title} — ${PR_STATUS_LABEL[status] || status}`;
-  // A green check mark for an approved PR, shown independently of the CI/merge
-  // status icon. Skipped once merged: approval is implied and adds no signal.
-  if (approved && status !== "merged") {
-    linkEl.insertAdjacentHTML("beforeend", PR_APPROVED_SVG);
-    title += " — Approved";
-  }
-  linkEl.title = title;
 }
 
 async function handleCardAction(e) {
