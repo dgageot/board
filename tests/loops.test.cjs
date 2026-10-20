@@ -236,7 +236,7 @@ function loopAppHarness(overrides = {}) {
       addEventListener(name,callback){this.handlers[name]=callback;},
       querySelectorAll:()=>[],
       querySelector:(selector)=>element(`${id}:${selector}`),
-      contains:()=>false, focus(){},
+      contains:()=>false, focus(){}, scrollIntoView(){this.scrolled=true;},
       showModal(){this.open=true;}, close(){this.open=false;}, reset(){},
       closest:()=>element('dialog'),
     });
@@ -387,4 +387,13 @@ test('imported agents remain runnable after automatic generation fails or stops'
   assert.match(html,/data-action="run"/);
   assert.doesNotMatch(html,/data-action="generate"/);
  }
+});
+
+test('explicit version inspection reveals configuration instead of only changing hidden YAML', async () => {
+ const h=loopAppHarness();
+ await h.navigate('first');
+ await h.selectVersion('first-v2');
+ const config=h.element('loop-detail:[data-inspect="agent-config"]');
+ assert.equal(config.open,true);
+ assert.equal(config.scrolled,true);
 });

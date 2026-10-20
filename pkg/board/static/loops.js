@@ -309,6 +309,11 @@ export function initLoops(api) {
     if (version && detail) {
       selectedVersion = version.dataset.version;
       updateLoopInspector(byID('loop-detail'), detail, selectedVersion);
+      const config = byID('loop-detail').querySelector('[data-inspect="agent-config"]');
+      if (config) {
+        config.open = true;
+        config.scrollIntoView({ block: 'nearest' });
+      }
     }
     if (event.target.closest('[data-action="import"]') && detail) {
       importLoop = detail.loop.id;
