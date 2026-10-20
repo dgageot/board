@@ -195,7 +195,7 @@ test('switching loops resets inspection rather than leaking the previous scroll 
 test('identically rendered draft loops still reset the inspection context', async () => {
   const { updateLoopInspector } = await modulePromise;
   const { container, state } = inspectorHarness();
-  const detail = {loop:{id:'first',name:'Same',description:'Task',criteria:'Good',example:'Input'},versions:[]};
+  const detail = {loop:{id:'first',name:'Same',description:'Task',criteria:'Good',example:'Input',projectId:'project-first'},versions:[]};
   updateLoopInspector(container,detail,'');
   container.scrollTop=300;
   detail.loop.id='second';
@@ -219,12 +219,12 @@ test('live refresh restores the exact experiment control instead of a matching v
   assert.equal(doc.activeElement.dataset.focus,'inspect-second-v1');
 });
 
-function loopAppHarness() {
+function loopAppHarness(overrides = {}) {
   const vm = require('node:vm');
   const elements = new Map();
   const handlers = new Map();
   const calls = [];
-  const fixture = (id) => ({loop:{id,name:id,description:'Task',criteria:'Good',example:'Input'},versions:[
+  const fixture = (id) => ({loop:{id,name:id,description:'Task',criteria:'Good',example:'Input',projectId:'project-first'},versions:[
     {id:`${id}-v2`,number:2,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'},
     {id:`${id}-v1`,number:1,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'},
   ]});
@@ -249,6 +249,8 @@ function loopAppHarness() {
   });
   const api=async(path,options)=>{
     calls.push({path,options});
+    if (overrides.api) { const result = overrides.api(path,options); if(result !== undefined) return result; }
+    if(path==='/projects') return [{id:'project-first',name:'<Project one>',repoPath:'/repo/one'},{id:'project-second',name:'Project two',repoPath:'/repo/two'}];
     if(path==='/loops') return [fixture('first').loop,fixture('second').loop];
     if(options?.method==='POST') return {id:'imported'};
     return fixture(path.split('/').at(-1));
@@ -257,6 +259,14 @@ function loopAppHarness() {
   vm.runInContext(source.replace(/^export /gm,'')+'\ninitLoops(api);',context);
   return {
     calls,element,
+    async action(name) {
+      await element('loop-detail').handlers.click({target:{closest:(selector)=>selector===`[data-action="${name}"]` ? {} : null}});
+      await new Promise(setImmediate);
+    },
+    async submit(form) {
+      element(form).handlers.submit({preventDefault(){},target:element(form)});
+      await new Promise(setImmediate);
+    },
     async navigate(id) {
       context.location.hash=`#loops/${id}`;
       handlers.get('hashchange')();
@@ -290,4 +300,36 @@ test('an open import keeps its original target when navigation changes', async (
   assert.equal(JSON.parse(request.options.body).yaml,'agents: {root: {}}');
   assert.match(h.element('loop-detail').innerHTML, /btn-primary" data-version="second-v2"/);
   assert.equal(h.element('loops-notice').textContent || '', '');
+});
+
+test('each run submits its chosen project, independent of the first-run default', async () => {
+ const h=loopAppHarness();
+ await h.navigate('first');
+ await h.action('run');
+ assert.equal(h.element('loop-run-project').value,'project-first');
+ assert.match(h.element('loop-run-project').innerHTML,/&lt;Project one&gt;/);
+ h.element('loop-run-project').value='project-second';
+ h.element('loop-run-input').value='';
+ await h.submit('loop-run-form');
+ const request=h.calls.find((call)=>call.path==='/loops/first/runs');
+ assert.deepEqual(JSON.parse(request.options.body),{version:'first-v1',projectId:'project-second',input:''});
+});
+
+test('project list failure and empty projects are visible rather than silently using a directory', async () => {
+ const empty=loopAppHarness({api:(path)=>path==='/projects'?[]:undefined});
+ await empty.navigate('first'); await empty.action('run');
+ assert.equal(empty.element('loop-run-project').disabled,true);
+ assert.match(empty.element('loop-run-project-status').textContent,/No projects configured/);
+ const failed=loopAppHarness({api:(path)=>path==='/projects'?Promise.reject(new Error('Cannot load projects')):undefined});
+ await failed.navigate('first'); await failed.action('run');
+ assert.equal(failed.element('loop-run-project').disabled,true);
+ assert.match(failed.element('loop-run-project-status').textContent,/Cannot load projects/);
+});
+
+test('loop creation sends the first-run project instead of example text', async () => {
+ const h=loopAppHarness();
+ h.element('loop-name').value='Review';h.element('loop-task').value='Review code';h.element('loop-criteria').value='Precise';h.element('loop-first-project').value='project-first';
+ await h.submit('loop-new-form');
+ const request=h.calls.find((call)=>call.path==='/loops' && call.options?.method==='POST');
+ assert.deepEqual(JSON.parse(request.options.body),{name:'Review',description:'Review code',criteria:'Precise',projectId:'project-first'});
 });

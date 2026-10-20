@@ -27,6 +27,9 @@ func NewStore(ctx context.Context, db *sql.DB) (*Store, error) {
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return nil, fmt.Errorf("initialize loops: %w", err)
 	}
+	if err := migrateProjects(ctx, db); err != nil {
+		return nil, fmt.Errorf("migrate project runs: %w", err)
+	}
 	return &Store{db: db}, nil
 }
 
@@ -57,15 +60,20 @@ func (s *Store) Create(ctx context.Context, loop Loop) (Loop, error) {
 	if len(loop.Name) > 160 || len(loop.Description)+len(loop.Criteria)+len(loop.Example) > 64*1024 {
 		return Loop{}, fmt.Errorf("%w: task contract is too large", ErrInvalid)
 	}
+	if loop.ProjectID != "" {
+		if _, err := s.Project(ctx, loop.ProjectID); err != nil {
+			return Loop{}, err
+		}
+	}
 	loop.ID, loop.CreatedAt, loop.ActiveVersion = newID(), now(), ""
-	_, err := s.db.ExecContext(ctx, `INSERT INTO loops (id,name,description,criteria,example,created_at) VALUES (?,?,?,?,?,?)`,
-		loop.ID, loop.Name, loop.Description, loop.Criteria, loop.Example, loop.CreatedAt)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO loops (id,name,description,criteria,example,created_at,project_id) VALUES (?,?,?,?,?,?,?)`,
+		loop.ID, loop.Name, loop.Description, loop.Criteria, loop.Example, loop.CreatedAt, loop.ProjectID)
 	return loop, err
 }
 
 // List returns the newest loops first.
 func (s *Store) List(ctx context.Context) ([]Loop, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at FROM loops ORDER BY created_at DESC,id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at,project_id FROM loops ORDER BY created_at DESC,id`)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +81,7 @@ func (s *Store) List(ctx context.Context) ([]Loop, error) {
 	loops := []Loop{}
 	for rows.Next() {
 		var loop Loop
-		if err := rows.Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt); err != nil {
+		if err := rows.Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt, &loop.ProjectID); err != nil {
 			return nil, err
 		}
 		loops = append(loops, loop)
@@ -85,8 +93,8 @@ func (s *Store) List(ctx context.Context) ([]Loop, error) {
 func (s *Store) Get(ctx context.Context, id string) (Detail, error) {
 	detail := Detail{Versions: []Version{}}
 	loop := &detail.Loop
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at FROM loops WHERE id=?`, id).
-		Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at,project_id FROM loops WHERE id=?`, id).
+		Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt, &loop.ProjectID)
 	if err != nil {
 		return Detail{}, notFound(err)
 	}

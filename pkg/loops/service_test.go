@@ -56,7 +56,7 @@ func TestRunFailureRetainsEvidence(t *testing.T) {
 		return result, errors.New("provider unavailable")
 	}}, "auto", func() {})
 	require.NoError(t, err)
-	job, err := service.Run(t.Context(), loop.ID, version.ID, "/not-a-command")
+	job, err := service.Run(t.Context(), loop.ID, version.ID, "/not-a-command", testProject(t, store).ID)
 	require.NoError(t, err)
 	service.Wait()
 	saved, err := store.Job(t.Context(), loop.ID, job.ID)
@@ -83,7 +83,8 @@ func TestLiveLoopSmoke(t *testing.T) {
 		t.Skip("set BOARD_LOOPS_SMOKE=1 to call the configured model provider")
 	}
 	store := testStore(t)
-	loop, err := store.Create(t.Context(), Loop{Name: "Release notes", Description: "Turn commit messages into short user-facing release notes.", Criteria: "Mention fixes and features. Do not invent changes.", Example: "fix: resolve login timeout\nfeat: export CSV"})
+	project := testProject(t, store)
+	loop, err := store.Create(t.Context(), Loop{Name: "Project overview", Description: "Describe the project based on its README.", Criteria: "Mention the committed project description without inventing details.", ProjectID: project.ID})
 	require.NoError(t, err)
 	service, err := NewService(t.Context(), store, &ProcessRunner{Directory: t.TempDir()}, "auto", func() {})
 	require.NoError(t, err)
@@ -93,18 +94,18 @@ func TestLiveLoopSmoke(t *testing.T) {
 	generated, err := store.Job(t.Context(), loop.ID, generation.ID)
 	require.NoError(t, err)
 	require.Equal(t, "succeeded", generated.Status, generated.Error)
-	run, err := service.Run(t.Context(), loop.ID, generated.VersionID, loop.Example)
+	run, err := service.Run(t.Context(), loop.ID, generated.VersionID, "", project.ID)
 	require.NoError(t, err)
 	service.Wait()
 	completed, err := store.Job(t.Context(), loop.ID, run.ID)
 	require.NoError(t, err)
 	require.Equal(t, "succeeded", completed.Status, completed.Error)
-	assert.Contains(t, strings.ToLower(completed.Output), "csv")
+	assert.Contains(t, strings.ToLower(completed.Output), "committed project")
 	assert.Positive(t, completed.Metrics.DurationMS)
 	assert.Positive(t, completed.Metrics.InputTokens)
 	t.Logf("generated v1 and ran it: model=%s duration=%dms cost=%v", completed.Metrics.Model, completed.Metrics.DurationMS, completed.Metrics.Cost)
 	if os.Getenv("BOARD_LOOPS_OPTIMIZE_SMOKE") == "1" {
-		_, err := service.Optimize(t.Context(), loop.ID, OptimizeRequest{Version: generated.VersionID, Inputs: []string{loop.Example}, Repeats: 1, Models: []string{"auto", "auto"}})
+		_, err := service.Optimize(t.Context(), loop.ID, OptimizeRequest{ProjectID: project.ID, Version: generated.VersionID, Inputs: []string{loop.Description}, Repeats: 1, Models: []string{"auto", "auto"}})
 		require.NoError(t, err)
 		service.Wait()
 		rounds, err := store.Rounds(t.Context(), loop.ID)
@@ -155,18 +156,25 @@ func TestOptimizationRunsCompleteSuiteAndGatesPromotion(t *testing.T) {
 	version, err := store.AddVersion(t.Context(), loop.ID, "agents:\n  root:\n    model: auto\n    instruction: summarize\n", "baseline")
 	require.NoError(t, err)
 	cost := 0.01
+	project := testProject(t, store)
+	snapshot, err := store.projectSnapshot(t.Context(), project.ID)
+	require.NoError(t, err)
 	service, err := NewService(t.Context(), store, fakeRunner{run: func(_ context.Context, req Request, _ func(Result)) (Result, error) {
 		switch {
 		case strings.Contains(string(req.Config), "agent_proposal"):
 			return Result{Output: `{"instruction":"Summarize precisely","model":"auto","rationale":"Less repetition"}`}, nil
 		case strings.Contains(string(req.Config), "quality_judgment"):
+			assert.Contains(t, req.Input, "A committed project")
+			assert.Contains(t, req.Input, snapshot.Digest)
 			return Result{Output: `{"passed":true,"reason":"Meets all criteria"}`}, nil
 		default:
+			assert.Contains(t, req.Input, "A committed project")
+			assert.Contains(t, req.Input, snapshot.Digest)
 			return Result{Output: "Good answer", Metrics: Metrics{Cost: &cost, DurationMS: 100}}, nil
 		}
 	}}, "auto", func() {})
 	require.NoError(t, err)
-	round, err := service.Optimize(t.Context(), loop.ID, OptimizeRequest{Version: version.ID, Inputs: []string{"case one", "case two"}, Repeats: 2, Models: []string{"auto", "auto"}})
+	round, err := service.Optimize(t.Context(), loop.ID, OptimizeRequest{ProjectID: project.ID, Version: version.ID, Inputs: []string{"case one", "case two"}, Repeats: 2, Models: []string{"auto", "auto"}})
 	require.NoError(t, err)
 	service.Wait()
 	rounds, err := store.Rounds(t.Context(), loop.ID)

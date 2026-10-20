@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const jobColumns = "id,loop_id,version_id,kind,status,input,output,error,metrics,created_at,finished_at"
+const jobColumns = "id,loop_id,version_id,kind,status,input,output,error,metrics,created_at,finished_at,project"
 
 // Recover marks abandoned jobs rather than replaying uncertain work.
 func (s *Store) Recover(ctx context.Context) error {
@@ -18,10 +18,17 @@ func (s *Store) Recover(ctx context.Context) error {
 	return err
 }
 
-func (s *Store) newJob(ctx context.Context, loopID, versionID, kind, input string) (Job, error) {
+func (s *Store) newJob(ctx context.Context, loopID, versionID, kind, input string, projects ...*ProjectSnapshot) (Job, error) {
 	job := Job{ID: newID(), LoopID: loopID, VersionID: versionID, Kind: kind, Status: "queued", Input: input, CreatedAt: now()}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO loop_jobs (id,loop_id,version_id,kind,status,input,created_at) VALUES (?,?,?,?,?,?,?)`,
-		job.ID, loopID, versionID, kind, job.Status, input, job.CreatedAt)
+	if len(projects) > 0 {
+		job.Project = projects[0]
+	}
+	project, err := json.Marshal(job.Project)
+	if err != nil {
+		return Job{}, err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO loop_jobs (id,loop_id,version_id,kind,status,input,created_at,project) VALUES (?,?,?,?,?,?,?,?)`,
+		job.ID, loopID, versionID, kind, job.Status, input, job.CreatedAt, string(project))
 	return job, err
 }
 
@@ -39,12 +46,17 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scanJob(row scanner) (Job, error) {
 	var job Job
-	var metrics string
-	if err := row.Scan(&job.ID, &job.LoopID, &job.VersionID, &job.Kind, &job.Status, &job.Input, &job.Output, &job.Error, &metrics, &job.CreatedAt, &job.FinishedAt); err != nil {
+	var metrics, project string
+	if err := row.Scan(&job.ID, &job.LoopID, &job.VersionID, &job.Kind, &job.Status, &job.Input, &job.Output, &job.Error, &metrics, &job.CreatedAt, &job.FinishedAt, &project); err != nil {
 		return Job{}, notFound(err)
 	}
 	if err := json.Unmarshal([]byte(metrics), &job.Metrics); err != nil {
 		return Job{}, fmt.Errorf("read job metrics: %w", err)
+	}
+	if project != "{}" && project != "null" {
+		if err := json.Unmarshal([]byte(project), &job.Project); err != nil {
+			return Job{}, fmt.Errorf("read job project: %w", err)
+		}
 	}
 	return job, nil
 }

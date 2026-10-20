@@ -74,9 +74,11 @@
     <form id="loop-new-form" class="dialog-body" autocomplete="off">
       <p class="dialog-subtitle">Define the job once. Make the agent better with evidence.</p>
       <label>Name<input id="loop-name" required maxlength="160" placeholder="Release notes, distilled"></label>
+      <label>Project for the first run<select id="loop-first-project" required><option value="">Choose a project…</option></select></label>
+      <p id="loop-first-project-status" class="loop-form-help" role="note"></p>
       <label>The repeatable task<textarea id="loop-task" required rows="3" maxlength="16000" placeholder="Turn a list of commits into concise, user-facing release notes."></textarea></label>
       <label>What does a good result look like?<textarea id="loop-criteria" required rows="3" maxlength="16000" placeholder="Group changes by feature, fix and maintenance. Never invent details. Omit internal refactors."></textarea></label>
-      <p class="loop-form-help">Define the task once. Choose where to run it when you start a run.</p>
+      <p class="loop-form-help">Define the task once. You can choose a different project for every run.</p>
       <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Create loop →</button></div>
     </form>
   </dialog>
@@ -95,8 +97,10 @@
   <dialog id="loop-run-dialog" class="dialog-large" aria-labelledby="loop-run-title">
     <div class="dialog-header"><span id="loop-run-title">Run this version</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
     <form id="loop-run-form" class="dialog-body" autocomplete="off">
-      <label>Input<textarea id="loop-run-input" rows="5" maxlength="65536" placeholder="Optional instructions for this run. Leave blank to use the loop task."></textarea></label>
-      <p class="loop-form-help">This preview executes self-contained text agents only. Tools, hooks, skills and ambient context are disabled. Each run has a five-minute deadline. Provider API calls incur costs.</p>
+      <label>Project<select id="loop-run-project" required><option value="">Choose a project…</option></select></label>
+      <p id="loop-run-project-status" class="loop-form-help" role="note"></p>
+      <label>Instructions for this run (optional)<textarea id="loop-run-input" rows="5" maxlength="65536" placeholder="Optional instructions for this run. Leave blank to use the loop task."></textarea></label>
+      <p class="loop-form-help">A bounded snapshot of committed project files is sent to your model provider. Uncommitted changes are excluded; large, binary and common secret files are skipped. This preview is read-only: it cannot modify your checkout. Each run has a five-minute deadline.</p>
       <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Run agent →</button></div>
     </form>
   </dialog>
@@ -112,8 +116,10 @@
     <div class="dialog-header"><span id="loop-optimize-title">Run an optimization experiment</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
     <form id="loop-optimize-form" class="dialog-body">
       <p class="dialog-subtitle">Two new agents. One baseline. The same quality bar.</p>
-      <label>Evaluation inputs<textarea id="loop-test-inputs" rows="7" required maxlength="65536"></textarea></label>
-      <p class="loop-form-help">Separate inputs with a line containing ---. Include edge cases that candidates have not seen. Up to 8 inputs.</p>
+      <label>Project for this experiment<select id="loop-test-project" required><option value="">Choose a project…</option></select></label>
+      <p id="loop-test-project-status" class="loop-form-help" role="note"></p>
+      <label>Evaluation instructions<textarea id="loop-test-inputs" rows="7" required maxlength="65536"></textarea></label>
+      <p class="loop-form-help">Separate instructions with a line containing ---. All candidates and judges receive the same committed project snapshot. Up to 8 cases.</p>
       <label>Repetitions per input<select id="loop-test-repeats"><option value="2">2 — recommended starting point</option><option value="3">3 — more evidence</option><option value="1">1 — quick exploration only</option></select></label>
       <div class="loop-contract"><label>Candidate 1 model<input id="loop-model-one" value="auto" required placeholder="provider/model"></label><label>Candidate 2 model<input id="loop-model-two" value="auto" required placeholder="provider/model"></label></div>
       <p class="loop-form-help">Use auto to explore prompts, or enter available cheaper model IDs. Model availability is checked by the provider. Up to 72 executions and judgments, plus design calls. This spends provider credits. Four calls run concurrently; the experiment stops after 20 minutes.</p>

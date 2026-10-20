@@ -20,15 +20,16 @@ type Feedback struct {
 
 // Round records the exact suite and candidate set used in an experiment.
 type Round struct {
-	ID         string      `json:"id"`
-	LoopID     string      `json:"loopId"`
-	Baseline   string      `json:"baseline"`
-	Status     string      `json:"status"`
-	Inputs     []string    `json:"inputs"`
-	Repeats    int         `json:"repeats"`
-	Candidates []Candidate `json:"candidates"`
-	Error      string      `json:"error"`
-	CreatedAt  string      `json:"createdAt"`
+	ID         string           `json:"id"`
+	LoopID     string           `json:"loopId"`
+	Baseline   string           `json:"baseline"`
+	Status     string           `json:"status"`
+	Inputs     []string         `json:"inputs"`
+	Repeats    int              `json:"repeats"`
+	Candidates []Candidate      `json:"candidates"`
+	Error      string           `json:"error"`
+	CreatedAt  string           `json:"createdAt"`
+	Project    *ProjectSnapshot `json:"project,omitempty"`
 }
 
 // Candidate keeps every attempt, including failures, in the comparison.
@@ -197,11 +198,11 @@ func (s *Store) persistedEvidence(ctx context.Context, round Round, candidate Ca
 		}
 		seenJobs[trial.JobID], seenJobs[trial.JudgeID] = true, true
 		run, err := s.Job(ctx, round.LoopID, trial.JobID)
-		if err != nil || run.Kind != "test" || run.Status != "succeeded" || run.VersionID != candidate.VersionID || run.Input != round.Inputs[trial.Case] {
+		if err != nil || !sameProject(run.Project, round.Project) || run.Kind != "test" || run.Status != "succeeded" || run.VersionID != candidate.VersionID || run.Input != round.Inputs[trial.Case] {
 			return false
 		}
 		judge, err := s.Job(ctx, round.LoopID, trial.JudgeID)
-		if err != nil || judge.Kind != "judge" || judge.Status != "succeeded" || judge.VersionID != candidate.VersionID {
+		if err != nil || !sameProject(judge.Project, round.Project) || judge.Kind != "judge" || judge.Status != "succeeded" || judge.VersionID != candidate.VersionID {
 			return false
 		}
 		var evidence map[string]string
@@ -214,4 +215,11 @@ func (s *Store) persistedEvidence(ctx context.Context, round Round, candidate Ca
 		}
 	}
 	return true
+}
+
+func sameProject(a, b *ProjectSnapshot) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.ID == b.ID && a.Path == b.Path && a.Revision == b.Revision && a.Digest == b.Digest
 }

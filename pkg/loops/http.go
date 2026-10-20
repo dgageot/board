@@ -91,11 +91,16 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		Criteria    string `json:"criteria"`
 		Example     string `json:"example"`
+		ProjectID   string `json:"projectId"`
 	}
 	if !decode(w, r, &input) {
 		return
 	}
-	loop, err := h.store.Create(r.Context(), Loop{Name: input.Name, Description: input.Description, Criteria: input.Criteria, Example: input.Example})
+	if input.ProjectID == "" {
+		fail(w, fmt.Errorf("%w: choose a project for the first run", ErrInvalid))
+		return
+	}
+	loop, err := h.store.Create(r.Context(), Loop{Name: input.Name, Description: input.Description, Criteria: input.Criteria, Example: input.Example, ProjectID: input.ProjectID})
 	if err != nil {
 		fail(w, err)
 		return
@@ -193,13 +198,14 @@ func (h *Handler) run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Version string `json:"version"`
-		Input   string `json:"input"`
+		Version   string `json:"version"`
+		Input     string `json:"input"`
+		ProjectID string `json:"projectId"`
 	}
 	if !decode(w, r, &input) {
 		return
 	}
-	job, err := h.service.Run(r.Context(), r.PathValue("id"), input.Version, input.Input)
+	job, err := h.service.Run(r.Context(), r.PathValue("id"), input.Version, input.Input, input.ProjectID)
 	if err != nil {
 		fail(w, err)
 		return

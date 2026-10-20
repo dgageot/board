@@ -15,10 +15,11 @@ import (
 
 // OptimizeRequest fixes the experiment suite before candidate generation.
 type OptimizeRequest struct {
-	Version string   `json:"version"`
-	Inputs  []string `json:"inputs"`
-	Repeats int      `json:"repeats"`
-	Models  []string `json:"models"`
+	Version   string   `json:"version"`
+	ProjectID string   `json:"projectId"`
+	Inputs    []string `json:"inputs"`
+	Repeats   int      `json:"repeats"`
+	Models    []string `json:"models"`
 }
 
 // Optimize compares the selected baseline and two new hypotheses on the same suite.
@@ -61,7 +62,11 @@ func (s *Service) Optimize(ctx context.Context, loopID string, input OptimizeReq
 	if err != nil {
 		return Round{}, err
 	}
-	round := Round{ID: newID(), LoopID: loopID, Baseline: baseline.ID, Status: "designing", Inputs: input.Inputs, Repeats: input.Repeats, CreatedAt: now(), Candidates: []Candidate{{VersionID: baseline.ID, Label: "Baseline", Trials: []Trial{}}}}
+	project, err := s.store.projectSnapshot(ctx, input.ProjectID)
+	if err != nil {
+		return Round{}, err
+	}
+	round := Round{Project: project, ID: newID(), LoopID: loopID, Baseline: baseline.ID, Status: "designing", Inputs: input.Inputs, Repeats: input.Repeats, CreatedAt: now(), Candidates: []Candidate{{VersionID: baseline.ID, Label: "Baseline", Trials: []Trial{}}}}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || s.ctx.Err() != nil {
@@ -93,13 +98,13 @@ func (s *Service) persistRound(round Round) {
 	s.changed()
 }
 
-func (s *Service) experimentJob(ctx context.Context, loopID, versionID, kind, input string, config []byte) Job {
+func (s *Service) experimentJob(ctx context.Context, loopID, versionID, kind, input string, config []byte, projects ...*ProjectSnapshot) Job {
 	s.mu.Lock()
 	if s.closed || ctx.Err() != nil {
 		s.mu.Unlock()
 		return Job{Status: "canceled", Error: "experiment is stopping"}
 	}
-	job, err := s.store.newJob(ctx, loopID, versionID, kind, input)
+	job, err := s.store.newJob(ctx, loopID, versionID, kind, input, projects...)
 	if err != nil {
 		s.mu.Unlock()
 		return Job{Status: "failed", Error: err.Error()}
@@ -188,7 +193,7 @@ func (s *Service) optimize(ctx context.Context, round Round, loop Loop, evidence
 					continue
 				}
 				wg.Go(func() {
-					trial := s.evaluate(ctx, loop, candidate.VersionID, input, index, repeat, configs[candidate.VersionID], judge)
+					trial := s.evaluate(ctx, loop, candidate.VersionID, input, index, repeat, configs[candidate.VersionID], judge, round.Project)
 					mu.Lock()
 					round.Candidates[ci].Trials = append(round.Candidates[ci].Trials, trial)
 					s.persistRound(round)
@@ -231,9 +236,9 @@ Return JSON with exactly passed (boolean) and reason (string). Explain the decis
 	return yaml.Marshal(doc)
 }
 
-func (s *Service) evaluate(ctx context.Context, loop Loop, versionID, input string, index, repeat int, config, judge []byte) Trial {
+func (s *Service) evaluate(ctx context.Context, loop Loop, versionID, input string, index, repeat int, config, judge []byte, projects ...*ProjectSnapshot) Trial {
 	trial := Trial{Case: index, Repeat: repeat}
-	job := s.experimentJob(ctx, loop.ID, versionID, "test", input, config)
+	job := s.experimentJob(ctx, loop.ID, versionID, "test", input, config, projects...)
 	trial.JobID = job.ID
 	if job.Status != "succeeded" {
 		trial.Reason = "Execution failed: " + job.Error
@@ -244,7 +249,7 @@ func (s *Service) evaluate(ctx context.Context, loop Loop, versionID, input stri
 		trial.Reason = err.Error()
 		return trial
 	}
-	judgment := s.experimentJob(ctx, loop.ID, versionID, "judge", string(data), judge)
+	judgment := s.experimentJob(ctx, loop.ID, versionID, "judge", string(data), judge, projects...)
 	trial.JudgeID = judgment.ID
 	if judgment.Status != "succeeded" {
 		trial.Reason = "Judge failed: " + judgment.Error

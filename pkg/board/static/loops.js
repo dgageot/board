@@ -55,7 +55,7 @@ export function renderLoopDetail(detail, selectedVersion) {
       <div class="loop-actions"><button class="btn btn-ghost" data-action="promote" ${version.id === loop.activeVersion ? 'disabled' : ''}>${version.id === loop.activeVersion ? '✓ Active' : 'Use this version'}</button><a class="btn btn-ghost" href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(version.id)}/export" download="agent.yaml">↓ Export agent</a></div></div>` :
       `<div class="loop-empty-inline"><span aria-hidden="true">◇</span><h3>A good agent starts with a clear task.</h3><p>Your contract is saved. Generate a specialized agent, or import one you already have.</p></div>`}
     </section>
-    <section class="loop-panel"><div class="loop-section-heading"><div><h3>Try this agent</h3><p>Each run starts fresh. Model calls use your configured provider credentials.</p></div>
+    <section class="loop-panel"><div class="loop-section-heading"><div><h3>Try this agent</h3><p>Choose a project for each run. Its committed files become read-only context.</p></div>
       <button class="btn btn-primary" data-action="run" ${version ? '' : 'disabled'}>▷ Run ${version ? `v${version.number}` : ''}</button></div>
       <p class="loop-example">${escapeHTML(loop.description)}</p></section>
     <section class="loop-panel"><div class="loop-section-heading"><div><h3>Make the next version better</h3><p>Test two hypotheses alongside the baseline. Your active agent stays unchanged.</p></div>
@@ -74,6 +74,7 @@ export function renderJob(job, loopID, feedback = []) {
   return `<details class="loop-job" ${busy || job.status === 'failed' ? 'open' : ''} data-job="${escapeHTML(job.id)}" data-inspect="job-${escapeHTML(job.id)}"><summary>
     <span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span><strong>${({ generate: '✦ Agent design', proposal: '✦ Candidate design', test: '▷ Evaluation run', judge: '◇ Quality judge' })[job.kind] || '▷ Agent run'}</strong>
     <span class="loop-job-metrics">${formatMetricCost(metrics.cost)} · ${((metrics.durationMs || 0) / 1000).toFixed(1)}s</span></summary>
+    ${job.project ? `<p class="loop-project-context"><strong>${escapeHTML(job.project.name)}</strong> · ${escapeHTML(job.project.revision.slice(0, 8))}<br><span>${escapeHTML(job.project.path)} · ${job.project.files.length} files included · ${job.project.omitted} omitted</span></p>` : ''}
     ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
     <div class="loop-job-facts"><span>${escapeHTML(metrics.model || 'Model pending')}</span><span>${metrics.calls || 0} calls</span><span>${metrics.inputTokens || 0} in / ${metrics.outputTokens || 0} out</span></div>
     ${job.kind !== 'generate' ? `<details data-inspect="input-${escapeHTML(job.id)}"><summary>Input</summary><pre class="loop-output" data-inspect="input-text-${escapeHTML(job.id)}">${escapeHTML(job.input)}</pre></details>` : ''}
@@ -119,6 +120,7 @@ export function renderRound(round, jobs, versions, active) {
   const baseMetrics = baseline ? summarizeCandidate(round, baseline, jobs) : null;
   return `<div class="loop-experiment"><div class="loop-section-heading"><h4>Experiment · ${escapeHTML(round.status)}</h4>
     ${busy ? `<button class="btn btn-ghost btn-small" data-cancel-round="${escapeHTML(round.id)}">Stop experiment</button>` : ''}</div>
+    ${round.project ? `<p class="loop-project-context"><strong>${escapeHTML(round.project.name)}</strong> · ${escapeHTML(round.project.revision.slice(0, 8))} · same snapshot for every trial</p>` : ''}
     <p class="loop-hint">${round.inputs.length} inputs × ${round.repeats} repetitions. AI-judged evidence, not a guarantee. Cost and time are observed averages; parallel-run timings include contention.</p>
     ${round.error ? `<p class="loop-job-error">${escapeHTML(round.error)}</p>` : ''}
     <div class="loop-table-scroll"><table class="loop-comparison"><thead><tr><th>Version</th><th>Quality checks</th><th>Cost / run</th><th>Time / run</th><th></th></tr></thead><tbody>
@@ -191,10 +193,36 @@ export function initLoops(api) {
   let runVersion = '';
   let modalLoop = '';
   let importLoop = '';
+  const projectLoads = new Map();
 
   function notice(message = '', error = false) {
     byID('loops-notice').textContent = message;
     byID('loops-notice').classList.toggle('error', error);
+  }
+
+  async function loadProjects(selectID, statusID, preferred) {
+    const request = (projectLoads.get(selectID) || 0) + 1;
+    projectLoads.set(selectID, request);
+    const select = byID(selectID), status = byID(statusID);
+    select.disabled = true;
+    select.innerHTML = '<option value="">Loading projects…</option>';
+    status.textContent = '';
+    try {
+      const projects = await api('/projects');
+      if (projectLoads.get(selectID) !== request) return;
+      select.innerHTML = '<option value="">Choose a project…</option>' + projects.map((project) => `<option value="${escapeHTML(project.id)}">${escapeHTML(project.name)} — ${escapeHTML(project.repoPath)}</option>`).join('');
+      select.value = projects.some((project) => project.id === preferred) ? preferred : '';
+      status.textContent = projects.length ? '' : 'No projects configured. Add one using Projects on the Board, then reopen this dialog.';
+      select.disabled = projects.length === 0;
+    } catch (error) {
+      if (projectLoads.get(selectID) !== request) return;
+      select.innerHTML = '<option value="">Projects unavailable</option>';
+      status.textContent = error.message;
+    }
+  }
+
+  function preferredProject() {
+    return detail?.jobs?.find((job) => job.project?.id)?.project.id || detail?.loop.projectId || '';
   }
 
   async function refreshLoops() {
@@ -250,12 +278,14 @@ export function initLoops(api) {
       runVersion = selectedLoopVersion(detail, selectedVersion)?.id;
       byID('loop-run-input').value = '';
       byID('loop-run-dialog').showModal();
+      loadProjects('loop-run-project', 'loop-run-project-status', preferredProject());
     }
     if (event.target.closest('[data-action="optimize"]') && detail) {
       modalLoop = detail.loop.id;
       optimizeVersion = selectedLoopVersion(detail, selectedVersion)?.id;
       byID('loop-test-inputs').value = detail.loop.description;
       byID('loop-optimize-dialog').showModal();
+      loadProjects('loop-test-project', 'loop-test-project-status', preferredProject());
     }
     const feedback = event.target.closest('[data-feedback]');
     if (feedback && detail) {
@@ -293,6 +323,7 @@ export function initLoops(api) {
   for (const button of document.querySelectorAll('[data-new-loop]')) button.addEventListener('click', () => {
     byID('loop-new-dialog').showModal();
     byID('loop-name').focus();
+    loadProjects('loop-first-project', 'loop-first-project-status', '');
   });
   async function submit(form, action) {
     const button = form.querySelector('[type="submit"]');
@@ -309,7 +340,7 @@ export function initLoops(api) {
     submit(event.target, async () => {
       const loop = await api('/loops', { method: 'POST', body: JSON.stringify({
         name: byID('loop-name').value, description: byID('loop-task').value,
-        criteria: byID('loop-criteria').value,
+        criteria: byID('loop-criteria').value, projectId: byID('loop-first-project').value,
       }) });
       selectedVersion = '';
       location.hash = `loops/${loop.id}`;
@@ -334,7 +365,7 @@ export function initLoops(api) {
     const id = modalLoop;
     if (!version || !id) return;
     submit(event.target, async () => {
-      await api(`/loops/${id}/runs`, { method: 'POST', body: JSON.stringify({ version, input: byID('loop-run-input').value.trim() || detail.loop.description }) });
+      await api(`/loops/${id}/runs`, { method: 'POST', body: JSON.stringify({ version, projectId: byID('loop-run-project').value, input: byID('loop-run-input').value }) });
       await refreshLoops();
     });
   });
@@ -350,7 +381,7 @@ export function initLoops(api) {
     event.preventDefault();
     const id = modalLoop, version = optimizeVersion;
     submit(event.target, async () => {
-      await api(`/loops/${id}/optimize`, { method: 'POST', body: JSON.stringify({ version,
+      await api(`/loops/${id}/optimize`, { method: 'POST', body: JSON.stringify({ version, projectId: byID('loop-test-project').value,
         inputs: byID('loop-test-inputs').value.split(/\n---\n/).map((text) => text.trim()).filter(Boolean),
         repeats: Number(byID('loop-test-repeats').value),
         models: [byID('loop-model-one').value.trim(), byID('loop-model-two').value.trim()],

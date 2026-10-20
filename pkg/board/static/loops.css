@@ -99,3 +99,5 @@
   .loop-job-metrics { margin-left: 0; }
   .loop-comparison { min-width: 560px; }
 }
+.loop-project-context { margin: 12px 0; color: var(--text-muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.loop-project-context strong { color: var(--text); }

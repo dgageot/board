@@ -16,6 +16,7 @@ type Loop struct {
 	Description   string `json:"description"`
 	Criteria      string `json:"criteria"`
 	Example       string `json:"example"`
+	ProjectID     string `json:"projectId"`
 	ActiveVersion string `json:"activeVersion"`
 	CreatedAt     string `json:"createdAt"`
 }
@@ -38,17 +39,18 @@ type Detail struct {
 
 // Job is a durable generation or execution attempt; interrupted attempts never resume silently.
 type Job struct {
-	ID         string  `json:"id"`
-	LoopID     string  `json:"loopId"`
-	VersionID  string  `json:"versionId"`
-	Kind       string  `json:"kind"`
-	Status     string  `json:"status"`
-	Input      string  `json:"input"`
-	Output     string  `json:"output"`
-	Error      string  `json:"error"`
-	Metrics    Metrics `json:"metrics"`
-	CreatedAt  string  `json:"createdAt"`
-	FinishedAt string  `json:"finishedAt"`
+	ID         string           `json:"id"`
+	LoopID     string           `json:"loopId"`
+	VersionID  string           `json:"versionId"`
+	Kind       string           `json:"kind"`
+	Status     string           `json:"status"`
+	Input      string           `json:"input"`
+	Output     string           `json:"output"`
+	Error      string           `json:"error"`
+	Metrics    Metrics          `json:"metrics"`
+	CreatedAt  string           `json:"createdAt"`
+	FinishedAt string           `json:"finishedAt"`
+	Project    *ProjectSnapshot `json:"project,omitempty"`
 }
 
 // Metrics separates process wall time from active inference and preserves unknown pricing.
