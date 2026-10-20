@@ -50,7 +50,7 @@ export function renderLoopDetail(detail, selectedVersion) {
       <div class="loop-actions"><button class="btn btn-ghost" data-action="import">Import YAML</button><button class="btn btn-primary" data-action="generate" ${jobs.some((job) => job.kind === 'generate' && ['queued', 'running'].includes(job.status)) ? 'disabled' : ''}>✦ Generate agent</button></div></div>
       ${version ? `<div class="loop-version-tabs">${versions.map((item) => `<button class="btn ${item.id === version.id ? 'btn-primary' : 'btn-ghost'}" data-version="${escapeHTML(item.id)}">v${item.number}${item.id === loop.activeVersion ? ' · active' : ''}</button>`).join('')}</div>
       <p class="loop-rationale">${escapeHTML(version.rationale || 'Imported configuration')}</p>
-      <pre class="loop-code"><code>${escapeHTML(version.yaml)}</code></pre>
+      <pre class="loop-code" data-inspect="config-${escapeHTML(version.id)}"><code>${escapeHTML(version.yaml)}</code></pre>
       <div class="loop-section-heading"><span class="loop-muted">Saved ${escapeHTML(new Date(version.createdAt).toLocaleString())}</span>
       <div class="loop-actions"><button class="btn btn-ghost" data-action="promote" ${version.id === loop.activeVersion ? 'disabled' : ''}>${version.id === loop.activeVersion ? '✓ Active' : 'Use this version'}</button><a class="btn btn-ghost" href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(version.id)}/export" download="agent.yaml">↓ Export agent</a></div></div>` :
       `<div class="loop-empty-inline"><span aria-hidden="true">◇</span><h3>A good agent starts with a clear task.</h3><p>Your contract is saved. Generate a specialized agent, or import one you already have.</p></div>`}
@@ -71,13 +71,13 @@ function formatMetricCost(cost) { return cost == null ? 'Cost unknown' : `$${cos
 export function renderJob(job, loopID, feedback = []) {
   const busy = ['queued', 'running'].includes(job.status);
   const metrics = job.metrics || {};
-  return `<details class="loop-job" ${busy || job.status === 'failed' ? 'open' : ''} data-job="${escapeHTML(job.id)}"><summary>
+  return `<details class="loop-job" ${busy || job.status === 'failed' ? 'open' : ''} data-job="${escapeHTML(job.id)}" data-inspect="job-${escapeHTML(job.id)}"><summary>
     <span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span><strong>${({ generate: '✦ Agent design', proposal: '✦ Candidate design', test: '▷ Evaluation run', judge: '◇ Quality judge' })[job.kind] || '▷ Agent run'}</strong>
     <span class="loop-job-metrics">${formatMetricCost(metrics.cost)} · ${((metrics.durationMs || 0) / 1000).toFixed(1)}s</span></summary>
     ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
     <div class="loop-job-facts"><span>${escapeHTML(metrics.model || 'Model pending')}</span><span>${metrics.calls || 0} calls</span><span>${metrics.inputTokens || 0} in / ${metrics.outputTokens || 0} out</span></div>
-    ${job.kind !== 'generate' ? `<details><summary>Input</summary><pre class="loop-output">${escapeHTML(job.input)}</pre></details>` : ''}
-    <pre class="loop-output">${escapeHTML(job.output || (busy ? 'Waiting for the agent…' : 'No output was produced.'))}</pre>
+    ${job.kind !== 'generate' ? `<details data-inspect="input-${escapeHTML(job.id)}"><summary>Input</summary><pre class="loop-output" data-inspect="input-text-${escapeHTML(job.id)}">${escapeHTML(job.input)}</pre></details>` : ''}
+    <pre class="loop-output" data-inspect="output-${escapeHTML(job.id)}">${escapeHTML(job.output || (busy ? 'Waiting for the agent…' : 'No output was produced.'))}</pre>
     <div class="loop-actions"><a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/events" download>Raw events ↓</a>
     <a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/stderr" download>Process log ↓</a>
     ${!busy && ['run', 'test'].includes(job.kind) ? `<button class="btn btn-ghost btn-small" data-feedback="${escapeHTML(job.id)}">＋ Give feedback</button>` : ''}
@@ -134,8 +134,49 @@ export function renderRound(round, jobs, versions, active) {
       <td>${formatMetricCost(summary.cost)}${costDelta ? `<small>${costDelta}</small>` : ''}</td><td>${summary.duration == null ? '—' : `${(summary.duration / 1000).toFixed(1)}s`}${timeDelta ? `<small>${timeDelta}</small>` : ''}</td>
       <td>${version ? `<button class="btn btn-ghost btn-small" data-version="${escapeHTML(version.id)}">Inspect</button><button class="btn btn-ghost btn-small" data-promote="${escapeHTML(version.id)}" ${!summary.qualified || round.status !== 'completed' || active === version.id ? 'disabled' : ''}>${active === version.id ? '✓ Active' : 'Use version'}</button>` : ''}</td></tr>`;
     }).join('')}</tbody></table></div>
-    <details class="loop-verdicts"><summary>Quality evidence</summary>${round.candidates.map((candidate) => `<h4>${escapeHTML(candidate.label)}</h4>${candidate.trials.map((trial) => `<p><span class="${trial.passed ? 'loop-good' : 'loop-bad'}">${trial.passed ? '✓' : '✕'}</span> Input ${trial.case + 1}, repeat ${trial.repeat + 1}: ${escapeHTML(trial.reason)}</p>`).join('')}`).join('')}</details>
+    <details class="loop-verdicts" data-inspect="verdicts-${escapeHTML(round.id)}"><summary>Quality evidence</summary>${round.candidates.map((candidate) => `<h4>${escapeHTML(candidate.label)}</h4>${candidate.trials.map((trial) => `<p><span class="${trial.passed ? 'loop-good' : 'loop-bad'}">${trial.passed ? '✓' : '✕'}</span> Input ${trial.case + 1}, repeat ${trial.repeat + 1}: ${escapeHTML(trial.reason)}</p>`).join('')}`).join('')}</details>
     </div>`;
+}
+
+const inspectorRenders = new WeakMap();
+
+function focusIdentity(element) {
+  if (!element) return '';
+  if (element.tagName === 'SUMMARY') return `summary:${element.parentElement.dataset.inspect || ''}`;
+  for (const key of ['version', 'action', 'promote', 'cancel', 'feedback', 'cancelRound']) {
+    if (element.dataset[key]) return `${key}:${element.dataset[key]}`;
+  }
+  return element.getAttribute('href') || '';
+}
+
+export function updateLoopInspector(container, detail, selectedVersion) {
+  const html = renderLoopDetail(detail, selectedVersion);
+  const previous = inspectorRenders.get(container);
+  if (previous?.html === html) return;
+  const sameLoop = previous?.loop === detail.loop.id;
+  const positions = new Map();
+  if (sameLoop) {
+    for (const element of container.querySelectorAll('[data-inspect]')) {
+      positions.set(element.dataset.inspect, { open: element.open, top: element.scrollTop, left: element.scrollLeft });
+    }
+  }
+  const activeElement = container.ownerDocument.activeElement;
+  const focused = sameLoop && container.contains(activeElement) ? focusIdentity(activeElement) : '';
+  const scroll = sameLoop ? container.scrollTop : 0;
+  container.innerHTML = html;
+  inspectorRenders.set(container, { loop: detail.loop.id, html });
+  for (const element of container.querySelectorAll('[data-inspect]')) {
+    const saved = positions.get(element.dataset.inspect);
+    if (!saved) continue;
+    if (element.tagName === 'DETAILS') element.open = saved.open;
+    element.scrollTop = saved.top;
+    element.scrollLeft = saved.left;
+  }
+  if (focused) {
+    const target = [...container.querySelectorAll('button, a, summary')].find((element) => focusIdentity(element) === focused);
+    target?.focus({ preventScroll: true });
+  }
+  container.scrollTop = scroll;
 }
 
 export function initLoops(api) {
@@ -169,11 +210,7 @@ export function initLoops(api) {
       byID('loop-detail').hidden = !detail;
       byID('loops-welcome').hidden = !!detail;
       if (detail) {
-        const openJobs = [...byID('loop-detail').querySelectorAll('details[data-job][open]')].map((item) => item.dataset.job);
-        byID('loop-detail').innerHTML = renderLoopDetail(detail, selectedVersion);
-        for (const item of byID('loop-detail').querySelectorAll('details[data-job]')) {
-          if (openJobs.includes(item.dataset.job)) item.open = true;
-        }
+        updateLoopInspector(byID('loop-detail'), detail, selectedVersion);
         if ((detail.jobs || []).some((job) => ['queued', 'running'].includes(job.status)) || (detail.rounds || []).some((round) => ['designing', 'testing'].includes(round.status))) refreshTimer = setTimeout(refreshLoops, 1000);
       }
     } catch (error) {
@@ -200,7 +237,7 @@ export function initLoops(api) {
     const version = event.target.closest('[data-version]');
     if (version && detail) {
       selectedVersion = version.dataset.version;
-      byID('loop-detail').innerHTML = renderLoopDetail(detail, selectedVersion);
+      updateLoopInspector(byID('loop-detail'), detail, selectedVersion);
     }
     if (event.target.closest('[data-action="import"]')) byID('loop-import-dialog').showModal();
     if (event.target.closest('[data-action="run"]') && detail) {

@@ -128,3 +128,66 @@ test('comparisons show observed deltas only after both quality gates pass', asyn
   assert.doesNotMatch(failed,/50% lower cost|50% faster/);
   assert.match(failed,/Quality gate not met/);
 });
+
+function inspectorHarness() {
+  const doc = { activeElement: null };
+  const state = { elements: [], buttons: [], writes: 0 };
+  const container = {
+    ownerDocument: doc, scrollTop: 0,
+    contains: (element) => state.buttons.includes(element),
+    querySelectorAll: (selector) => selector === '[data-inspect]' ? state.elements : state.buttons,
+    set innerHTML(html) {
+      state.writes++;
+      state.elements = [...html.matchAll(/<(details|pre)[^>]*data-inspect="([^"]+)"[^>]*>/g)].map((match) => ({
+        tagName: match[1].toUpperCase(), dataset: { inspect: match[2] }, open: /\sopen[\s>]/.test(match[0]), scrollTop: 0, scrollLeft: 0,
+      }));
+      state.buttons = [...html.matchAll(/<button[^>]*data-version="([^"]+)"[^>]*>/g)].map((match) => {
+        const button = { tagName: 'BUTTON', dataset: { version: match[1] }, getAttribute: () => null, focus() { doc.activeElement = button; } };
+        return button;
+      });
+    },
+  };
+  return { container, state, doc };
+}
+
+function inspectorFixture() {
+  return {
+    loop:{id:'loop',name:'Notes',description:'Summarize',criteria:'Accurate',example:'input'},
+    versions:[{id:'v1',number:1,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'}],
+    jobs:[{id:'j1',kind:'run',status:'running',output:'First',metrics:{}}],
+  };
+}
+
+test('live inspection preserves collapsed runs, nested scroll and keyboard focus', async () => {
+  const { updateLoopInspector } = await modulePromise;
+  const { container, state, doc } = inspectorHarness();
+  const detail = inspectorFixture();
+  updateLoopInspector(container, detail, 'v1');
+  state.elements.find((element) => element.dataset.inspect === 'job-j1').open = false;
+  const output = state.elements.find((element) => element.dataset.inspect === 'output-j1');
+  output.scrollTop = 50;
+  output.scrollLeft = 12;
+  container.scrollTop = 200;
+  doc.activeElement = state.buttons[0];
+  detail.jobs[0].output = 'More output';
+  updateLoopInspector(container, detail, 'v1');
+  assert.equal(state.elements.find((element) => element.dataset.inspect === 'job-j1').open, false);
+  assert.equal(state.elements.find((element) => element.dataset.inspect === 'output-j1').scrollTop, 50);
+  assert.equal(state.elements.find((element) => element.dataset.inspect === 'output-j1').scrollLeft, 12);
+  assert.equal(container.scrollTop, 200);
+  assert.equal(doc.activeElement, state.buttons[0]);
+  assert.equal(state.writes, 2);
+  updateLoopInspector(container, detail, 'v1');
+  assert.equal(state.writes, 2, 'unchanged refresh does not replace the DOM');
+});
+
+test('switching loops resets inspection rather than leaking the previous scroll position', async () => {
+  const { updateLoopInspector } = await modulePromise;
+  const { container } = inspectorHarness();
+  const detail = inspectorFixture();
+  updateLoopInspector(container, detail, 'v1');
+  container.scrollTop = 300;
+  detail.loop.id = 'another-loop';
+  updateLoopInspector(container, detail, 'v1');
+  assert.equal(container.scrollTop, 0);
+});
