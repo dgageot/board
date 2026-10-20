@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -53,24 +54,46 @@ func applyInstructionPatch(parent Version, patch instructionPatch, model string)
 	if err := yaml.Unmarshal([]byte(parent.YAML), &document); err != nil {
 		return "", err
 	}
+	if yamlReferences(&document) {
+		return "", fmt.Errorf("%w: anchored, aliased or merged YAML is not supported for instruction patches", ErrInvalid)
+	}
 	root := mappingValue(mappingValue(document.Content[0], "agents"), "root")
 	instruction := mappingValue(root, "instruction")
 	if instruction == nil || instruction.Kind != yaml.ScalarNode {
 		return "", fmt.Errorf("%w: parent must contain a scalar instruction", ErrInvalid)
 	}
 	original := instruction.Value
+	type replacement struct {
+		start, end int
+		value      string
+	}
+	replacements := []replacement{}
 	changed, added := 0, 0
 	for _, edit := range patch.Edits {
-		if edit.Old == "" || edit.Old == edit.New || strings.Count(instruction.Value, edit.Old) != 1 {
-			return "", fmt.Errorf("%w: each edit must match exactly one existing fragment and change it", ErrInvalid)
+		start := strings.Index(original, edit.Old)
+		if edit.Old == "" || edit.Old == edit.New || start < 0 || strings.Contains(original[start+1:], edit.Old) {
+			return "", fmt.Errorf("%w: each edit must match exactly one original fragment and change it", ErrInvalid)
 		}
 		changed += len(edit.Old)
 		added += len(edit.New)
 		if changed > min(4096, max(96, len(original)/3)) || added > min(4096, max(768, len(original)/2)) {
 			return "", fmt.Errorf("%w: edit is too broad; change one smaller instruction fragment", ErrInvalid)
 		}
-		instruction.Value = strings.Replace(instruction.Value, edit.Old, edit.New, 1)
+		replacements = append(replacements, replacement{start, start + len(edit.Old), edit.New})
 	}
+	slices.SortFunc(replacements, func(a, b replacement) int { return a.start - b.start })
+	var updated strings.Builder
+	cursor := 0
+	for _, edit := range replacements {
+		if edit.start < cursor {
+			return "", fmt.Errorf("%w: patch fragments overlap", ErrInvalid)
+		}
+		updated.WriteString(original[cursor:edit.start])
+		updated.WriteString(edit.value)
+		cursor = edit.end
+	}
+	updated.WriteString(original[cursor:])
+	instruction.Value = updated.String()
 	if instruction.Value == original || len(instruction.Value) > 48000 {
 		return "", fmt.Errorf("%w: patch is unchanged or exceeds the instruction limit", ErrInvalid)
 	}
@@ -122,4 +145,11 @@ func structuredAgentConfig(model, name, instruction string, schema map[string]an
 		"add_date": false, "add_environment_info": false,
 		"structured_output": map[string]any{"name": name, "strict": true, "schema": schema},
 	}}})
+}
+
+func yamlReferences(node *yaml.Node) bool {
+	if node.Anchor != "" || node.Kind == yaml.AliasNode || node.Tag == "!!merge" {
+		return true
+	}
+	return slices.ContainsFunc(node.Content, yamlReferences)
 }

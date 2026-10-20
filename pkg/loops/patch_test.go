@@ -58,3 +58,26 @@ func TestPatchDesignerOnlyRequestsInstructionEdits(t *testing.T) {
 	assert.Contains(t, string(data), "base_hash")
 	assert.NotContains(t, string(data), "toolsets")
 }
+
+func TestInstructionPatchRejectsYAMLReferences(t *testing.T) {
+	for _, config := range []string{
+		"agents:\n  root:\n    model: auto\n    instruction: &text Cite files.\n    description: *text\n",
+		"agents:\n  root:\n    <<: {model: auto}\n    instruction: Cite files.\n",
+	} {
+		parent := Version{YAML: config}
+		_, err := applyInstructionPatch(parent, instructionPatch{BaseHash: configHash(config), Rationale: "fix", Edits: []instructionEdit{{"Cite files.", "Cite paths."}}}, "other/model")
+		require.ErrorIs(t, err, ErrInvalid)
+	}
+}
+
+func TestInstructionPatchRequiresUniqueNonoverlappingOriginalAnchors(t *testing.T) {
+	parent := Version{YAML: "agents:\n  root:\n    model: auto\n    instruction: abc aaa\n"}
+	for _, edits := range [][]instructionEdit{
+		{{"abc", "new"}, {"new", "again"}},
+		{{"aa", "changed"}},
+		{{"abc", "new"}, {"bc", "overlap"}},
+	} {
+		_, err := applyInstructionPatch(parent, instructionPatch{BaseHash: configHash(parent.YAML), Rationale: "fix", Edits: edits}, "")
+		require.ErrorIs(t, err, ErrInvalid)
+	}
+}
