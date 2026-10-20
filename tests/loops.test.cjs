@@ -191,3 +191,15 @@ test('switching loops resets inspection rather than leaking the previous scroll 
   updateLoopInspector(container, detail, 'v1');
   assert.equal(container.scrollTop, 0);
 });
+
+test('identically rendered draft loops still reset the inspection context', async () => {
+  const { updateLoopInspector } = await modulePromise;
+  const { container, state } = inspectorHarness();
+  const detail = {loop:{id:'first',name:'Same',description:'Task',criteria:'Good',example:'Input'},versions:[]};
+  updateLoopInspector(container,detail,'');
+  container.scrollTop=300;
+  detail.loop.id='second';
+  updateLoopInspector(container,detail,'');
+  assert.equal(container.scrollTop,0);
+  assert.equal(state.writes,2);
+});

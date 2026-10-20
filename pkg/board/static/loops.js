@@ -152,7 +152,7 @@ function focusIdentity(element) {
 export function updateLoopInspector(container, detail, selectedVersion) {
   const html = renderLoopDetail(detail, selectedVersion);
   const previous = inspectorRenders.get(container);
-  if (previous?.html === html) return;
+  if (previous?.loop === detail.loop.id && previous.html === html) return;
   const sameLoop = previous?.loop === detail.loop.id;
   const positions = new Map();
   if (sameLoop) {
