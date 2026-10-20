@@ -1,6 +1,7 @@
 package board
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"errors"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
+
+	"github.com/dgageot/board/pkg/loops"
 )
 
 //go:embed migrations/*.sql
@@ -468,4 +471,9 @@ func (s *SQLiteStore) ReplaceColumns(cols []Column) error {
 		}
 		return nil
 	})
+}
+
+// LoopStore initializes the independent loop workspace tables.
+func (s *SQLiteStore) LoopStore(ctx context.Context) (*loops.Store, error) {
+	return loops.NewStore(ctx, s.db.DB)
 }

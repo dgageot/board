@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"slices"
 	"sync"
+
+	"github.com/dgageot/board/pkg/loops"
 )
 
 // Board holds the application state.
@@ -15,6 +17,7 @@ type Board struct {
 	store      Store
 	sessions   SessionManager
 	controller *Controller
+	loops      *loops.Store
 	mu         sync.RWMutex
 	clients    map[chan struct{}]struct{}
 	coaches    map[string]bool
@@ -31,6 +34,12 @@ func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionMana
 		coaches:  make(map[string]bool),
 		watching: make(map[string]struct{}),
 	}
+
+	loopStore, err := store.LoopStore(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b.loops = loopStore
 
 	b.controller = newController(ctx, store, sessions, b.broadcast)
 	if err := b.controller.ReconcileAll(); err != nil {

@@ -1,7 +1,16 @@
 package board
 
+import (
+	"context"
+
+	"github.com/dgageot/board/pkg/loops"
+)
+
 // Store abstracts persistence for the board application.
 type Store interface {
+	// LoopStore shares the database with the independent loop workspace.
+	LoopStore(ctx context.Context) (*loops.Store, error)
+
 	// Cards
 	ListCards() ([]*Card, error)
 	GetCard(id string) (*Card, error)

@@ -6,6 +6,7 @@
   <title>Docker Agent Board</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="loops.css">
   <script type="importmap">
     {
       "imports": {
@@ -43,6 +44,7 @@
       <span class="brand-mark" aria-hidden="true"><svg class="icon" width="16" height="16"><use href="#i-kanban"/></svg></span>
       <h1>Board <span class="brand-sub">Docker Agent</span></h1>
     </div>
+    <nav class="workspace-nav" aria-label="Workspace"><a id="workspace-board" href="#board" aria-current="page">Board</a><a id="workspace-loops" href="#loops">↻ Loops</a></nav>
     <div id="board-summary" class="board-summary" aria-live="polite"></div>
     <div class="header-actions">
       <button id="btn-new-task" class="btn btn-primary" title="New task (N)"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-plus"/></svg><span class="btn-label">New task</span></button>
@@ -55,6 +57,41 @@
   </header>
 
   <main id="board" aria-label="Task board"></main>
+
+  <main id="loops-workspace" aria-label="AI loops" hidden>
+    <div class="loops-toolbar"><h2>Loops</h2><span id="loops-count"></span><button class="btn btn-primary" data-new-loop>+ New loop</button></div>
+    <div id="loops-notice" role="status" aria-live="polite"></div>
+    <div class="loops-layout"><aside id="loops-list" aria-label="Your loops"></aside>
+      <section id="loops-welcome"><div class="loop-hero-mark" aria-hidden="true">↻</div><div><div class="loop-eyebrow">BUILD. MEASURE. EVOLVE.</div><h2>Great agents aren't a lucky prompt.</h2></div>
+        <p>Turn a repeatable task into a specialized agent. Keep what works. Learn from every run.</p>
+        <button class="btn btn-primary" data-new-loop>Create your first loop</button>
+        <div class="loop-steps"><span><b>01</b>Describe the task</span><span><b>02</b>Build an agent</span><span><b>03</b>Measure & improve</span></div>
+      </section><section id="loop-detail" aria-label="Loop details" hidden></section>
+    </div>
+  </main>
+  <dialog id="loop-new-dialog" class="dialog-large" aria-labelledby="loop-new-title">
+    <div class="dialog-header"><span id="loop-new-title">Create a loop</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
+    <form id="loop-new-form" class="dialog-body" autocomplete="off">
+      <p class="dialog-subtitle">Define the job once. Make the agent better with evidence.</p>
+      <label>Name<input id="loop-name" required maxlength="160" placeholder="Release notes, distilled"></label>
+      <label>The repeatable task<textarea id="loop-task" required rows="3" maxlength="16000" placeholder="Turn a list of commits into concise, user-facing release notes."></textarea></label>
+      <label>What does a good result look like?<textarea id="loop-criteria" required rows="3" maxlength="16000" placeholder="Group changes by feature, fix and maintenance. Never invent details. Omit internal refactors."></textarea></label>
+      <label>An example input<textarea id="loop-example" required rows="4" maxlength="32000" placeholder="Paste a realistic input to test the agent against."></textarea></label>
+      <p class="loop-form-help">Start with a self-contained text task. Your contract and example are saved before any model is called.</p>
+      <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Create loop →</button></div>
+    </form>
+  </dialog>
+  <dialog id="loop-import-dialog" class="dialog-large" aria-labelledby="loop-import-title">
+    <div class="dialog-header"><span id="loop-import-title">Import an agent version</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
+    <form id="loop-import-form" class="dialog-body" autocomplete="off">
+      <label>Agent YAML<textarea id="loop-yaml" required rows="14" maxlength="262144" spellcheck="false" placeholder="agents:
+  root:
+    model: auto
+    instruction: ..."></textarea></label>
+      <label>What changed?<textarea id="loop-rationale" rows="2" maxlength="16000" placeholder="The hypothesis behind this version"></textarea></label>
+      <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Save version</button></div>
+    </form>
+  </dialog>
 
   <dialog id="terminal-dialog" class="dialog-terminal" aria-labelledby="terminal-title">
     <div class="dialog-header">

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/dgageot/board/pkg/credentials"
+	"github.com/dgageot/board/pkg/loops"
 	"github.com/dgageot/board/pkg/tmux"
 )
 
@@ -137,6 +138,8 @@ func serve(ctx context.Context, srv *http.Server, ln net.Listener) error {
 // buildMux registers all routes for the board.
 func buildMux(b *Board) (http.Handler, error) {
 	mux := http.NewServeMux()
+
+	loops.Register(mux, b.loops, b.broadcast)
 
 	// API routes
 	mux.HandleFunc("GET /api/projects", b.handleListProjects)
