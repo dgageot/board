@@ -20,6 +20,7 @@ type Board struct {
 	loops       *loops.Store
 	loopService *loops.Service
 	mu          sync.RWMutex
+	taskLaunch  sync.Mutex
 	clients     map[chan struct{}]struct{}
 	coaches     map[string]bool
 	watching    map[string]struct{}

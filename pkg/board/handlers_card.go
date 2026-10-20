@@ -321,6 +321,8 @@ func (b *Board) deleteCardResources(card *Card) {
 }
 
 func (b *Board) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
+	b.taskLaunch.Lock()
+	defer b.taskLaunch.Unlock()
 	card, ok := b.getCard(w, r)
 	if !ok {
 		return
@@ -379,6 +381,8 @@ func (b *Board) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Board) handleClearColumn(w http.ResponseWriter, r *http.Request) {
+	b.taskLaunch.Lock()
+	defer b.taskLaunch.Unlock()
 	column := r.PathValue("column")
 
 	cards, err := b.store.ListCardsByColumn(column)

@@ -151,6 +151,8 @@ func buildMux(b *Board) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	loops.Register(mux, b.loops, b.broadcast, b.loopService)
+	mux.HandleFunc("GET /api/loops/{id}/tasks", b.handleLoopProjectTasks)
+	mux.HandleFunc("POST /api/loops/{id}/tasks", b.handleRunLoopProjectTask)
 
 	// API routes
 	mux.HandleFunc("GET /api/projects", b.handleListProjects)

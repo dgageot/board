@@ -610,6 +610,15 @@ func (c *Controller) SendPrompt(card *Card, prompt string) error {
 // message. Launching from the worktree keeps the agent isolated even if
 // docker-agent's own worktree reattachment does not happen.
 func (c *Controller) relaunch(card *Card, prompt string) error {
+	if store, ok := c.store.(projectTaskStore); ok {
+		if _, err := store.ProjectTaskForCard(card.ID); err == nil {
+			c.setStatus(card.ID, StatusError)
+			return errors.New("project-task sessions are not automatically relaunched; inspect the worktree and create a new task explicitly")
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+
 	log.Printf("card %s: relaunching agent (tmux session %s, agent session %s)", card.ID, card.Session, card.AgentSession)
 	_ = c.sessions.KillSession(card.Session)
 	socket := socketPath(card.AgentSession)

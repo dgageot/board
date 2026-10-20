@@ -24,7 +24,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 	version, err := currentVersion(db)
 	require.NoError(t, err)
-	assert.Equal(t, 9, version)
+	assert.Equal(t, 10, version)
 }
 
 func TestMigrationVersion(t *testing.T) {
