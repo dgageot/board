@@ -108,6 +108,14 @@ func (c *Controller) ReconcileAll() error {
 		return fmt.Errorf("list cards: %w", err)
 	}
 	for _, card := range cards {
+		closed, err := c.reconcileTaskClose(card)
+		if err != nil {
+			log.Printf("card %s: close cleanup pending: %v", card.ID, err)
+			continue
+		}
+		if closed {
+			continue
+		}
 		c.Start(card)
 	}
 	return nil
@@ -115,6 +123,18 @@ func (c *Controller) ReconcileAll() error {
 
 // Start ensures a watcher is running for the card. Idempotent.
 func (c *Controller) Start(card *Card) {
+	if card.Status == StatusClosed {
+		return
+	}
+	if store, ok := c.store.(projectTaskStore); ok {
+		task, err := store.ProjectTaskForCard(card.ID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return
+		}
+		if err == nil && (task.Status == "closing" || task.Status == "closed") {
+			return
+		}
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, ok := c.watchers[card.ID]; ok {
@@ -587,6 +607,15 @@ func (c *Controller) MoveCardToColumn(card *Card, column string, requireIdle boo
 // message; any other failure (busy, queue full, timeout) is surfaced rather
 // than destroying a live session.
 func (c *Controller) SendPrompt(card *Card, prompt string) error {
+	if store, ok := c.store.(projectTaskStore); ok {
+		task, err := store.ProjectTaskForCard(card.ID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil && (task.Status == "closing" || task.Status == "closed") {
+			return fmt.Errorf("%w: project task is closed", errBadInput)
+		}
+	}
 	if prompt == "" {
 		return nil
 	}

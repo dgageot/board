@@ -3,7 +3,9 @@ package board
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -77,6 +79,17 @@ func (b *Board) handleCoachCard(w http.ResponseWriter, r *http.Request) {
 // reattaches to the ongoing review — and to its conversation, so follow-up
 // questions work — instead of starting over.
 func (b *Board) startCoach(ctx context.Context, card *Card) (string, error) {
+	b.taskLaunch.Lock()
+	defer b.taskLaunch.Unlock()
+	if store, ok := b.store.(projectTaskStore); ok {
+		task, err := store.ProjectTaskForCard(card.ID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return "", err
+		}
+		if err == nil && (task.Status == "closing" || task.Status == "closed") {
+			return "", fmt.Errorf("%w: project task is closed", errBadInput)
+		}
+	}
 	name := coachSessionName(card.ID)
 	if alive, err := b.sessions.Alive(name); err == nil && alive {
 		b.markCoachRan(card.ID)

@@ -327,6 +327,9 @@ func (s *SQLiteStore) MoveCard(id, column string, requireIdle bool) (*Card, erro
 		if err := tx.Get(&card, "SELECT "+cardColumns+" FROM cards WHERE id = ?", id); err != nil {
 			return err
 		}
+		if requireIdle && card.Status == StatusClosed {
+			return fmt.Errorf("%w: cannot advance a closed task", errBadInput)
+		}
 		if requireIdle && card.Status.Busy() {
 			return errCardRunning
 		}

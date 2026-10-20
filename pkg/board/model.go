@@ -39,7 +39,8 @@ const (
 	StatusPaused CardStatus = "paused"
 	// StatusError marks a card whose last turn failed. It is sticky: the
 	// watcher keeps it until the next turn starts (stream_started).
-	StatusError CardStatus = "error"
+	StatusError  CardStatus = "error"
+	StatusClosed CardStatus = "closed"
 )
 
 // Busy reports whether the card's agent cannot accept a prompt right now: it

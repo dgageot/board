@@ -174,6 +174,8 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
+	b.taskLaunch.Lock()
+	defer b.taskLaunch.Unlock()
 	var req struct {
 		Column string `json:"column"`
 	}
@@ -231,6 +233,11 @@ func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 func (b *Board) handleJumpCard(w http.ResponseWriter, r *http.Request) {
 	card, ok := b.getCard(w, r)
 	if !ok {
+		return
+	}
+
+	if card.Status == StatusClosed {
+		writeError(w, fmt.Errorf("%w: project task is closed; its diff remains available", errBadInput))
 		return
 	}
 

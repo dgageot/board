@@ -153,6 +153,7 @@ func buildMux(b *Board) (http.Handler, error) {
 	loops.Register(mux, b.loops, b.broadcast, b.loopService)
 	mux.HandleFunc("GET /api/loops/{id}/tasks", b.handleLoopProjectTasks)
 	mux.HandleFunc("POST /api/loops/{id}/tasks", b.handleRunLoopProjectTask)
+	mux.HandleFunc("POST /api/loops/{id}/tasks/{task}/close", b.handleCloseLoopProjectTask)
 
 	// API routes
 	mux.HandleFunc("GET /api/projects", b.handleListProjects)
