@@ -99,6 +99,22 @@ func TestLiveLoopSmoke(t *testing.T) {
 	assert.Positive(t, completed.Metrics.DurationMS)
 	assert.Positive(t, completed.Metrics.InputTokens)
 	t.Logf("generated v1 and ran it: model=%s duration=%dms cost=%v", completed.Metrics.Model, completed.Metrics.DurationMS, completed.Metrics.Cost)
+	if os.Getenv("BOARD_LOOPS_OPTIMIZE_SMOKE") == "1" {
+		_, err := service.Optimize(t.Context(), loop.ID, OptimizeRequest{Version: generated.VersionID, Inputs: []string{loop.Example}, Repeats: 1, Models: []string{"auto", "auto"}})
+		require.NoError(t, err)
+		service.Wait()
+		rounds, err := store.Rounds(t.Context(), loop.ID)
+		require.NoError(t, err)
+		require.Len(t, rounds, 1)
+		require.Equal(t, "completed", rounds[0].Status, rounds[0].Error)
+		require.Len(t, rounds[0].Candidates, 3)
+		for _, candidate := range rounds[0].Candidates {
+			require.Empty(t, candidate.Error)
+			require.Len(t, candidate.Trials, 1)
+			require.NotEmpty(t, candidate.Trials[0].JudgeID)
+			t.Logf("%s: passed=%v reason=%s", candidate.Label, candidate.Trials[0].Passed, candidate.Trials[0].Reason)
+		}
+	}
 }
 
 func TestServiceCloseStopsAdmissionAndJoinsWork(t *testing.T) {
@@ -120,4 +136,49 @@ func TestServiceCloseStopsAdmissionAndJoinsWork(t *testing.T) {
 	assert.Equal(t, "canceled", saved.Status)
 	_, err = service.Generate(t.Context(), loop.ID)
 	require.Error(t, err)
+}
+
+func TestOptimizationRunsCompleteSuiteAndGatesPromotion(t *testing.T) {
+	store := testStore(t)
+	loop := testLoop(t, store)
+	version, err := store.AddVersion(t.Context(), loop.ID, "agents:\n  root:\n    model: auto\n    instruction: summarize\n", "baseline")
+	require.NoError(t, err)
+	cost := 0.01
+	service, err := NewService(t.Context(), store, fakeRunner{run: func(_ context.Context, req Request, _ func(Result)) (Result, error) {
+		switch {
+		case strings.Contains(string(req.Config), "agent_proposal"):
+			return Result{Output: `{"instruction":"Summarize precisely","model":"auto","rationale":"Less repetition"}`}, nil
+		case strings.Contains(string(req.Config), "quality_judgment"):
+			return Result{Output: `{"passed":true,"reason":"Meets all criteria"}`}, nil
+		default:
+			return Result{Output: "Good answer", Metrics: Metrics{Cost: &cost, DurationMS: 100}}, nil
+		}
+	}}, "auto", func() {})
+	require.NoError(t, err)
+	round, err := service.Optimize(t.Context(), loop.ID, OptimizeRequest{Version: version.ID, Inputs: []string{"case one", "case two"}, Repeats: 2, Models: []string{"auto", "auto"}})
+	require.NoError(t, err)
+	service.Wait()
+	rounds, err := store.Rounds(t.Context(), loop.ID)
+	require.NoError(t, err)
+	require.Len(t, rounds, 1)
+	assert.Equal(t, round.ID, rounds[0].ID)
+	assert.Equal(t, "completed", rounds[0].Status)
+	require.Len(t, rounds[0].Candidates, 3)
+	for _, candidate := range rounds[0].Candidates {
+		assert.True(t, candidatePassed(rounds[0], candidate))
+		assert.Len(t, candidate.Trials, 4)
+	}
+	candidate := rounds[0].Candidates[1]
+	require.NoError(t, store.Promote(t.Context(), loop.ID, candidate.VersionID, ""))
+	require.ErrorIs(t, store.Promote(t.Context(), loop.ID, version.ID, ""), ErrConflict)
+}
+
+func TestIncompleteOrDuplicateTrialsCannotQualify(t *testing.T) {
+	round := Round{Inputs: []string{"one", "two"}, Repeats: 1}
+	trial := Trial{JobID: "run", JudgeID: "judge", Passed: true, Case: 0, Repeat: 0}
+	assert.False(t, candidatePassed(round, Candidate{Trials: []Trial{trial}}))
+	assert.False(t, candidatePassed(round, Candidate{Trials: []Trial{trial, trial}}))
+	trial.Case = 1
+	trial.Passed = false
+	assert.False(t, candidatePassed(round, Candidate{Trials: []Trial{{JobID: "a", JudgeID: "b", Passed: true}, trial}}))
 }

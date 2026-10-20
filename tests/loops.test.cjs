@@ -41,3 +41,24 @@ test('job metrics distinguish unpriced calls from free execution and escape outp
   assert.doesNotMatch(html, /<script>|\$0/);
   assert.match(html, /jobs\/job\/events/);
 });
+
+test('comparison fails closed on incomplete, failed and duplicate evidence', async () => {
+  const { summarizeCandidate } = await modulePromise;
+  const round = { inputs: ['a','b'], repeats: 1 };
+  const trial = { jobId: 'a', judgeId: 'j', case: 0, repeat: 0, passed: true };
+  assert.equal(summarizeCandidate(round, { trials: [trial] }, []).qualified, false);
+  assert.equal(summarizeCandidate(round, { trials: [trial,trial] }, []).qualified, false);
+  const candidate = { trials: [trial, { ...trial, jobId: 'b', case: 1 }] };
+  const summary = summarizeCandidate(round, candidate, [{id:'a',status:'succeeded',metrics:{cost:0.1,durationMs:200}}, {id:'b',status:'succeeded',metrics:{cost:0.2,durationMs:400}}]);
+  assert.equal(summary.qualified, true);
+  assert.ok(Math.abs(summary.cost - .15) < 1e-9);
+  assert.equal(summary.duration, 300);
+});
+
+test('experiments never offer promotion for failing candidates', async () => {
+  const { renderRound } = await modulePromise;
+  const html = renderRound({id:'r',status:'completed',inputs:['a'],repeats:1,candidates:[{label:'<candidate>',versionId:'v',trials:[{jobId:'j',case:0,repeat:0,passed:false,reason:'<failed>'}]}]}, [], [{id:'v',number:2}], '');
+  assert.match(html, /data-promote="v" disabled/);
+  assert.match(html, /&lt;failed&gt;/);
+  assert.match(html, /not a guarantee/);
+});

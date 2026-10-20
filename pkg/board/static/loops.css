@@ -73,3 +73,16 @@
 .loop-job-error { padding: 12px; background: var(--surface-input); border-left: 2px solid var(--danger); margin-top: 12px; color: var(--danger); white-space: pre-wrap; }
 .loop-job-facts { display: flex; flex-wrap: wrap; gap: 18px; padding: 12px 0; color: var(--text-muted); font: 11px var(--font-mono); }
 .loop-output { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-input); border-radius: var(--radius-sm); padding: 16px; font: 12px/1.8 var(--font-mono); max-height: 460px; overflow: auto; margin: 10px 0; }
+.loop-hint { color: var(--text-muted); line-height: 1.7; font-size: 12px; margin: 14px 0; }
+.loop-experiment { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 18px; }
+.loop-table-scroll { overflow-x: auto; }
+.loop-comparison { width: 100%; border-collapse: collapse; margin: 14px 0; text-align: left; }
+.loop-comparison th { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .7px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.loop-comparison td { padding: 14px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.loop-comparison small { display: block; color: var(--text-muted); margin-top: 4px; max-width: 200px; overflow-wrap: anywhere; }
+.loop-good { color: var(--success); }
+.loop-bad { color: var(--danger); }
+.loop-verdicts { color: var(--text-muted); font-size: 12px; line-height: 1.7; }
+.loop-verdicts summary { cursor: pointer; padding: 6px 0; }
+.loop-verdicts h4 { margin: 12px 0 5px; color: var(--text); }
+.loop-feedback-note { border-left: 2px solid var(--accent); padding: 8px 12px; margin: 10px 0; color: var(--text-muted); white-space: pre-wrap; }

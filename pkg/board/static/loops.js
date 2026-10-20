@@ -10,7 +10,7 @@ export function renderLoopList(loops, selected) {
 }
 
 export function renderLoopDetail(detail, selectedVersion) {
-  const { loop, versions, jobs = [] } = detail;
+  const { loop, versions, jobs = [], rounds = [], feedback = [] } = detail;
   const version = versions.find((item) => item.id === selectedVersion) || versions[0];
   return `<div class="loop-detail-heading"><div><div class="loop-eyebrow">REUSABLE INTELLIGENCE</div><h2>${escapeHTML(loop.name)}</h2></div>
     <span class="loop-badge">${versions.length} ${versions.length === 1 ? 'version' : 'versions'}</span></div>
@@ -22,23 +22,27 @@ export function renderLoopDetail(detail, selectedVersion) {
       <p class="loop-rationale">${escapeHTML(version.rationale || 'Imported configuration')}</p>
       <pre class="loop-code"><code>${escapeHTML(version.yaml)}</code></pre>
       <div class="loop-section-heading"><span class="loop-muted">Saved ${escapeHTML(new Date(version.createdAt).toLocaleString())}</span>
-      <a class="btn btn-ghost" href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(version.id)}/export" download="agent.yaml">↓ Export agent</a></div>` :
+      <div class="loop-actions"><button class="btn btn-ghost" data-action="promote" ${version.id === loop.activeVersion ? 'disabled' : ''}>${version.id === loop.activeVersion ? '✓ Active' : 'Use this version'}</button><a class="btn btn-ghost" href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(version.id)}/export" download="agent.yaml">↓ Export agent</a></div></div>` :
       `<div class="loop-empty-inline"><span aria-hidden="true">◇</span><h3>A good agent starts with a clear task.</h3><p>Your contract is saved. Generate a specialized agent, or import one you already have.</p></div>`}
     </section>
     <section class="loop-panel"><div class="loop-section-heading"><div><h3>Try this agent</h3><p>Each run starts fresh. Model calls use your configured provider credentials.</p></div>
       <button class="btn btn-primary" data-action="run" ${version ? '' : 'disabled'}>▷ Run ${version ? `v${version.number}` : ''}</button></div>
       <p class="loop-example">${escapeHTML(loop.example)}</p></section>
+    <section class="loop-panel"><div class="loop-section-heading"><div><h3>Make the next version better</h3><p>Test two hypotheses alongside the baseline. Your active agent stays unchanged.</p></div>
+      <button class="btn btn-primary" data-action="optimize" ${version ? '' : 'disabled'}>↻ Optimize</button></div>
+      ${rounds.map((round) => renderRound(round, jobs, versions, loop.activeVersion)).join('')}
+      ${!rounds.length ? '<p class="loop-hint">Feedback → candidate agents → repeated tests → independent judgment → your decision.</p>' : ''}</section>
     <section class="loop-panel"><div class="loop-section-heading"><div><h3>Activity & results</h3><p>Execution success is not a quality score. Inspect each result before trusting it.</p></div></div>
-      ${jobs.length ? jobs.map((job) => renderJob(job, loop.id)).join('') : '<div class="loop-empty-inline"><p>No runs yet. Generate an agent, then try it on your example.</p></div>'}</section>`;
+      ${jobs.length ? jobs.map((job) => renderJob(job, loop.id, feedback)).join('') : '<div class="loop-empty-inline"><p>No runs yet. Generate an agent, then try it on your example.</p></div>'}</section>`;
 }
 
 function formatMetricCost(cost) { return cost == null ? 'Cost unknown' : `$${cost.toFixed(cost < 1 ? 4 : 2)}`; }
 
-export function renderJob(job, loopID) {
+export function renderJob(job, loopID, feedback = []) {
   const busy = ['queued', 'running'].includes(job.status);
   const metrics = job.metrics || {};
   return `<details class="loop-job" ${busy || job.status === 'failed' ? 'open' : ''} data-job="${escapeHTML(job.id)}"><summary>
-    <span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span><strong>${job.kind === 'generate' ? '✦ Agent design' : '▷ Agent run'}</strong>
+    <span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span><strong>${({ generate: '✦ Agent design', proposal: '✦ Candidate design', test: '▷ Evaluation run', judge: '◇ Quality judge' })[job.kind] || '▷ Agent run'}</strong>
     <span class="loop-job-metrics">${formatMetricCost(metrics.cost)} · ${((metrics.durationMs || 0) / 1000).toFixed(1)}s</span></summary>
     ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
     <div class="loop-job-facts"><span>${escapeHTML(metrics.model || 'Model pending')}</span><span>${metrics.calls || 0} calls</span><span>${metrics.inputTokens || 0} in / ${metrics.outputTokens || 0} out</span></div>
@@ -46,7 +50,40 @@ export function renderJob(job, loopID) {
     <pre class="loop-output">${escapeHTML(job.output || (busy ? 'Waiting for the agent…' : 'No output was produced.'))}</pre>
     <div class="loop-actions"><a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/events" download>Raw events ↓</a>
     <a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/stderr" download>Process log ↓</a>
-    ${busy ? `<button class="btn btn-ghost btn-small" data-cancel="${escapeHTML(job.id)}">Cancel</button>` : ''}</div></details>`;
+    ${!busy && ['run', 'test'].includes(job.kind) ? `<button class="btn btn-ghost btn-small" data-feedback="${escapeHTML(job.id)}">＋ Give feedback</button>` : ''}
+    ${busy ? `<button class="btn btn-ghost btn-small" data-cancel="${escapeHTML(job.id)}">Cancel</button>` : ''}</div>
+    ${feedback.filter((item) => item.jobId === job.id).map((item) => `<p class="loop-feedback-note">${item.rating === 'good' ? '✓' : '✕'} ${escapeHTML(item.note || item.rating)}</p>`).join('')}</details>`;
+}
+
+export function summarizeCandidate(round, candidate, jobs) {
+  const expected = round.inputs.length * round.repeats;
+  const keys = new Set(candidate.trials.map((trial) => `${trial.case}/${trial.repeat}`));
+  const complete = !candidate.error && expected > 0 && candidate.trials.length === expected && keys.size === expected;
+  const runs = candidate.trials.map((trial) => jobs.find((job) => job.id === trial.jobId));
+  const priced = complete && runs.every((job) => job?.metrics?.cost != null);
+  const passed = candidate.trials.filter((trial) => trial.passed).length;
+  return { expected, passed, qualified: complete && passed === expected,
+    cost: priced ? runs.reduce((sum, job) => sum + job.metrics.cost, 0) / expected : null,
+    duration: complete && runs.every((job) => job?.status === 'succeeded') ? runs.reduce((sum, job) => sum + job.metrics.durationMs, 0) / expected : null };
+}
+
+export function renderRound(round, jobs, versions, active) {
+  const busy = ['designing', 'testing'].includes(round.status);
+  return `<div class="loop-experiment"><div class="loop-section-heading"><h4>Experiment · ${escapeHTML(round.status)}</h4>
+    ${busy ? `<button class="btn btn-ghost btn-small" data-cancel-round="${escapeHTML(round.id)}">Stop experiment</button>` : ''}</div>
+    <p class="loop-hint">${round.inputs.length} inputs × ${round.repeats} repetitions. AI-judged evidence, not a guarantee. Parallel-run timings include contention.</p>
+    ${round.error ? `<p class="loop-job-error">${escapeHTML(round.error)}</p>` : ''}
+    <div class="loop-table-scroll"><table class="loop-comparison"><thead><tr><th>Version</th><th>Quality checks</th><th>Cost / run</th><th>Time / run</th><th></th></tr></thead><tbody>
+    ${round.candidates.map((candidate) => {
+      const summary = summarizeCandidate(round, candidate, jobs);
+      const version = versions.find((item) => item.id === candidate.versionId);
+      return `<tr><td><strong>${escapeHTML(candidate.label)}</strong><small>${version ? `v${version.number}` : 'Design pending'}</small></td>
+      <td><span class="${summary.qualified ? 'loop-good' : ''}">${summary.passed} / ${summary.expected}</span>${candidate.error ? `<small>${escapeHTML(candidate.error)}</small>` : ''}</td>
+      <td>${formatMetricCost(summary.cost)}</td><td>${summary.duration == null ? '—' : `${(summary.duration / 1000).toFixed(1)}s`}</td>
+      <td>${version ? `<button class="btn btn-ghost btn-small" data-version="${escapeHTML(version.id)}">Inspect</button><button class="btn btn-ghost btn-small" data-promote="${escapeHTML(version.id)}" ${!summary.qualified || round.status !== 'completed' || active === version.id ? 'disabled' : ''}>${active === version.id ? '✓ Active' : 'Use version'}</button>` : ''}</td></tr>`;
+    }).join('')}</tbody></table></div>
+    <details class="loop-verdicts"><summary>Quality evidence</summary>${round.candidates.map((candidate) => `<h4>${escapeHTML(candidate.label)}</h4>${candidate.trials.map((trial) => `<p><span class="${trial.passed ? 'loop-good' : 'loop-bad'}">${trial.passed ? '✓' : '✕'}</span> Input ${trial.case + 1}, repeat ${trial.repeat + 1}: ${escapeHTML(trial.reason)}</p>`).join('')}`).join('')}</details>
+    </div>`;
 }
 
 export function initLoops(api) {
@@ -55,6 +92,10 @@ export function initLoops(api) {
   let selectedVersion = '';
   let sequence = 0;
   let refreshTimer = null;
+  let feedbackJob = '';
+  let optimizeVersion = '';
+  let runVersion = '';
+  let modalLoop = '';
 
   function notice(message = '', error = false) {
     byID('loops-notice').textContent = message;
@@ -80,7 +121,7 @@ export function initLoops(api) {
         for (const item of byID('loop-detail').querySelectorAll('details[data-job]')) {
           if (openJobs.includes(item.dataset.job)) item.open = true;
         }
-        if ((detail.jobs || []).some((job) => ['queued', 'running'].includes(job.status))) refreshTimer = setTimeout(refreshLoops, 1000);
+        if ((detail.jobs || []).some((job) => ['queued', 'running'].includes(job.status)) || (detail.rounds || []).some((round) => ['designing', 'testing'].includes(round.status))) refreshTimer = setTimeout(refreshLoops, 1000);
       }
     } catch (error) {
       if (request === sequence) notice(error.message, true);
@@ -110,8 +151,38 @@ export function initLoops(api) {
     }
     if (event.target.closest('[data-action="import"]')) byID('loop-import-dialog').showModal();
     if (event.target.closest('[data-action="run"]') && detail) {
+      modalLoop = detail.loop.id;
+      runVersion = (detail.versions.find((item) => item.id === selectedVersion) || detail.versions[0])?.id;
       byID('loop-run-input').value = detail.loop.example;
       byID('loop-run-dialog').showModal();
+    }
+    if (event.target.closest('[data-action="optimize"]') && detail) {
+      modalLoop = detail.loop.id;
+      optimizeVersion = (detail.versions.find((item) => item.id === selectedVersion) || detail.versions[0])?.id;
+      byID('loop-test-inputs').value = detail.loop.example;
+      byID('loop-optimize-dialog').showModal();
+    }
+    const feedback = event.target.closest('[data-feedback]');
+    if (feedback && detail) {
+      modalLoop = detail.loop.id;
+      feedbackJob = feedback.dataset.feedback;
+      byID('loop-feedback-dialog').showModal();
+    }
+    const promote = event.target.closest('[data-promote], [data-action="promote"]');
+    if (promote && detail) {
+      const version = promote.dataset.promote || (detail.versions.find((item) => item.id === selectedVersion) || detail.versions[0])?.id;
+      if (!version || !window.confirm('Make this the active version? Review the result and quality evidence first. The previous version remains available.')) return;
+      promote.disabled = true;
+      try {
+        await api(`/loops/${detail.loop.id}/promote`, { method: 'POST', body: JSON.stringify({ version, expectedActive: detail.loop.activeVersion }) });
+        await refreshLoops();
+      } catch (error) { notice(error.message, true); }
+      finally { promote.disabled = false; }
+    }
+    const stopRound = event.target.closest('[data-cancel-round]');
+    if (stopRound && detail) {
+      try { await api(`/loops/${detail.loop.id}/rounds/${stopRound.dataset.cancelRound}/cancel`, { method: 'POST' }); await refreshLoops(); }
+      catch (error) { notice(error.message, true); }
     }
     const generate = event.target.closest('[data-action="generate"]');
     const cancel = event.target.closest('[data-cancel]');
@@ -164,11 +235,31 @@ export function initLoops(api) {
   byID('loop-run-form').addEventListener('submit', (event) => {
     event.preventDefault();
     if (!detail) return;
-    const version = detail.versions.find((item) => item.id === selectedVersion) || detail.versions[0];
-    const id = detail.loop.id;
-    if (!version) return;
+    const version = runVersion;
+    const id = modalLoop;
+    if (!version || !id) return;
     submit(event.target, async () => {
-      await api(`/loops/${id}/runs`, { method: 'POST', body: JSON.stringify({ version: version.id, input: byID('loop-run-input').value }) });
+      await api(`/loops/${id}/runs`, { method: 'POST', body: JSON.stringify({ version, input: byID('loop-run-input').value }) });
+      await refreshLoops();
+    });
+  });
+  byID('loop-feedback-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const id = modalLoop, job = feedbackJob;
+    submit(event.target, async () => {
+      await api(`/loops/${id}/feedback`, { method: 'POST', body: JSON.stringify({ job, rating: byID('loop-rating').value, note: byID('loop-feedback-note').value }) });
+      await refreshLoops();
+    });
+  });
+  byID('loop-optimize-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const id = modalLoop, version = optimizeVersion;
+    submit(event.target, async () => {
+      await api(`/loops/${id}/optimize`, { method: 'POST', body: JSON.stringify({ version,
+        inputs: byID('loop-test-inputs').value.split(/\n---\n/).map((text) => text.trim()).filter(Boolean),
+        repeats: Number(byID('loop-test-repeats').value),
+        models: [byID('loop-model-one').value.trim(), byID('loop-model-two').value.trim()],
+      }) });
       await refreshLoops();
     });
   });

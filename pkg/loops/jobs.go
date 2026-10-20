@@ -11,6 +11,10 @@ const jobColumns = "id,loop_id,version_id,kind,status,input,output,error,metrics
 // Recover marks abandoned jobs rather than replaying uncertain work.
 func (s *Store) Recover(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE loop_jobs SET status='interrupted',error='Board stopped before this attempt completed. Start a new attempt to retry.',finished_at=? WHERE status IN ('queued','running')`, now())
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE loop_rounds SET status='interrupted' WHERE status IN ('designing','testing')`)
 	return err
 }
 

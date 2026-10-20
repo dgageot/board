@@ -30,3 +30,19 @@ CREATE TABLE IF NOT EXISTS loop_jobs (
     finished_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS loop_jobs_loop ON loop_jobs(loop_id, created_at);
+CREATE TABLE IF NOT EXISTS loop_feedback (
+    id TEXT PRIMARY KEY,
+    loop_id TEXT NOT NULL,
+    job_id TEXT NOT NULL,
+    rating TEXT NOT NULL,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS loop_feedback_loop ON loop_feedback(loop_id,created_at);
+CREATE TABLE IF NOT EXISTS loop_rounds (
+    id TEXT PRIMARY KEY,
+    loop_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS loop_rounds_loop ON loop_rounds(loop_id);

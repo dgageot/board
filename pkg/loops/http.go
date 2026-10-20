@@ -24,6 +24,10 @@ func Register(mux *http.ServeMux, store *Store, changed func(), services ...*Ser
 		h.service = services[0]
 	}
 	mux.HandleFunc("POST /api/loops/{id}/generate", h.generate)
+	mux.HandleFunc("POST /api/loops/{id}/optimize", h.optimize)
+	mux.HandleFunc("POST /api/loops/{id}/promote", h.promote)
+	mux.HandleFunc("POST /api/loops/{id}/feedback", h.feedback)
+	mux.HandleFunc("POST /api/loops/{id}/rounds/{round}/cancel", h.cancelRound)
 	mux.HandleFunc("POST /api/loops/{id}/runs", h.run)
 	mux.HandleFunc("POST /api/loops/{id}/jobs/{job}/cancel", h.cancel)
 	mux.HandleFunc("GET /api/loops/{id}/jobs/{job}/events", h.events)
@@ -111,11 +115,23 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	rounds, err := h.store.Rounds(r.Context(), detail.Loop.ID)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	feedback, err := h.store.Feedback(r.Context(), detail.Loop.ID)
+	if err != nil {
+		fail(w, err)
+		return
+	}
 	respond(w, http.StatusOK, struct {
 		Detail
 
-		Jobs []Job `json:"jobs"`
-	}{Detail: detail, Jobs: jobs})
+		Jobs     []Job      `json:"jobs"`
+		Rounds   []Round    `json:"rounds"`
+		Feedback []Feedback `json:"feedback"`
+	}{Detail: detail, Jobs: jobs, Rounds: rounds, Feedback: feedback})
 }
 
 func (h *Handler) addVersion(w http.ResponseWriter, r *http.Request) {
@@ -238,4 +254,73 @@ func (h *Handler) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.txt"`, job.ID, kind))
 	_, _ = io.Copy(w, io.LimitReader(file, 16*1024*1024))
+}
+
+func (h *Handler) optimize(w http.ResponseWriter, r *http.Request) {
+	if !h.available(w) {
+		return
+	}
+	var input OptimizeRequest
+	if !decode(w, r, &input) {
+		return
+	}
+	round, err := h.service.Optimize(r.Context(), r.PathValue("id"), input)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusAccepted, round)
+}
+
+func (h *Handler) promote(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Version        string `json:"version"`
+		ExpectedActive string `json:"expectedActive"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	if err := h.store.Promote(r.Context(), r.PathValue("id"), input.Version, input.ExpectedActive); err != nil {
+		fail(w, err)
+		return
+	}
+	h.changed()
+	respond(w, http.StatusOK, map[string]string{"activeVersion": input.Version})
+}
+
+func (h *Handler) feedback(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Job    string `json:"job"`
+		Rating string `json:"rating"`
+		Note   string `json:"note"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	feedback, err := h.store.AddFeedback(r.Context(), r.PathValue("id"), input.Job, input.Rating, input.Note)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	h.changed()
+	respond(w, http.StatusCreated, feedback)
+}
+
+func (h *Handler) cancelRound(w http.ResponseWriter, r *http.Request) {
+	if !h.available(w) {
+		return
+	}
+	rounds, err := h.store.Rounds(r.Context(), r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	for _, round := range rounds {
+		if round.ID == r.PathValue("round") {
+			h.service.Cancel(round.ID)
+			respond(w, http.StatusAccepted, map[string]string{"status": "cancel requested"})
+			return
+		}
+	}
+	fail(w, ErrNotFound)
 }

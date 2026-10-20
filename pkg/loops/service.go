@@ -121,14 +121,14 @@ func (s *Service) persist(job Job) {
 	s.changed()
 }
 
-func (s *Service) execute(ctx context.Context, job Job, config []byte) {
+func (s *Service) execute(ctx context.Context, job Job, config []byte) Job {
 	select {
 	case s.slots <- struct{}{}:
 		defer func() { <-s.slots }()
 	case <-ctx.Done():
 		job.Status, job.Error, job.FinishedAt = "canceled", ctx.Err().Error(), now()
 		s.persist(job)
-		return
+		return job
 	}
 	job.Status = "running"
 	s.persist(job)
@@ -140,7 +140,7 @@ func (s *Service) execute(ctx context.Context, job Job, config []byte) {
 	})
 	job.Output, job.Metrics, job.FinishedAt = result.Output, result.Metrics, now()
 	job.Status = "succeeded"
-	if err == nil && job.Kind == "generate" {
+	if err == nil && (job.Kind == "generate" || job.Kind == "design") {
 		job.VersionID, err = s.saveProposal(ctx, job.LoopID, result.Output)
 	}
 	if err != nil {
@@ -150,6 +150,7 @@ func (s *Service) execute(ctx context.Context, job Job, config []byte) {
 		}
 	}
 	s.persist(job)
+	return job
 }
 
 // Cancel stops a queued or running attempt without restarting it.

@@ -102,6 +102,26 @@
     </form>
   </dialog>
 
+  <dialog id="loop-feedback-dialog" class="dialog-large" aria-labelledby="loop-feedback-title">
+    <div class="dialog-header"><span id="loop-feedback-title">Teach the next version</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
+    <form id="loop-feedback-form" class="dialog-body"><label>How was this result?<select id="loop-rating"><option value="good">Good — keep this behavior</option><option value="bad">Needs work — improve this</option></select></label>
+    <label>Your feedback<textarea id="loop-feedback-note" rows="5" maxlength="16000" placeholder="What worked? What should change? Be specific."></textarea></label>
+    <p class="loop-form-help">Feedback guides new candidates. It never changes the quality criteria or the active version automatically.</p>
+    <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Save feedback</button></div></form>
+  </dialog>
+  <dialog id="loop-optimize-dialog" class="dialog-large" aria-labelledby="loop-optimize-title">
+    <div class="dialog-header"><span id="loop-optimize-title">Run an optimization experiment</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
+    <form id="loop-optimize-form" class="dialog-body">
+      <p class="dialog-subtitle">Two new agents. One baseline. The same quality bar.</p>
+      <label>Evaluation inputs<textarea id="loop-test-inputs" rows="7" required maxlength="65536"></textarea></label>
+      <p class="loop-form-help">Separate inputs with a line containing ---. Include edge cases that candidates have not seen. Up to 8 inputs.</p>
+      <label>Repetitions per input<select id="loop-test-repeats"><option value="2">2 — recommended starting point</option><option value="3">3 — more evidence</option><option value="1">1 — quick exploration only</option></select></label>
+      <div class="loop-contract"><label>Candidate 1 model<input id="loop-model-one" value="auto" required placeholder="provider/model"></label><label>Candidate 2 model<input id="loop-model-two" value="auto" required placeholder="provider/model"></label></div>
+      <p class="loop-form-help">Use auto to explore prompts, or enter available cheaper model IDs. Model availability is checked by the provider. Up to 72 executions and judgments, plus design calls. This spends provider credits. Four calls run concurrently; the experiment stops after 20 minutes.</p>
+      <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Start experiment →</button></div>
+    </form>
+  </dialog>
+
   <dialog id="terminal-dialog" class="dialog-terminal" aria-labelledby="terminal-title">
     <div class="dialog-header">
       <div class="dialog-title-group">
