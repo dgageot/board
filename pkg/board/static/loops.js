@@ -64,13 +64,21 @@ export function renderJob(job, loopID, feedback = []) {
 export function summarizeCandidate(round, candidate, jobs) {
   const expected = round.inputs.length * round.repeats;
   const keys = new Set(candidate.trials.map((trial) => `${trial.case}/${trial.repeat}`));
-  const complete = !candidate.error && expected > 0 && candidate.trials.length === expected && keys.size === expected;
+  const complete = !candidate.error && expected > 0 && candidate.trials.length === expected && keys.size === expected
+    && candidate.trials.every((trial) => {
+      const run = jobs.find((job) => job.id === trial.jobId);
+      const judge = jobs.find((job) => job.id === trial.judgeId);
+      return Number.isInteger(trial.case) && trial.case >= 0 && trial.case < round.inputs.length
+        && Number.isInteger(trial.repeat) && trial.repeat >= 0 && trial.repeat < round.repeats
+        && run?.status === 'succeeded' && run.kind === 'test' && run.versionId === candidate.versionId
+        && judge?.status === 'succeeded' && judge.kind === 'judge' && judge.versionId === candidate.versionId;
+    });
   const runs = candidate.trials.map((trial) => jobs.find((job) => job.id === trial.jobId));
   const priced = complete && runs.every((job) => job?.metrics?.cost != null);
   const passed = candidate.trials.filter((trial) => trial.passed).length;
   return { expected, passed, qualified: complete && passed === expected,
     cost: priced ? runs.reduce((sum, job) => sum + job.metrics.cost, 0) / expected : null,
-    duration: complete && runs.every((job) => job?.status === 'succeeded') ? runs.reduce((sum, job) => sum + job.metrics.durationMs, 0) / expected : null };
+    duration: complete && runs.every((job) => job?.status === 'succeeded' && Number.isFinite(job.metrics?.durationMs)) ? runs.reduce((sum, job) => sum + job.metrics.durationMs, 0) / expected : null };
 }
 
 export function renderRound(round, jobs, versions, active) {

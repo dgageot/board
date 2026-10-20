@@ -48,8 +48,8 @@ test('comparison fails closed on incomplete, failed and duplicate evidence', asy
   const trial = { jobId: 'a', judgeId: 'j', case: 0, repeat: 0, passed: true };
   assert.equal(summarizeCandidate(round, { trials: [trial] }, []).qualified, false);
   assert.equal(summarizeCandidate(round, { trials: [trial,trial] }, []).qualified, false);
-  const candidate = { trials: [trial, { ...trial, jobId: 'b', case: 1 }] };
-  const summary = summarizeCandidate(round, candidate, [{id:'a',status:'succeeded',metrics:{cost:0.1,durationMs:200}}, {id:'b',status:'succeeded',metrics:{cost:0.2,durationMs:400}}]);
+  const candidate = { versionId: 'v', trials: [trial, { ...trial, jobId: 'b', judgeId: 'j2', case: 1 }] };
+  const summary = summarizeCandidate(round, candidate, [{id:'a',kind:'test',versionId:'v',status:'succeeded',metrics:{cost:0.1,durationMs:200}}, {id:'b',kind:'test',versionId:'v',status:'succeeded',metrics:{cost:0.2,durationMs:400}}, {id:'j',kind:'judge',versionId:'v',status:'succeeded'}, {id:'j2',kind:'judge',versionId:'v',status:'succeeded'}]);
   assert.equal(summary.qualified, true);
   assert.ok(Math.abs(summary.cost - .15) < 1e-9);
   assert.equal(summary.duration, 300);
@@ -71,4 +71,18 @@ test('active version remains the default when unpromoted candidates arrive', asy
   assert.equal(selectedLoopVersion(detail, 'removed').id, 'v1');
   detail.loop.activeVersion = '';
   assert.equal(selectedLoopVersion(detail, '').id, 'v1');
+});
+
+test('missing, failed and interrupted persisted jobs never qualify in the UI', async () => {
+ const { summarizeCandidate } = await modulePromise;
+ const round={inputs:['a'],repeats:1};
+ const candidate={versionId:'v',trials:[{jobId:'r',judgeId:'j',case:0,repeat:0,passed:true}]};
+ const jobs=[{id:'r',versionId:'v',kind:'test',status:'succeeded'},{id:'j',versionId:'v',kind:'judge',status:'succeeded'}];
+ assert.equal(summarizeCandidate(round,candidate,[]).qualified,false);
+ for(const status of ['failed','running','interrupted']) {
+   assert.equal(summarizeCandidate(round,candidate,[jobs[0],{...jobs[1],status}]).qualified,false);
+ }
+ assert.equal(summarizeCandidate(round,candidate,jobs).qualified,true);
+ candidate.trials[0].case=99;
+ assert.equal(summarizeCandidate(round,candidate,jobs).qualified,false);
 });
