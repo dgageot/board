@@ -87,7 +87,7 @@ export function renderLoopDetail(detail, selectedVersion) {
   const { loop, versions, jobs = [], rounds = [], feedback = [] } = detail;
   const version = selectedLoopVersion(detail, selectedVersion);
   const activity = loopActivity(detail);
-  const latestRun = jobs.find((job) => job.kind === 'run');
+  const latestRun = activity.phase === 'running' ? activity.job : jobs.find((job) => job.kind === 'run');
   const inProgress = ['generating', 'running', 'optimizing'].includes(activity.phase);
   return `<div class="loop-detail-heading"><div><div class="loop-eyebrow">LOOP</div><h2>${escapeHTML(loop.name)}</h2></div>
     <span class="loop-badge">${version ? `v${version.number}${version.id === loop.activeVersion ? ' · active' : ''}` : 'Preparing agent'}</span></div>

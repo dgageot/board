@@ -397,3 +397,14 @@ test('explicit version inspection reveals configuration instead of only changing
  assert.equal(config.open,true);
  assert.equal(config.scrolled,true);
 });
+
+test('live output and stop action refer to the same active run when a newer run has finished', async () => {
+ const { renderLoopDetail }=await modulePromise;
+ const detail=inspectorFixture();
+ detail.jobs=[{id:'new',kind:'run',status:'succeeded',output:'New result',metrics:{}},{id:'old',kind:'run',status:'running',output:'Active output',metrics:{}}];
+ const html=renderLoopDetail(detail,'v1');
+ const main=html.slice(0,html.indexOf('data-inspect="task"'));
+ assert.match(main,/data-cancel="old"/);
+ assert.match(main,/Active output/);
+ assert.doesNotMatch(main,/New result/);
+});
