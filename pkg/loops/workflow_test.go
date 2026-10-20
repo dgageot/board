@@ -85,3 +85,21 @@ func TestFirstAnalysisVersionIgnoresOlderProjectWorkflow(t *testing.T) {
 	versions := []Version{{ID: "new", Mode: ModeAnalysis}, {ID: "first-analysis", Mode: ModeAnalysis}, {ID: "old-project", Mode: ModeProject}}
 	assert.Equal(t, "first-analysis", firstAnalysisVersion(versions))
 }
+
+func TestRepeatedGenerateDoesNotStartConcurrentPaidJobs(t *testing.T) {
+	store := testStore(t)
+	loop := testLoop(t, store)
+	service, err := NewService(t.Context(), store, fakeRunner{run: func(ctx context.Context, _ Request, _ func(Result)) (Result, error) {
+		<-ctx.Done()
+		return Result{}, ctx.Err()
+	}}, "auto", func() {})
+	require.NoError(t, err)
+	t.Cleanup(service.Close)
+	_, err = service.Generate(t.Context(), loop.ID)
+	require.NoError(t, err)
+	_, err = service.Generate(t.Context(), loop.ID)
+	require.ErrorIs(t, err, ErrConflict)
+	jobs, err := store.Jobs(t.Context(), loop.ID)
+	require.NoError(t, err)
+	assert.Len(t, jobs, 1)
+}

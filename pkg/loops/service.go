@@ -138,6 +138,15 @@ func (s *Service) start(ctx context.Context, loopID, versionID, kind, input stri
 	if err := s.checkAdmission(); err != nil {
 		return Job{}, err
 	}
+	if kind == "generate" {
+		var active bool
+		if err := s.store.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM loop_jobs WHERE loop_id=? AND kind='generate' AND status IN ('queued','running'))`, loopID).Scan(&active); err != nil {
+			return Job{}, err
+		}
+		if active {
+			return Job{}, fmt.Errorf("%w: agent generation is already running", ErrConflict)
+		}
+	}
 	if kind == "run" {
 		latest, err := s.store.Get(ctx, loopID)
 		if err != nil {
