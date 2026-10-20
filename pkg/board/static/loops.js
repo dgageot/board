@@ -73,7 +73,11 @@ function renderActivity(activity, version) {
 }
 
 function renderResult(job, loopID, feedback) {
-  return `<section class="loop-panel loop-result"><div class="loop-section-heading"><h3>${busyJob(job) ? 'Live output' : 'Latest result'}</h3><span class="loop-muted">${formatMetricCost(job.metrics?.cost)} · ${((job.metrics?.durationMs || 0) / 1000).toFixed(1)}s</span></div>
+  const failed = ['failed', 'canceled', 'interrupted'].includes(job.status);
+  const title = busyJob(job) ? 'Live output' : failed ? 'Incomplete result' : 'Latest result';
+  return `<section class="loop-panel loop-result"><div class="loop-section-heading"><h3>${title}</h3><span class="loop-muted">${formatMetricCost(job.metrics?.cost)} · ${((job.metrics?.durationMs || 0) / 1000).toFixed(1)}s</span></div>
+    <p class="loop-result-status"><span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span>${failed ? ' Partial output — this run did not finish successfully.' : ''}</p>
+    ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
     ${job.project ? `<p class="loop-project-context">${escapeHTML(job.project.name)} · ${escapeHTML(job.project.revision.slice(0, 8))}</p>` : ''}
     <pre class="loop-output" data-inspect="latest-output-${escapeHTML(job.id)}">${escapeHTML(job.output || (busyJob(job) ? 'Waiting for the first response…' : 'No output was produced.'))}</pre>
     ${!busyJob(job) ? `<button class="btn btn-ghost" data-feedback="${escapeHTML(job.id)}">Give feedback</button>` : ''}

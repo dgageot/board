@@ -408,3 +408,16 @@ test('live output and stop action refer to the same active run when a newer run 
  assert.match(main,/Active output/);
  assert.doesNotMatch(main,/New result/);
 });
+
+test('partial failed output stays visibly marked when an experiment takes status priority', async () => {
+ const { renderLoopDetail }=await modulePromise;
+ const detail=inspectorFixture();
+ detail.jobs=[{id:'failed',kind:'run',status:'failed',output:'Partial answer',error:'Provider unavailable',metrics:{}}];
+ detail.rounds=[{id:'r',status:'designing',inputs:['a'],repeats:1,candidates:[]}];
+ const html=renderLoopDetail(detail,'v1');
+ const main=html.slice(0,html.indexOf('data-inspect="task"'));
+ assert.match(main,/Optimizing your agent/);
+ assert.match(main,/Incomplete result/);
+ assert.match(main,/Partial output/);
+ assert.match(main,/Provider unavailable/);
+});
