@@ -131,3 +131,20 @@ func TestClosingMissingProjectCardDoesNotClaimSuccess(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "launched", saved.Status)
 }
+
+func TestDeletingClosedProjectTaskDoesNotReopenClosure(t *testing.T) {
+	b, store, loop, _ := taskFixture(t)
+	task, card := reservedTask(t, store, loop.ID)
+	require.NoError(t, store.UpdateProjectTask(task.ID, "closed", ""))
+	sessions := &closeTaskSessions{fail: true}
+	b.sessions = sessions
+	b.controller.sessions = sessions
+	request := httptest.NewRequest(http.MethodDelete, "/api/cards/"+card.ID, http.NoBody)
+	request.SetPathValue("id", card.ID)
+	recorder := httptest.NewRecorder()
+	b.handleDeleteCard(recorder, request)
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	saved, err := store.GetProjectTask(task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "closed", saved.Status)
+}

@@ -436,6 +436,9 @@ func (b *Board) stopLinkedTask(card *Card) error {
 	if err != nil {
 		return err
 	}
+	if task.Status == "closed" {
+		return nil
+	}
 	if err := store.UpdateProjectTask(task.ID, "closing", task.Error); err != nil {
 		return err
 	}
