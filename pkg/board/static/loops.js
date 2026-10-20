@@ -65,7 +65,7 @@ function renderActivity(activity, version) {
   let action = '';
   if (activity.job && busyJob(activity.job)) action = `<button class="btn btn-ghost" data-cancel="${escapeHTML(activity.job.id)}">Stop</button>`;
   else if (activity.round) action = `<button class="btn btn-ghost" data-cancel-round="${escapeHTML(activity.round.id)}">Stop experiment</button>`;
-  else if (!version || activity.job?.kind === 'generate') action = '<button class="btn btn-primary" data-action="generate">Retry agent creation</button>';
+  else if (!version) action = '<button class="btn btn-primary" data-action="generate">Retry agent creation</button>';
   else action = `<button class="btn btn-primary" data-action="run">${activity.phase === 'failed' ? 'Retry run' : 'Run on a project'} →</button>`;
   const running = ['generating', 'running', 'optimizing'].includes(activity.phase);
   return `<section class="loop-activity ${activity.phase}" aria-label="Current activity"><div class="loop-activity-mark ${running ? 'spinning' : ''}" aria-hidden="true">${running ? '↻' : activity.phase === 'failed' ? '!' : '✓'}</div>

@@ -378,3 +378,13 @@ test('selected loop sidebar reflects its current running activity', async () => 
  assert.match(html,/loop-list-icon spinning/);
  assert.doesNotMatch(html,/Draft/);
 });
+
+test('imported agents remain runnable after automatic generation fails or stops', async () => {
+ const { renderLoopDetail }=await modulePromise;
+ for(const status of ['failed','canceled']) {
+  const detail={loop:{id:'l',name:'Loop',description:'Task',criteria:'Good'},versions:[{id:'import',number:1,yaml:'agents: {}'}],jobs:[{id:'g',kind:'generate',status,error:'Stopped',metrics:{}}]};
+  const html=renderLoopDetail(detail,'import');
+  assert.match(html,/data-action="run"/);
+  assert.doesNotMatch(html,/data-action="generate"/);
+ }
+});
