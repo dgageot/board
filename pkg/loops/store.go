@@ -51,8 +51,8 @@ func (s *Store) Create(ctx context.Context, loop Loop) (Loop, error) {
 	loop.Description = strings.TrimSpace(loop.Description)
 	loop.Criteria = strings.TrimSpace(loop.Criteria)
 	loop.Example = strings.TrimSpace(loop.Example)
-	if loop.Name == "" || loop.Description == "" || loop.Criteria == "" || loop.Example == "" {
-		return Loop{}, fmt.Errorf("%w: name, task, quality criteria and example input are required", ErrInvalid)
+	if loop.Name == "" || loop.Description == "" || loop.Criteria == "" {
+		return Loop{}, fmt.Errorf("%w: name, task and quality criteria are required", ErrInvalid)
 	}
 	if len(loop.Name) > 160 || len(loop.Description)+len(loop.Criteria)+len(loop.Example) > 64*1024 {
 		return Loop{}, fmt.Errorf("%w: task contract is too large", ErrInvalid)

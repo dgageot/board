@@ -57,13 +57,13 @@ export function renderLoopDetail(detail, selectedVersion) {
     </section>
     <section class="loop-panel"><div class="loop-section-heading"><div><h3>Try this agent</h3><p>Each run starts fresh. Model calls use your configured provider credentials.</p></div>
       <button class="btn btn-primary" data-action="run" ${version ? '' : 'disabled'}>▷ Run ${version ? `v${version.number}` : ''}</button></div>
-      <p class="loop-example">${escapeHTML(loop.example)}</p></section>
+      <p class="loop-example">${escapeHTML(loop.description)}</p></section>
     <section class="loop-panel"><div class="loop-section-heading"><div><h3>Make the next version better</h3><p>Test two hypotheses alongside the baseline. Your active agent stays unchanged.</p></div>
       <button class="btn btn-primary" data-action="optimize" ${version ? '' : 'disabled'}>↻ Optimize</button></div>
       ${rounds.map((round) => renderRound(round, jobs, versions, loop.activeVersion)).join('')}
       ${!rounds.length ? '<p class="loop-hint">Feedback → candidate agents → repeated tests → independent judgment → your decision.</p>' : ''}</section>
     <section class="loop-panel"><div class="loop-section-heading"><div><h3>Activity & results</h3><p>Execution success is not a quality score. Inspect each result before trusting it.</p></div></div>
-      ${jobs.length ? jobs.map((job) => renderJob(job, loop.id, feedback)).join('') : '<div class="loop-empty-inline"><p>No runs yet. Generate an agent, then try it on your example.</p></div>'}</section>`;
+      ${jobs.length ? jobs.map((job) => renderJob(job, loop.id, feedback)).join('') : '<div class="loop-empty-inline"><p>No runs yet. Generate an agent, then run it on a project.</p></div>'}</section>`;
 }
 
 function formatMetricCost(cost) { return cost == null ? 'Cost unknown' : `$${cost.toFixed(cost < 1 ? 4 : 2)}`; }
@@ -248,13 +248,13 @@ export function initLoops(api) {
     if (event.target.closest('[data-action="run"]') && detail) {
       modalLoop = detail.loop.id;
       runVersion = selectedLoopVersion(detail, selectedVersion)?.id;
-      byID('loop-run-input').value = detail.loop.example;
+      byID('loop-run-input').value = '';
       byID('loop-run-dialog').showModal();
     }
     if (event.target.closest('[data-action="optimize"]') && detail) {
       modalLoop = detail.loop.id;
       optimizeVersion = selectedLoopVersion(detail, selectedVersion)?.id;
-      byID('loop-test-inputs').value = detail.loop.example;
+      byID('loop-test-inputs').value = detail.loop.description;
       byID('loop-optimize-dialog').showModal();
     }
     const feedback = event.target.closest('[data-feedback]');
@@ -309,7 +309,7 @@ export function initLoops(api) {
     submit(event.target, async () => {
       const loop = await api('/loops', { method: 'POST', body: JSON.stringify({
         name: byID('loop-name').value, description: byID('loop-task').value,
-        criteria: byID('loop-criteria').value, example: byID('loop-example').value,
+        criteria: byID('loop-criteria').value,
       }) });
       selectedVersion = '';
       location.hash = `loops/${loop.id}`;
@@ -334,7 +334,7 @@ export function initLoops(api) {
     const id = modalLoop;
     if (!version || !id) return;
     submit(event.target, async () => {
-      await api(`/loops/${id}/runs`, { method: 'POST', body: JSON.stringify({ version, input: byID('loop-run-input').value }) });
+      await api(`/loops/${id}/runs`, { method: 'POST', body: JSON.stringify({ version, input: byID('loop-run-input').value.trim() || detail.loop.description }) });
       await refreshLoops();
     });
   });

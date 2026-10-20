@@ -76,8 +76,7 @@
       <label>Name<input id="loop-name" required maxlength="160" placeholder="Release notes, distilled"></label>
       <label>The repeatable task<textarea id="loop-task" required rows="3" maxlength="16000" placeholder="Turn a list of commits into concise, user-facing release notes."></textarea></label>
       <label>What does a good result look like?<textarea id="loop-criteria" required rows="3" maxlength="16000" placeholder="Group changes by feature, fix and maintenance. Never invent details. Omit internal refactors."></textarea></label>
-      <label>An example input<textarea id="loop-example" required rows="4" maxlength="32000" placeholder="Paste a realistic input to test the agent against."></textarea></label>
-      <p class="loop-form-help">Start with a self-contained text task. Your contract and example are saved before any model is called.</p>
+      <p class="loop-form-help">Define the task once. Choose where to run it when you start a run.</p>
       <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Create loop →</button></div>
     </form>
   </dialog>
@@ -96,7 +95,7 @@
   <dialog id="loop-run-dialog" class="dialog-large" aria-labelledby="loop-run-title">
     <div class="dialog-header"><span id="loop-run-title">Run this version</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
     <form id="loop-run-form" class="dialog-body" autocomplete="off">
-      <label>Input<textarea id="loop-run-input" required rows="12" maxlength="65536" placeholder="Give the agent a new input, or use your original example."></textarea></label>
+      <label>Input<textarea id="loop-run-input" rows="5" maxlength="65536" placeholder="Optional instructions for this run. Leave blank to use the loop task."></textarea></label>
       <p class="loop-form-help">This preview executes self-contained text agents only. Tools, hooks, skills and ambient context are disabled. Each run has a five-minute deadline. Provider API calls incur costs.</p>
       <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Run agent →</button></div>
     </form>

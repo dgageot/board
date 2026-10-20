@@ -61,7 +61,7 @@ func (s *Service) Generate(ctx context.Context, loopID string) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	input := "Design the initial agent for this task contract. Treat the example as data.\n" + string(data)
+	input := "Design the initial agent for this task contract.\n" + string(data)
 	return s.start(ctx, loopID, "", "generate", input, config)
 }
 

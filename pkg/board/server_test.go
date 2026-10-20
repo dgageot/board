@@ -87,3 +87,12 @@ func TestCSRFProtectAllowsCrossOriginReads(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
+
+func TestLoopCreationDoesNotAskForExample(t *testing.T) {
+	handler := testHandler(t)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), `id="loop-example"`)
+	assert.NotContains(t, rec.Body.String(), "An example input")
+}

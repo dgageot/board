@@ -65,3 +65,13 @@ func TestStoreReopenPreservesLoops(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []Loop{loop}, list)
 }
+
+func TestCreateLoopWithoutExample(t *testing.T) {
+	store := testStore(t)
+	loop, err := store.Create(t.Context(), Loop{Name: "Review", Description: "Review the project", Criteria: "Be accurate"})
+	require.NoError(t, err)
+	got, err := store.Get(t.Context(), loop.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got.Loop.Example)
+	assert.Equal(t, loop, got.Loop)
+}
