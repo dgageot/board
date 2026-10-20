@@ -3,6 +3,7 @@ package loops
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"unicode/utf8"
 )
 
@@ -88,7 +89,14 @@ func (s *Store) designEvidence(ctx context.Context, loop Loop, baseline Version)
 		// Preserve the task contract and baseline; optional evidence is discarded first.
 		evidence.Runs = nil
 		evidence.Feedback = nil
-		return json.Marshal(evidence)
+		data, err = json.Marshal(evidence)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > maxDesignEvidence {
+			return nil, fmt.Errorf("%w: task contract exceeds the serialized design context limit", ErrInvalid)
+		}
+		return data, nil
 	}
 	return data, nil
 }

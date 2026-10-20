@@ -51,3 +51,11 @@ func TestDesignEvidenceBoundsLargeFeedback(t *testing.T) {
 	assert.True(t, json.Valid(data))
 	assert.Contains(t, string(data), "[truncated]")
 }
+
+func TestDesignEvidenceRejectsOversizedEncodedContract(t *testing.T) {
+	store := testStore(t)
+	loop := testLoop(t, store)
+	loop.Example = strings.Repeat("<p>x</p>", 8190)
+	_, err := store.designEvidence(t.Context(), loop, Version{YAML: "agents: {}"})
+	require.ErrorIs(t, err, ErrInvalid)
+}
