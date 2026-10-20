@@ -222,8 +222,25 @@ export function updateLoopInspector(container, detail, selectedVersion, sourceJo
   const activeElement = container.ownerDocument.activeElement;
   const focused = sameLoop && container.contains(activeElement) ? focusIdentity(activeElement) : '';
   const scroll = sameLoop ? container.scrollTop : 0;
+  // Reuse unchanged rich content; keep code and table scrolling across updates.
+  const body = container.querySelector('[data-result-body]');
+  const latest = detail.jobs?.find((job) => job.id === body?.dataset.resultBody);
+  const keepBody = sameLoop && body && latest && previous.output === latest.output && previous.sourceJob === sourceJob;
+  const bodyScroll = body ? [...body.querySelectorAll('pre, table')].map((element) => ({ top: element.scrollTop, left: element.scrollLeft })) : [];
+  const parked = keepBody ? body.ownerDocument.createElement('div') : null;
+  if (parked) {
+    parked.append(...body.childNodes);
+  }
   container.innerHTML = html;
-  inspectorRenders.set(container, { loop: detail.loop.id, html });
+  const nextBody = container.querySelector('[data-result-body]');
+  if (nextBody && body?.dataset.resultBody === nextBody.dataset.resultBody) {
+    if (parked) nextBody.replaceChildren(...parked.childNodes);
+    [...nextBody.querySelectorAll('pre, table')].forEach((element, index) => {
+      const saved = bodyScroll[index];
+      if (saved) { element.scrollTop = saved.top; element.scrollLeft = saved.left; }
+    });
+  }
+  inspectorRenders.set(container, { loop: detail.loop.id, html, sourceJob, output: detail.jobs?.find((job) => job.id === nextBody?.dataset.resultBody)?.output });
   for (const element of container.querySelectorAll('[data-inspect]')) {
     const saved = positions.get(element.dataset.inspect);
     if (!saved) continue;

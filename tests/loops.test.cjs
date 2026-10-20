@@ -136,6 +136,7 @@ function inspectorHarness() {
   const state = { elements: [], buttons: [], writes: 0 };
   const container = {
     ownerDocument: doc, scrollTop: 0,
+    querySelector: () => null,
     contains: (element) => state.buttons.includes(element),
     querySelectorAll: (selector) => selector === '[data-inspect]' ? state.elements : state.buttons,
     set innerHTML(html) {
@@ -484,4 +485,44 @@ test('latest result renders safe Markdown with Source and Copy controls', async 
  assert.match(raw,/# Findings/);
  assert.doesNotMatch(raw,/<h1>Findings<\/h1>/);
  assert.match(raw,/data-source="j1" aria-pressed="true"/);
+});
+
+function richInspectorHarness() {
+  const { container, state, doc } = inspectorHarness();
+  const setter = Object.getOwnPropertyDescriptor(container, 'innerHTML').set;
+  let body = null;
+  function richBody(id) {
+    const block = { scrollTop: 0, scrollLeft: 0 };
+    return {
+      dataset: { resultBody: id }, ownerDocument: doc, childNodes: [block],
+      querySelectorAll() { return this.childNodes; },
+      replaceChildren(...children) { this.childNodes = children; },
+    };
+  }
+  doc.createElement = () => ({ childNodes: [], append(...children) { this.childNodes.push(...children); } });
+  container.querySelector = () => body;
+  Object.defineProperty(container, 'innerHTML', { set(html) {
+    setter.call(container, html);
+    const id = html.match(/data-result-body="([^"]+)"/)?.[1];
+    body = id ? richBody(id) : null;
+  }});
+  return { container, state, body: () => body };
+}
+
+test('metadata updates reuse rich result nodes and changed output preserves code scrolling', async () => {
+  const { updateLoopInspector } = await modulePromise;
+  const h = richInspectorHarness();
+  const detail = inspectorFixture();
+  detail.jobs[0].output = '```js\nconst x = 1;\n```';
+  updateLoopInspector(h.container, detail, 'v1');
+  const block = h.body().childNodes[0];
+  block.scrollLeft = 500;
+  detail.jobs[0].metrics.durationMs = 100;
+  updateLoopInspector(h.container, detail, 'v1');
+  assert.equal(h.body().childNodes[0], block);
+  assert.equal(h.body().childNodes[0].scrollLeft, 500);
+  detail.jobs[0].output = '```js\nconst x = 2;\n```';
+  updateLoopInspector(h.container, detail, 'v1');
+  assert.notEqual(h.body().childNodes[0], block);
+  assert.equal(h.body().childNodes[0].scrollLeft, 500);
 });
