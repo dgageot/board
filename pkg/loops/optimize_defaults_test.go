@@ -35,12 +35,14 @@ func TestOptimizeDefaultUsesSelectedVersionProjectAndInputs(t *testing.T) {
 	require.ErrorIs(t, err, ErrConflict)
 }
 
-func TestOptimizeDefaultFallsBackToTaskAndFirstProject(t *testing.T) {
+func TestOptimizeDefaultKeepsInitialVersionUntilOneIsPromoted(t *testing.T) {
 	store := testStore(t)
 	project := testProject(t, store)
 	loop, err := store.Create(t.Context(), Loop{Name: "Notes", Description: "Summarize", Criteria: "Accurate", ProjectID: project.ID})
 	require.NoError(t, err)
 	version, err := store.AddVersion(t.Context(), loop.ID, "agents:\n  root:\n    model: auto\n    instruction: Summarize\n", "")
+	require.NoError(t, err)
+	candidate, err := store.AddVersion(t.Context(), loop.ID, "agents:\n  root:\n    model: auto\n    instruction: Candidate\n", "")
 	require.NoError(t, err)
 	service, err := NewService(t.Context(), store, fakeRunner{run: func(ctx context.Context, _ Request, _ func(Result)) (Result, error) {
 		<-ctx.Done()
@@ -53,4 +55,11 @@ func TestOptimizeDefaultFallsBackToTaskAndFirstProject(t *testing.T) {
 	assert.Equal(t, project.ID, round.Project.ID)
 	assert.Equal(t, []string{loop.Description}, round.Inputs)
 	assert.Equal(t, version.ID, round.Baseline)
+	service.Cancel(round.ID)
+	service.Wait()
+	_, err = store.db.Exec(`UPDATE loops SET active_version=? WHERE id=?`, candidate.ID, loop.ID)
+	require.NoError(t, err)
+	promoted, err := service.OptimizeDefault(t.Context(), loop.ID, "")
+	require.NoError(t, err)
+	assert.Equal(t, candidate.ID, promoted.Baseline)
 }
