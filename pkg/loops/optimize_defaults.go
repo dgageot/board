@@ -17,10 +17,10 @@ func (s *Service) OptimizeDefault(ctx context.Context, loopID, versionID string)
 		versionID = detail.Loop.ActiveVersion
 		// Match the UI: unpromoted experimental candidates must not replace v1.
 		if versionID == "" && len(detail.Versions) > 0 {
-			versionID = detail.Versions[len(detail.Versions)-1].ID
+			versionID = firstAnalysisVersion(detail.Versions)
 		}
 	}
-	jobs, err := s.store.Jobs(ctx, loopID)
+	jobs, err := s.store.LatestRunInputs(ctx, loopID, versionID)
 	if err != nil {
 		return Round{}, err
 	}

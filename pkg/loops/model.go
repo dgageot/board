@@ -17,6 +17,7 @@ type Loop struct {
 	Criteria      string `json:"criteria"`
 	Example       string `json:"example"`
 	ProjectID     string `json:"projectId"`
+	Mode          string `json:"mode"`
 	ActiveVersion string `json:"activeVersion"`
 	CreatedAt     string `json:"createdAt"`
 }
@@ -29,6 +30,7 @@ type Version struct {
 	YAML      string `json:"yaml"`
 	Rationale string `json:"rationale"`
 	CreatedAt string `json:"createdAt"`
+	Mode      string `json:"mode,omitempty"`
 }
 
 // Detail is the snapshot displayed by the loop inspector.
@@ -46,6 +48,8 @@ type Job struct {
 	Status     string           `json:"status"`
 	Input      string           `json:"input"`
 	Output     string           `json:"output"`
+	InputSize  int              `json:"inputSize,omitempty"`
+	OutputSize int              `json:"outputSize,omitempty"`
 	Error      string           `json:"error"`
 	Metrics    Metrics          `json:"metrics"`
 	CreatedAt  string           `json:"createdAt"`

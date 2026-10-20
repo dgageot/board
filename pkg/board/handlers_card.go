@@ -264,12 +264,16 @@ func (b *Board) handleDiffCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	base, err := b.taskBase(card.ID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	var diff string
-	var err error
 	if hash := r.URL.Query().Get("commit"); hash != "" {
-		diff, err = git.CommitDiff(card.Worktree, hash)
+		diff, err = git.CommitDiff(card.Worktree, hash, base)
 	} else {
-		diff, err = git.Diff(card.Worktree)
+		diff, err = git.Diff(card.Worktree, base)
 	}
 	if errors.Is(err, git.ErrCommitNotFound) {
 		writeError(w, fmt.Errorf("%w: commit", errNotFound))
@@ -289,7 +293,12 @@ func (b *Board) handleCardCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commits, err := git.Commits(card.Worktree)
+	base, err := b.taskBase(card.ID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	commits, err := git.Commits(card.Worktree, base)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -444,4 +453,19 @@ func (b *Board) stopLinkedTask(card *Card) error {
 	}
 	b.controller.Stop(card.ID)
 	return b.controller.finishTaskClose(store, task)
+}
+
+func (b *Board) taskBase(cardID string) (string, error) {
+	store, ok := b.store.(projectTaskStore)
+	if !ok {
+		return "", nil
+	}
+	task, err := store.ProjectTaskForCard(cardID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return task.Base, nil
 }

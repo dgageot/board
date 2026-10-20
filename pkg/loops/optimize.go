@@ -46,11 +46,17 @@ func (s *Service) Optimize(ctx context.Context, loopID string, input OptimizeReq
 	if err != nil {
 		return Round{}, err
 	}
+	if detail.Loop.Mode == ModeProject {
+		return Round{}, fmt.Errorf("%w: automatic optimization is available for analysis loops; project executions require real test and CI evidence", ErrInvalid)
+	}
 	var baseline Version
 	for _, v := range detail.Versions {
 		if v.ID == input.Version {
 			baseline = v
 		}
+	}
+	if baseline.Mode == ModeProject {
+		return Round{}, fmt.Errorf("%w: project instructions are not analysis candidates", ErrInvalid)
 	}
 	if baseline.ID == "" {
 		return Round{}, ErrNotFound
@@ -75,16 +81,14 @@ func (s *Service) Optimize(ctx context.Context, loopID string, input OptimizeReq
 	if len(s.cancel) >= 8 {
 		return Round{}, fmt.Errorf("%w: experiment queue is full", ErrConflict)
 	}
-	rounds, err := s.store.Rounds(ctx, loopID)
+	active, err := s.store.HasActiveRound(ctx, loopID)
 	if err != nil {
 		return Round{}, err
 	}
-	for _, existing := range rounds {
-		if existing.Status == "designing" || existing.Status == "testing" {
-			return Round{}, fmt.Errorf("%w: an optimization is already running for this loop", ErrConflict)
-		}
+	if active {
+		return Round{}, fmt.Errorf("%w: an optimization is already running for this loop", ErrConflict)
 	}
-	if err := s.store.saveRound(ctx, round); err != nil {
+	if err := s.store.admitRound(ctx, round); err != nil {
 		return Round{}, err
 	}
 	roundCtx, cancel := context.WithTimeout(s.ctx, 20*time.Minute)

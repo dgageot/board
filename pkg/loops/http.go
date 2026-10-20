@@ -36,7 +36,10 @@ func Register(mux *http.ServeMux, store *Store, changed func(), services ...*Ser
 	mux.HandleFunc("GET /api/loops/{id}/jobs/{job}/stderr", h.events)
 	mux.HandleFunc("GET /api/loops", h.list)
 	mux.HandleFunc("POST /api/loops", h.create)
+	mux.HandleFunc("PUT /api/loops/{id}/mode", h.setMode)
 	mux.HandleFunc("GET /api/loops/{id}", h.get)
+	mux.HandleFunc("GET /api/loops/{id}/overview", h.overview)
+	mux.HandleFunc("GET /api/loops/{id}/jobs/{job}", h.job)
 	mux.HandleFunc("POST /api/loops/{id}/versions", h.addVersion)
 	mux.HandleFunc("GET /api/loops/{id}/versions/{version}/export", h.export)
 }
@@ -97,6 +100,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Criteria    string `json:"criteria"`
 		Example     string `json:"example"`
 		ProjectID   string `json:"projectId"`
+		Mode        string `json:"mode"`
 	}
 	if !decode(w, r, &input) {
 		return
@@ -105,7 +109,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, fmt.Errorf("%w: choose a project for the first run", ErrInvalid))
 		return
 	}
-	loop, err := h.service.Create(r.Context(), Loop{Name: input.Name, Description: input.Description, Criteria: input.Criteria, Example: input.Example, ProjectID: input.ProjectID})
+	loop, err := h.service.Create(r.Context(), Loop{Name: input.Name, Description: input.Description, Criteria: input.Criteria, Example: input.Example, ProjectID: input.ProjectID, Mode: input.Mode})
 	if err != nil {
 		fail(w, err)
 		return
@@ -358,6 +362,39 @@ func (h *Handler) closeRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job, err := h.service.CloseRun(r.Context(), r.PathValue("id"), r.PathValue("job"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusOK, job)
+}
+
+func (h *Handler) setMode(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Mode string `json:"mode"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	if err := h.store.SetMode(r.Context(), r.PathValue("id"), input.Mode); err != nil {
+		fail(w, err)
+		return
+	}
+	h.changed()
+	respond(w, http.StatusOK, map[string]string{"mode": input.Mode})
+}
+
+func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
+	view, err := h.store.Overview(r.Context(), r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusOK, view)
+}
+
+func (h *Handler) job(w http.ResponseWriter, r *http.Request) {
+	job, err := h.store.DisplayJob(r.Context(), r.PathValue("id"), r.PathValue("job"))
 	if err != nil {
 		fail(w, err)
 		return

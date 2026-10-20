@@ -54,7 +54,7 @@ func (s *Service) Create(ctx context.Context, loop Loop) (Loop, error) {
 	if loop.ProjectID == "" {
 		return Loop{}, fmt.Errorf("%w: choose a project for the first run", ErrInvalid)
 	}
-	config, err := designerConfig(s.model)
+	config, err := designerConfig(s.model, loop.Mode)
 	if err != nil {
 		return Loop{}, err
 	}
@@ -86,7 +86,7 @@ func (s *Service) Generate(ctx context.Context, loopID string) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	config, err := designerConfig(s.model)
+	config, err := designerConfig(s.model, detail.Loop.Mode)
 	if err != nil {
 		return Job{}, err
 	}
@@ -106,6 +106,9 @@ func (s *Service) Run(ctx context.Context, loopID, versionID, input, projectID s
 	if err != nil {
 		return Job{}, err
 	}
+	if detail.Loop.Mode == ModeProject {
+		return Job{}, fmt.Errorf("%w: this loop runs as a project task", ErrInvalid)
+	}
 	if strings.TrimSpace(input) == "" {
 		input = detail.Loop.Description
 	}
@@ -116,6 +119,9 @@ func (s *Service) Run(ctx context.Context, loopID, versionID, input, projectID s
 	for _, version := range detail.Versions {
 		if version.ID != versionID {
 			continue
+		}
+		if version.Mode == ModeProject {
+			return Job{}, fmt.Errorf("%w: project instructions require project execution", ErrInvalid)
 		}
 		config, err := executableConfig(version.YAML)
 		if err != nil {
@@ -131,6 +137,15 @@ func (s *Service) start(ctx context.Context, loopID, versionID, kind, input stri
 	defer s.mu.Unlock()
 	if err := s.checkAdmission(); err != nil {
 		return Job{}, err
+	}
+	if kind == "run" {
+		latest, err := s.store.Get(ctx, loopID)
+		if err != nil {
+			return Job{}, err
+		}
+		if latest.Loop.Mode == ModeProject {
+			return Job{}, fmt.Errorf("%w: execution type changed", ErrConflict)
+		}
 	}
 	job, err := s.store.newJob(ctx, loopID, versionID, kind, input, projects...)
 	if err != nil {
@@ -210,7 +225,14 @@ func (s *Service) execute(ctx context.Context, job Job, config []byte) Job {
 	job.Output, job.Metrics, job.FinishedAt = result.Output, result.Metrics, now()
 	job.Status = "succeeded"
 	if err == nil && (job.Kind == "generate" || job.Kind == "design") {
-		job.VersionID, err = s.saveProposal(ctx, job.LoopID, result.Output)
+		mode := ModeAnalysis
+		if _, data, ok := strings.Cut(job.Input, "\n"); ok {
+			var created Loop
+			if json.Unmarshal([]byte(data), &created) == nil && created.Mode == ModeProject {
+				mode = ModeProject
+			}
+		}
+		job.VersionID, err = s.saveProposal(ctx, job.LoopID, result.Output, mode)
 	}
 	if err != nil {
 		job.Status, job.Error = "failed", err.Error()
@@ -234,7 +256,7 @@ func (s *Service) Cancel(id string) {
 	}
 }
 
-func (s *Service) saveProposal(ctx context.Context, loopID, output string) (string, error) {
+func (s *Service) saveProposal(ctx context.Context, loopID, output string, modes ...string) (string, error) {
 	var p proposal
 	if err := json.Unmarshal([]byte(output), &p); err != nil {
 		return "", fmt.Errorf("decode agent proposal: %w", err)
@@ -243,7 +265,11 @@ func (s *Service) saveProposal(ctx context.Context, loopID, output string) (stri
 	if err != nil {
 		return "", err
 	}
-	version, err := s.store.AddVersion(ctx, loopID, config, p.Rationale)
+	mode := ModeAnalysis
+	if len(modes) > 0 {
+		mode = modes[0]
+	}
+	version, err := s.store.addVersion(ctx, loopID, config, p.Rationale, mode)
 	return version.ID, err
 }
 

@@ -14,6 +14,8 @@ func migrateProjects(ctx context.Context, db *sql.DB) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	for _, change := range []struct{ table, column, definition string }{
+		{"loops", "mode", "TEXT NOT NULL DEFAULT 'analysis'"},
+		{"loop_versions", "mode", "TEXT NOT NULL DEFAULT 'analysis'"},
 		{"loops", "project_id", "TEXT NOT NULL DEFAULT ''"},
 		{"loop_jobs", "project", "TEXT NOT NULL DEFAULT '{}'"},
 		{"loop_jobs", "closed_at", "TEXT NOT NULL DEFAULT ''"},

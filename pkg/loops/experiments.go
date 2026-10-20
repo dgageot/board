@@ -145,7 +145,10 @@ func (s *Store) Promote(ctx context.Context, loopID, versionID, expectedActive s
 	if err != nil {
 		return err
 	}
-	if !slices.ContainsFunc(detail.Versions, func(v Version) bool { return v.ID == versionID }) {
+	if detail.Loop.Mode == ModeProject {
+		return s.ActivateProjectVersion(ctx, loopID, versionID, expectedActive)
+	}
+	if !slices.ContainsFunc(detail.Versions, func(v Version) bool { return v.ID == versionID && v.Mode != ModeProject }) {
 		return ErrNotFound
 	}
 	rounds, err := s.Rounds(ctx, loopID)
@@ -164,7 +167,7 @@ func (s *Store) Promote(ctx context.Context, loopID, versionID, expectedActive s
 		}
 	}
 	// The initial baseline may be selected after its first successful inspected run.
-	if !qualified && expectedActive == "" && len(detail.Versions) > 0 && detail.Versions[len(detail.Versions)-1].ID == versionID {
+	if !qualified && expectedActive == "" && firstAnalysisVersion(detail.Versions) == versionID {
 		jobs, err := s.Jobs(ctx, loopID)
 		if err != nil {
 			return err
@@ -174,7 +177,7 @@ func (s *Store) Promote(ctx context.Context, loopID, versionID, expectedActive s
 	if !qualified {
 		return fmt.Errorf("%w: run and inspect the initial version, or complete a passing experiment before promotion", ErrConflict)
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE loops SET active_version=? WHERE id=? AND active_version=?`, versionID, loopID, expectedActive)
+	result, err := s.db.ExecContext(ctx, `UPDATE loops SET active_version=? WHERE id=? AND active_version=? AND mode='analysis'`, versionID, loopID, expectedActive)
 	if err != nil {
 		return err
 	}
@@ -248,4 +251,29 @@ func (s *Store) confirmedEvidence(ctx context.Context, round Round, candidate Ca
 	}
 	confirmation := Candidate{VersionID: candidate.VersionID, Trials: candidate.Confirmation}
 	return candidatePassed(round, confirmation) && s.persistedEvidence(ctx, round, confirmation)
+}
+
+func firstAnalysisVersion(versions []Version) string {
+	for _, version := range slices.Backward(versions) {
+		if version.Mode != ModeProject {
+			return version.ID
+		}
+	}
+	return ""
+}
+
+func (s *Store) admitRound(ctx context.Context, round Round) error {
+	data, err := json.Marshal(round)
+	if err != nil {
+		return err
+	}
+	result, err := s.db.ExecContext(ctx, `INSERT INTO loop_rounds(id,loop_id,status,data) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM loops WHERE id=? AND mode='analysis')`, round.ID, round.LoopID, round.Status, string(data), round.LoopID)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err == nil && n == 0 {
+		return ErrConflict
+	}
+	return err
 }

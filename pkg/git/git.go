@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -30,14 +31,18 @@ func RemoveWorktree(repoPath, worktreePath, branch string) {
 // Diff returns the full diff of all changes in the worktree relative to the
 // merge-base with the upstream default branch. This includes committed,
 // staged, unstaged, and untracked files. It never mutates the worktree.
-func Diff(worktree string) (string, error) {
+func Diff(worktree string, bases ...string) (string, error) {
 	// The worktree may not exist yet while the agent is still starting up and
 	// docker-agent has not created it. Report no changes rather than an error.
 	if _, err := os.Stat(worktree); err != nil {
 		return "", nil
 	}
 
-	base, err := runGit(worktree, "merge-base", "HEAD", UpstreamBase(worktree))
+	ref := UpstreamBase(worktree)
+	if len(bases) > 0 && bases[0] != "" {
+		ref = bases[0]
+	}
+	base, err := runGit(worktree, "merge-base", "HEAD", ref)
 	if err != nil {
 		return "", err
 	}
@@ -484,4 +489,16 @@ func ciStatus(checks []prCheck) string {
 	default:
 		return PRStatusUnknown
 	}
+}
+
+// ExecutionBase pins a locally available commit, falling back to HEAD for local-only repositories.
+func ExecutionBase(ctx context.Context, dir string) (string, error) {
+	for _, ref := range []string{UpstreamBase(dir), "HEAD"} {
+		cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", ref+"^{commit}")
+		cmd.Dir = dir
+		if out, err := cmd.Output(); err == nil {
+			return strings.TrimSpace(string(out)), nil
+		}
+	}
+	return "", errors.New("project requires an accessible Git commit")
 }

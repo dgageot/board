@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dgageot/board/pkg/git"
+	"github.com/dgageot/board/pkg/loops"
 )
 
 // ProjectTask links an explicitly authorized Board task to its original loop contract.
@@ -28,6 +29,7 @@ type ProjectTask struct {
 	Status      string `db:"status"       json:"status"`
 	Error       string `db:"error"        json:"error"`
 	CreatedAt   string `db:"created_at"   json:"createdAt"`
+	VersionID   string `db:"version_id"   json:"versionId"`
 }
 
 type projectTaskStore interface {
@@ -73,6 +75,7 @@ func (b *Board) handleLoopProjectTasks(w http.ResponseWriter, r *http.Request) {
 func (b *Board) handleRunLoopProjectTask(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		RequestID string `json:"requestId"`
+		VersionID string `json:"versionId"`
 		ProjectID string `json:"projectId"`
 		Agent     string `json:"agent"`
 		RepoPath  string `json:"repoPath"`
@@ -94,7 +97,7 @@ func (b *Board) handleRunLoopProjectTask(w http.ResponseWriter, r *http.Request)
 	b.taskLaunch.Lock()
 	defer b.taskLaunch.Unlock()
 	if existing, err := store.GetProjectTask(input.RequestID); err == nil {
-		if existing.LoopID != r.PathValue("id") || existing.ProjectID != input.ProjectID {
+		if existing.LoopID != r.PathValue("id") || existing.ProjectID != input.ProjectID || existing.VersionID != input.VersionID {
 			http.Error(w, "request ID already used", http.StatusConflict)
 			return
 		}
@@ -131,10 +134,23 @@ func (b *Board) handleRunLoopProjectTask(w http.ResponseWriter, r *http.Request)
 		writeError(w, fmt.Errorf("%w: project requires an agent and an accessible Git repository", errBadInput))
 		return
 	}
+	instruction, err := projectWorkflowInstruction(detail, input.VersionID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	base, err := git.ExecutionBase(r.Context(), path)
+	if err != nil {
+		writeError(w, fmt.Errorf("%w: %w", errBadInput, err))
+		return
+	}
 	prompt := fmt.Sprintf("Task:\n%s\n\nAcceptance criteria:\n%s\n\nWork in this task's isolated worktree. Perform the actual work, not a simulated report. Never claim tests or CI passed without observing their results. If signing, credentials, required tools or CI access are unavailable, report the blocker. All commits must be signed; never disable signing. Follow repository instructions. Do not push or create a PR unless the task explicitly requests it or the user approves it interactively.\n", detail.Loop.Description, detail.Loop.Criteria)
+	if instruction != "" {
+		prompt += "\nWorkflow instruction:\n" + instruction
+	}
 	name := newWorktreeName()
 	card := &Card{ID: newID(), Title: detail.Loop.Name, Prompt: prompt, Status: StatusStarting, Project: project.Name, Agent: project.Agent, RepoPath: path, Branch: git.WorktreeBranch(name), Worktree: git.WorktreeDir(name), Session: newSessionName(), AgentSession: newAgentSessionID()}
-	task := &ProjectTask{ID: input.RequestID, LoopID: detail.Loop.ID, ProjectID: project.ID, ProjectName: project.Name, RepoPath: path, Agent: project.Agent, Task: detail.Loop.Description, Criteria: detail.Loop.Criteria, Prompt: prompt, CardID: card.ID, Base: git.UpstreamBase(path), Status: "reserved", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	task := &ProjectTask{ID: input.RequestID, LoopID: detail.Loop.ID, ProjectID: project.ID, ProjectName: project.Name, RepoPath: path, Agent: project.Agent, Task: detail.Loop.Description, Criteria: detail.Loop.Criteria, Prompt: prompt, CardID: card.ID, Base: base, VersionID: input.VersionID, Status: "reserved", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	if err := store.ReserveProjectTask(task, card); err != nil {
 		writeError(w, err)
 		return
@@ -160,4 +176,27 @@ func (b *Board) handleRunLoopProjectTask(w http.ResponseWriter, r *http.Request)
 	task.Status = "launched"
 	b.broadcast()
 	writeJSONStatus(w, http.StatusAccepted, task)
+}
+
+func projectWorkflowInstruction(detail loops.Detail, versionID string) (string, error) {
+	if detail.Loop.Mode != loops.ModeProject {
+		return "", fmt.Errorf("%w: switch this loop to project execution first", errBadInput)
+	}
+	if versionID == "" {
+		return "", fmt.Errorf("%w: generate a project workflow first", errBadInput)
+	}
+	for _, version := range detail.Versions {
+		if version.ID != versionID {
+			continue
+		}
+		if version.Mode != loops.ModeProject {
+			return "", fmt.Errorf("%w: choose a generated project workflow", errBadInput)
+		}
+		instruction, err := loops.ProjectInstruction(version)
+		if err != nil {
+			return "", fmt.Errorf("%w: %w", errBadInput, err)
+		}
+		return instruction, nil
+	}
+	return "", fmt.Errorf("%w: workflow version not found", errBadInput)
 }

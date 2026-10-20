@@ -19,7 +19,7 @@ var ErrCommitNotFound = errors.New("commit not found in worktree")
 
 // Commits lists commits reachable from HEAD but not the upstream default branch,
 // oldest first. Upstream commits brought in by a merge are excluded.
-func Commits(worktree string) ([]Commit, error) {
+func Commits(worktree string, bases ...string) ([]Commit, error) {
 	commits := make([]Commit, 0)
 	if _, err := os.Stat(worktree); err != nil {
 		if os.IsNotExist(err) {
@@ -28,8 +28,12 @@ func Commits(worktree string) ([]Commit, error) {
 		return nil, err
 	}
 
+	base := UpstreamBase(worktree)
+	if len(bases) > 0 && bases[0] != "" {
+		base = bases[0]
+	}
 	out, err := runGit(worktree, "log", "--topo-order", "--reverse", "--no-decorate", "--no-notes", "--no-show-signature",
-		"-z", "--format=%H%x00%s", "HEAD", "--not", UpstreamBase(worktree), "--")
+		"-z", "--format=%H%x00%s", "HEAD", "--not", base, "--")
 	if err != nil {
 		return nil, err
 	}
@@ -50,11 +54,11 @@ var commitHashPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
 // CommitDiff returns only the selected commit's patch, relative to its first
 // parent for merges. It never includes index or working-tree changes.
-func CommitDiff(worktree, hash string) (string, error) {
+func CommitDiff(worktree, hash string, bases ...string) (string, error) {
 	if !commitHashPattern.MatchString(hash) {
 		return "", ErrCommitNotFound
 	}
-	commits, err := Commits(worktree)
+	commits, err := Commits(worktree, bases...)
 	if err != nil {
 		return "", err
 	}

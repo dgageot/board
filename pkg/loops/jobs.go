@@ -27,8 +27,15 @@ func (s *Store) newJob(ctx context.Context, loopID, versionID, kind, input strin
 	if err != nil {
 		return Job{}, err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO loop_jobs (id,loop_id,version_id,kind,status,input,created_at,project) VALUES (?,?,?,?,?,?,?,?)`,
-		job.ID, loopID, versionID, kind, job.Status, input, job.CreatedAt, string(project))
+	result, err := s.db.ExecContext(ctx, `INSERT INTO loop_jobs (id,loop_id,version_id,kind,status,input,created_at,project) SELECT ?,?,?,?,?,?,?,? WHERE ?!='run' OR EXISTS(SELECT 1 FROM loops WHERE id=? AND mode='analysis')`,
+		job.ID, loopID, versionID, kind, job.Status, input, job.CreatedAt, string(project), kind, loopID)
+	if err == nil {
+		if n, e := result.RowsAffected(); e != nil {
+			return Job{}, e
+		} else if n == 0 {
+			return Job{}, ErrConflict
+		}
+	}
 	return job, err
 }
 

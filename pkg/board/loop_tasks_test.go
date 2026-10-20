@@ -34,17 +34,21 @@ func taskFixture(t *testing.T) (*Board, *SQLiteStore, loops.Loop, *Project) {
 	repo := t.TempDir()
 	cmd := exec.CommandContext(t.Context(), "git", "init", repo)
 	require.NoError(t, cmd.Run())
+	cmd = exec.CommandContext(t.Context(), "git", "-C", repo, "-c", "commit.gpgsign=false", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "initial")
+	require.NoError(t, cmd.Run())
 	project := &Project{ID: "project", Name: "Repo", RepoPath: repo, Agent: "trusted-project-agent"}
 	require.NoError(t, store.InsertProject(project))
 	require.NoError(t, store.SeedColumns(defaultColumns))
-	loop, err := b.loops.Create(t.Context(), loops.Loop{Name: "Update dependencies", Description: "Bump Go dependencies", Criteria: "Signed commits; CI and license checks green", ProjectID: project.ID})
+	loop, err := b.loops.Create(t.Context(), loops.Loop{Name: "Update dependencies", Description: "Bump Go dependencies", Criteria: "Signed commits; CI and license checks green", ProjectID: project.ID, Mode: loops.ModeProject})
+	require.NoError(t, err)
+	_, err = store.db.Exec(`INSERT INTO loop_versions(id,loop_id,number,yaml,rationale,created_at,mode) VALUES('workflow',?,1,?,'','now','project')`, loop.ID, "agents:\n  root:\n    model: auto\n    instruction: Execute and verify the dependency update.\n")
 	require.NoError(t, err)
 	return b, store, loop, project
 }
 
 func taskRequest(t *testing.T, b *Board, loopID string, project *Project, id string, consent bool) *httptest.ResponseRecorder {
 	t.Helper()
-	body, err := json.Marshal(map[string]any{"requestId": id, "projectId": project.ID, "repoPath": project.RepoPath, "agent": project.Agent, "confirmed": consent})
+	body, err := json.Marshal(map[string]any{"requestId": id, "versionId": "workflow", "projectId": project.ID, "repoPath": project.RepoPath, "agent": project.Agent, "confirmed": consent})
 	require.NoError(t, err)
 	req := httptest.NewRequest(http.MethodPost, "/api/loops/"+loopID+"/tasks", strings.NewReader(string(body)))
 	req.SetPathValue("id", loopID)
@@ -66,6 +70,8 @@ func TestLoopTaskReservesBeforeLaunchAndDeduplicates(t *testing.T) {
 		assert.Contains(t, prompt, loop.Description)
 		assert.Contains(t, prompt, loop.Criteria)
 		assert.Contains(t, prompt, "All commits must be signed")
+		assert.Contains(t, prompt, "Execute and verify the dependency update.")
+		assert.Equal(t, "workflow", task.VersionID)
 		return nil
 	}}
 	b.sessions = sessions
@@ -169,7 +175,7 @@ func TestDeletingReservedLoopTaskWaitsForLaunchThenCleansUp(t *testing.T) {
 	sessions := &blockingTaskSessions{entered: make(chan struct{}), release: make(chan struct{})}
 	b.sessions = sessions
 	launched := make(chan struct{})
-	body, err := json.Marshal(map[string]any{"requestId": "request-one", "projectId": project.ID, "repoPath": project.RepoPath, "agent": project.Agent, "confirmed": true})
+	body, err := json.Marshal(map[string]any{"requestId": "request-one", "versionId": "workflow", "projectId": project.ID, "repoPath": project.RepoPath, "agent": project.Agent, "confirmed": true})
 	require.NoError(t, err)
 	request := httptest.NewRequest(http.MethodPost, "/api/loops/"+loop.ID+"/tasks", strings.NewReader(string(body)))
 	request.SetPathValue("id", loop.ID)
@@ -195,5 +201,38 @@ func TestDeletingReservedLoopTaskWaitsForLaunchThenCleansUp(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, <-deleted)
 	assert.False(t, sessions.alive.Load())
 	_, err = store.GetCard(task.CardID)
+	require.Error(t, err)
+}
+
+func TestProjectTaskUsesExactGeneratedWorkflow(t *testing.T) {
+	detail := loops.Detail{Loop: loops.Loop{Mode: loops.ModeProject}, Versions: []loops.Version{{ID: "v2", Mode: loops.ModeProject, YAML: "agents:\n  root:\n    model: auto\n    instruction: Run tests and commit signed changes.\n"}}}
+	instruction, err := projectWorkflowInstruction(detail, "v2")
+	require.NoError(t, err)
+	assert.Equal(t, "Run tests and commit signed changes.", instruction)
+	_, err = projectWorkflowInstruction(detail, "")
+	require.ErrorIs(t, err, errBadInput)
+	detail.Versions[0].Mode = loops.ModeAnalysis
+	_, err = projectWorkflowInstruction(detail, "v2")
+	require.ErrorIs(t, err, errBadInput)
+}
+
+func TestProjectExecutionRejectsAnalysisLoop(t *testing.T) {
+	b, store, loop, project := taskFixture(t)
+	require.NoError(t, b.loops.SetMode(t.Context(), loop.ID, loops.ModeAnalysis))
+	rec := taskRequest(t, b, loop.ID, project, "wrong-mode", true)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	cards, err := store.ListCards()
+	require.NoError(t, err)
+	assert.Empty(t, cards)
+}
+
+func TestReservationChecksExecutionModeAtCommit(t *testing.T) {
+	_, store, loop, _ := taskFixture(t)
+	_, err := store.db.Exec(`UPDATE loops SET mode='analysis' WHERE id=?`, loop.ID)
+	require.NoError(t, err)
+	card := &Card{ID: "stale", Title: "Stale", Status: StatusStarting}
+	task := &ProjectTask{ID: "stale", LoopID: loop.ID, CardID: card.ID, VersionID: "workflow", Status: "reserved"}
+	require.ErrorIs(t, store.ReserveProjectTask(task, card), errBadInput)
+	_, err = store.GetCard(card.ID)
 	require.Error(t, err)
 }

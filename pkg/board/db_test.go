@@ -24,7 +24,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 	version, err := currentVersion(db)
 	require.NoError(t, err)
-	assert.Equal(t, 10, version)
+	assert.Equal(t, 11, version)
 }
 
 func TestMigrationVersion(t *testing.T) {
@@ -441,7 +441,7 @@ func TestMigrateRemovesPersistedUnknownStatus(t *testing.T) {
 	for _, status := range []CardStatus{"unknown", StatusRunning, StatusWaiting, StatusPaused, StatusError, StatusStarting} {
 		require.NoError(t, store.InsertCard(&Card{ID: string(status), Title: "Keep title", Status: status}))
 	}
-	_, err := store.db.Exec("UPDATE schema_version SET version = 8")
+	_, err := store.db.Exec("ALTER TABLE loop_project_tasks DROP COLUMN version_id; UPDATE schema_version SET version = 8")
 	require.NoError(t, err)
 	require.NoError(t, migrate(store.db))
 	cards, err := store.ListCards()

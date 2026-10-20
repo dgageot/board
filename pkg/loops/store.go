@@ -1,6 +1,7 @@
 package loops
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -54,13 +55,17 @@ func (s *Store) Create(ctx context.Context, loop Loop) (Loop, error) {
 	if err != nil {
 		return Loop{}, err
 	}
-	_, err = s.db.ExecContext(ctx, insertLoopSQL, loop.ID, loop.Name, loop.Description, loop.Criteria, loop.Example, loop.CreatedAt, loop.ProjectID)
+	_, err = s.db.ExecContext(ctx, insertLoopSQL, loop.ID, loop.Name, loop.Description, loop.Criteria, loop.Example, loop.CreatedAt, loop.ProjectID, loop.Mode)
 	return loop, err
 }
 
-const insertLoopSQL = `INSERT INTO loops (id,name,description,criteria,example,created_at,project_id) VALUES (?,?,?,?,?,?,?)`
+const insertLoopSQL = `INSERT INTO loops (id,name,description,criteria,example,created_at,project_id,mode) VALUES (?,?,?,?,?,?,?,?)`
 
 func (s *Store) prepareLoop(ctx context.Context, loop Loop) (Loop, error) {
+	loop.Mode = cmp.Or(loop.Mode, ModeAnalysis)
+	if loop.Mode != ModeAnalysis && loop.Mode != ModeProject {
+		return Loop{}, fmt.Errorf("%w: invalid execution mode", ErrInvalid)
+	}
 	loop.Name = strings.TrimSpace(loop.Name)
 	loop.Description = strings.TrimSpace(loop.Description)
 	loop.Criteria = strings.TrimSpace(loop.Criteria)
@@ -96,7 +101,7 @@ func (s *Store) createGenerating(ctx context.Context, loop Loop) (Loop, Job, err
 		return Loop{}, Job{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, insertLoopSQL, loop.ID, loop.Name, loop.Description, loop.Criteria, loop.Example, loop.CreatedAt, loop.ProjectID); err != nil {
+	if _, err := tx.ExecContext(ctx, insertLoopSQL, loop.ID, loop.Name, loop.Description, loop.Criteria, loop.Example, loop.CreatedAt, loop.ProjectID, loop.Mode); err != nil {
 		return Loop{}, Job{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO loop_jobs (id,loop_id,version_id,kind,status,input,created_at) VALUES (?,?,?,?,?,?,?)`, job.ID, job.LoopID, "", job.Kind, job.Status, job.Input, job.CreatedAt); err != nil {
@@ -110,7 +115,7 @@ func (s *Store) createGenerating(ctx context.Context, loop Loop) (Loop, Job, err
 
 // List returns the newest loops first.
 func (s *Store) List(ctx context.Context) ([]Loop, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at,project_id FROM loops ORDER BY created_at DESC,id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at,project_id,mode FROM loops ORDER BY created_at DESC,id`)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +123,7 @@ func (s *Store) List(ctx context.Context) ([]Loop, error) {
 	loops := []Loop{}
 	for rows.Next() {
 		var loop Loop
-		if err := rows.Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt, &loop.ProjectID); err != nil {
+		if err := rows.Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt, &loop.ProjectID, &loop.Mode); err != nil {
 			return nil, err
 		}
 		loops = append(loops, loop)
@@ -130,19 +135,19 @@ func (s *Store) List(ctx context.Context) ([]Loop, error) {
 func (s *Store) Get(ctx context.Context, id string) (Detail, error) {
 	detail := Detail{Versions: []Version{}}
 	loop := &detail.Loop
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at,project_id FROM loops WHERE id=?`, id).
-		Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt, &loop.ProjectID)
+	err := s.db.QueryRowContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at,project_id,mode FROM loops WHERE id=?`, id).
+		Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt, &loop.ProjectID, &loop.Mode)
 	if err != nil {
 		return Detail{}, notFound(err)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,loop_id,number,yaml,rationale,created_at FROM loop_versions WHERE loop_id=? ORDER BY number DESC`, id)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,loop_id,number,yaml,rationale,created_at,mode FROM loop_versions WHERE loop_id=? ORDER BY number DESC`, id)
 	if err != nil {
 		return Detail{}, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var version Version
-		if err := rows.Scan(&version.ID, &version.LoopID, &version.Number, &version.YAML, &version.Rationale, &version.CreatedAt); err != nil {
+		if err := rows.Scan(&version.ID, &version.LoopID, &version.Number, &version.YAML, &version.Rationale, &version.CreatedAt, &version.Mode); err != nil {
 			return Detail{}, err
 		}
 		detail.Versions = append(detail.Versions, version)
@@ -152,6 +157,10 @@ func (s *Store) Get(ctx context.Context, id string) (Detail, error) {
 
 // AddVersion preserves the previous configuration rather than editing it.
 func (s *Store) AddVersion(ctx context.Context, loopID, config, rationale string) (Version, error) {
+	return s.addVersion(ctx, loopID, config, rationale, ModeAnalysis)
+}
+
+func (s *Store) addVersion(ctx context.Context, loopID, config, rationale, mode string) (Version, error) {
 	if len(config) > 256*1024 || len(rationale) > 16*1024 {
 		return Version{}, fmt.Errorf("%w: version is too large", ErrInvalid)
 	}
@@ -163,10 +172,10 @@ func (s *Store) AddVersion(ctx context.Context, loopID, config, rationale string
 	if !ok || agents["root"] == nil {
 		return Version{}, fmt.Errorf("%w: configuration must define agents.root", ErrInvalid)
 	}
-	version := Version{ID: newID(), LoopID: loopID, YAML: config, Rationale: strings.TrimSpace(rationale), CreatedAt: now()}
+	version := Version{ID: newID(), LoopID: loopID, YAML: config, Rationale: strings.TrimSpace(rationale), CreatedAt: now(), Mode: mode}
 	// A single statement allocates the number and checks ownership atomically.
-	err := s.db.QueryRowContext(ctx, `INSERT INTO loop_versions (id,loop_id,number,yaml,rationale,created_at)
-		SELECT ?,id,(SELECT COALESCE(MAX(number),0)+1 FROM loop_versions WHERE loop_id=?),?,?,? FROM loops WHERE id=? RETURNING number`,
-		version.ID, loopID, config, version.Rationale, version.CreatedAt, loopID).Scan(&version.Number)
+	err := s.db.QueryRowContext(ctx, `INSERT INTO loop_versions (id,loop_id,number,yaml,rationale,created_at,mode)
+		SELECT ?,id,(SELECT COALESCE(MAX(number),0)+1 FROM loop_versions WHERE loop_id=?),?,?,?,? FROM loops WHERE id=? RETURNING number`,
+		version.ID, loopID, config, version.Rationale, version.CreatedAt, mode, loopID).Scan(&version.Number)
 	return version, notFound(err)
 }
