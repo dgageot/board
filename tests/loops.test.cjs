@@ -224,10 +224,14 @@ function loopAppHarness() {
   const elements = new Map();
   const handlers = new Map();
   const calls = [];
-  const fixture = (id) => ({loop:{id,name:id,description:'Task',criteria:'Good',example:'Input'},versions:[]});
+  const fixture = (id) => ({loop:{id,name:id,description:'Task',criteria:'Good',example:'Input'},versions:[
+    {id:`${id}-v2`,number:2,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'},
+    {id:`${id}-v1`,number:1,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'},
+  ]});
+  const document = {activeElement:null};
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, {
-      id, value:'', hidden:false, disabled:false, dataset:{}, innerHTML:'', scrollTop:0,
+      id, value:'', hidden:false, disabled:false, dataset:{}, innerHTML:'', scrollTop:0, ownerDocument:document,
       handlers:{}, classList:{toggle() {}}, setAttribute(){},
       addEventListener(name,callback){this.handlers[name]=callback;},
       querySelectorAll:()=>[],
@@ -239,11 +243,10 @@ function loopAppHarness() {
     return elements.get(id);
   };
   const context = vm.createContext({
-    document:{getElementById:element,body:element('body'),querySelectorAll:()=>[],activeElement:null},
+    document:Object.assign(document,{getElementById:element,body:element('body'),querySelectorAll:()=>[]}),
     window:{addEventListener:(name,callback)=>handlers.set(name,callback)},
     location:{hash:'#board'},setTimeout,clearTimeout,console,
   });
-  for(const value of elements.values()) value.ownerDocument=context.document;
   const api=async(path,options)=>{
     calls.push({path,options});
     if(path==='/loops') return [fixture('first').loop,fixture('second').loop];
@@ -258,6 +261,11 @@ function loopAppHarness() {
       context.location.hash=`#loops/${id}`;
       handlers.get('hashchange')();
       await new Promise(setImmediate);
+      assert.equal(element('loops-notice').textContent || '', '', 'navigation rendered successfully');
+      assert.match(element('loop-detail').innerHTML, new RegExp(`${id}-v1`));
+    },
+    async selectVersion(id) {
+      await element('loop-detail').handlers.click({target:{closest:(selector)=>selector==='[data-version]'?{dataset:{version:id}}:null}});
     },
     async importOpen() {
       await element('loop-detail').handlers.click({target:{closest:(selector)=>selector==='[data-action="import"]'? {}:null}});
@@ -274,9 +282,12 @@ test('an open import keeps its original target when navigation changes', async (
   await h.navigate('first');
   await h.importOpen();
   await h.navigate('second');
+  await h.selectVersion('second-v2');
   h.element('loop-yaml').value='agents: {root: {}}';
   await h.importSubmit();
   const request=h.calls.find((call)=>call.options?.method==='POST');
   assert.equal(request.path,'/loops/first/versions');
   assert.equal(JSON.parse(request.options.body).yaml,'agents: {root: {}}');
+  assert.match(h.element('loop-detail').innerHTML, /btn-primary" data-version="second-v2"/);
+  assert.equal(h.element('loops-notice').textContent || '', '');
 });
