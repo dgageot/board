@@ -98,7 +98,8 @@ export function renderLoopDetail(detail, selectedVersion) {
     ${renderActivity(activity, version)}
     ${latestRun ? renderResult(latestRun, loop.id, feedback) : ''}
     <details class="loop-secondary loop-panel" data-inspect="task"><summary>Task & quality criteria</summary><div class="loop-contract"><section><h3>The task</h3><p>${escapeHTML(loop.description)}</p></section><section><h3>What good looks like</h3><p>${escapeHTML(loop.criteria)}</p></section></div></details>
-    ${version ? `<section class="loop-panel"><div class="loop-section-heading"><div><h3>Improve this agent</h3><p>Compare alternatives without replacing the version you use.</p></div><button class="btn btn-ghost" data-action="optimize" ${inProgress ? 'disabled' : ''}>Optimize</button></div>
+    ${version ? `<section class="loop-panel"><div class="loop-section-heading"><div><h3>Improve this agent</h3><p>Compare alternatives without replacing the version you use.</p></div><button class="btn btn-primary" data-action="optimize" ${inProgress ? 'disabled' : ''}>Optimize</button></div>
+    <p class="loop-hint">One click starts two candidates, tested twice on up to three recent inputs from this version’s last project, or the loop’s first project. Uses provider credits. <button class="btn btn-ghost btn-small" data-action="optimize-settings" ${inProgress ? 'disabled' : ''}>Custom settings</button></p>
     ${rounds.map((round) => `<details class="loop-secondary" data-inspect="experiment-${escapeHTML(round.id)}" ${liveRound(round) ? 'open' : ''}><summary>Experiment · ${escapeHTML(round.status)}</summary>${renderRound(round, jobs, versions, loop.activeVersion)}</details>`).join('')}</section>` : ''}
     <details class="loop-secondary loop-panel" data-inspect="agent-config"><summary>Agent configuration${version ? ` · v${version.number}` : ''}</summary>
       <div class="loop-section-heading"><p class="loop-muted">${versions.length} ${versions.length === 1 ? 'version' : 'versions'} · immutable snapshots</p><button class="btn btn-ghost" data-action="import">Import YAML</button></div>
@@ -239,6 +240,7 @@ export function initLoops(api) {
   let modalLoop = '';
   let importLoop = '';
   const projectLoads = new Map();
+  const startingOptimizations = new Set();
 
   function notice(message = '', error = false) {
     byID('loops-notice').textContent = message;
@@ -330,7 +332,29 @@ export function initLoops(api) {
       byID('loop-run-dialog').showModal();
       loadProjects('loop-run-project', 'loop-run-project-status', preferredProject());
     }
-    if (event.target.closest('[data-action="optimize"]') && detail) {
+    const optimize = event.target.closest('[data-action="optimize"]');
+    if (optimize && detail) {
+      const id = detail.loop.id;
+      const version = selectedLoopVersion(detail, selectedVersion)?.id;
+      if (!version || startingOptimizations.has(id)) return;
+      startingOptimizations.add(id);
+      optimize.disabled = true;
+      optimize.textContent = 'Starting optimization…';
+      notice('Starting optimization…');
+      try {
+        await api(`/loops/${id}/optimize/default`, { method: 'POST', body: JSON.stringify({ version }) });
+        if (detail?.loop.id === id) notice();
+        await refreshLoops();
+      } catch (error) {
+        if (detail?.loop.id === id) notice(error.message, true);
+      } finally {
+        startingOptimizations.delete(id);
+        optimize.disabled = false;
+        optimize.textContent = 'Optimize';
+      }
+      return;
+    }
+    if (event.target.closest('[data-action="optimize-settings"]') && detail) {
       modalLoop = detail.loop.id;
       optimizeVersion = selectedLoopVersion(detail, selectedVersion)?.id;
       byID('loop-test-inputs').value = detail.loop.description;

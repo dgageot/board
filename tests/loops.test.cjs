@@ -421,3 +421,35 @@ test('partial failed output stays visibly marked when an experiment takes status
  assert.match(main,/Partial output/);
  assert.match(main,/Provider unavailable/);
 });
+
+test('Optimize immediately starts default optimization without opening settings', async () => {
+ const h=loopAppHarness();
+ await h.navigate('first');
+ await h.action('optimize');
+ const requests=h.calls.filter((call)=>call.path==='/loops/first/optimize/default');
+ assert.equal(requests.length,1);
+ assert.deepEqual(JSON.parse(requests[0].options.body),{version:'first-v1'});
+ assert.notEqual(h.element('loop-optimize-dialog').open,true);
+});
+
+test('custom optimization settings remain a separate advanced action', async () => {
+ const h=loopAppHarness();
+ await h.navigate('first');
+ await h.action('optimize-settings');
+ assert.equal(h.element('loop-optimize-dialog').open,true);
+ assert.equal(h.element('loop-test-project').value,'project-first');
+ assert.equal(h.calls.filter((call)=>call.path.includes('optimize/default')).length,0);
+});
+
+test('double-clicking Optimize does not start a second experiment', async () => {
+ let resolve;
+ const pending=new Promise((r)=>{resolve=r;});
+ const h=loopAppHarness({api:(path)=>path.endsWith('/optimize/default')?pending:undefined});
+ await h.navigate('first');
+ const first=h.action('optimize');
+ await new Promise(setImmediate);
+ await h.action('optimize');
+ assert.equal(h.calls.filter((call)=>call.path.endsWith('/optimize/default')).length,1);
+ resolve({id:'round'});
+ await first;
+});
