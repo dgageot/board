@@ -113,6 +113,13 @@ func TestLiveLoopSmoke(t *testing.T) {
 			require.Empty(t, candidate.Error)
 			require.Len(t, candidate.Trials, 1)
 			require.NotEmpty(t, candidate.Trials[0].JudgeID)
+			execution, err := store.Job(t.Context(), loop.ID, candidate.Trials[0].JobID)
+			require.NoError(t, err)
+			require.Equal(t, "succeeded", execution.Status, execution.Error)
+			judgment, err := store.Job(t.Context(), loop.ID, candidate.Trials[0].JudgeID)
+			require.NoError(t, err)
+			require.Equal(t, "succeeded", judgment.Status, judgment.Error)
+			require.True(t, candidate.Trials[0].Passed, candidate.Trials[0].Reason)
 			t.Logf("%s: passed=%v reason=%s", candidate.Label, candidate.Trials[0].Passed, candidate.Trials[0].Reason)
 		}
 	}
