@@ -102,3 +102,15 @@ test('tables retain alignment, escaped pipes and nested block behavior', async (
   assert.match(result.html, /a\|b/);
   assert.match(result.html, /<h1>Next<\/h1>/);
 });
+
+test('oversized delimiter-shaped tables stay text rather than reparsing their suffixes', async () => {
+  const { renderResultMarkdown } = await modulePromise;
+  for (const rows of [2050, 16384]) {
+    const result = renderResultMarkdown('-|-\n'.repeat(rows));
+    assert.equal(result.tablesAsText, true);
+    assert.doesNotMatch(result.html, /<table>/);
+  }
+  const nested = renderResultMarkdown('> -|-\n'.repeat(2050) + '\nA|B\n-| -\nyes|works\n');
+  assert.equal((nested.html.match(/<table>/g) || []).length, 1);
+  assert.match(nested.html, /<td>works<\/td>/);
+});
