@@ -111,14 +111,16 @@ func (s *Service) start(ctx context.Context, loopID, versionID, kind, input stri
 	return job, nil
 }
 
-func (s *Service) persist(job Job) {
+func (s *Service) persist(job Job) error {
 	// The process lifetime may be canceled; still record its terminal state.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.ctx), 5*time.Second)
 	defer cancel()
 	if err := s.store.saveJob(ctx, job); err != nil {
 		log.Printf("save loop job %s: %v", job.ID, err)
+		return err
 	}
 	s.changed()
+	return nil
 }
 
 func (s *Service) execute(ctx context.Context, job Job, config []byte) Job {
@@ -127,16 +129,20 @@ func (s *Service) execute(ctx context.Context, job Job, config []byte) Job {
 		defer func() { <-s.slots }()
 	case <-ctx.Done():
 		job.Status, job.Error, job.FinishedAt = "canceled", ctx.Err().Error(), now()
-		s.persist(job)
+		_ = s.persist(job)
 		return job
 	}
 	job.Status = "running"
-	s.persist(job)
+	if err := s.persist(job); err != nil {
+		job.Status = "failed"
+		job.Error = err.Error()
+		return job
+	}
 	// A leading slash in user data must never become a CLI command.
 	input := strconv.Quote(job.Input)
 	result, err := s.runner.Run(ctx, Request{ID: job.ID, Config: config, Input: "Process this input (JSON-encoded text):\n" + input}, func(result Result) {
 		job.Output, job.Metrics = result.Output, result.Metrics
-		s.persist(job)
+		_ = s.persist(job)
 	})
 	job.Output, job.Metrics, job.FinishedAt = result.Output, result.Metrics, now()
 	job.Status = "succeeded"
@@ -149,7 +155,10 @@ func (s *Service) execute(ctx context.Context, job Job, config []byte) Job {
 			job.Status = "canceled"
 		}
 	}
-	s.persist(job)
+	if err := s.persist(job); err != nil {
+		job.Status = "failed"
+		job.Error = "persist terminal result: " + err.Error()
+	}
 	return job
 }
 

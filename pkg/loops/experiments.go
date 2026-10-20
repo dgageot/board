@@ -142,7 +142,7 @@ func (s *Store) Promote(ctx context.Context, loopID, versionID, expectedActive s
 			continue
 		}
 		for _, candidate := range round.Candidates {
-			if candidate.VersionID == versionID && candidatePassed(round, candidate) {
+			if candidate.VersionID == versionID && candidatePassed(round, candidate) && s.persistedEvidence(ctx, round, candidate) {
 				qualified = true
 			}
 		}
@@ -180,6 +180,38 @@ func candidatePassed(round Round, candidate Candidate) bool {
 			return false
 		}
 		seen[key] = true
+	}
+	return true
+}
+
+type qualityVerdict struct {
+	Passed *bool  `json:"passed"`
+	Reason string `json:"reason"`
+}
+
+func (s *Store) persistedEvidence(ctx context.Context, round Round, candidate Candidate) bool {
+	seenJobs := map[string]bool{}
+	for _, trial := range candidate.Trials {
+		if seenJobs[trial.JobID] || seenJobs[trial.JudgeID] {
+			return false
+		}
+		seenJobs[trial.JobID], seenJobs[trial.JudgeID] = true, true
+		run, err := s.Job(ctx, round.LoopID, trial.JobID)
+		if err != nil || run.Kind != "test" || run.Status != "succeeded" || run.VersionID != candidate.VersionID || run.Input != round.Inputs[trial.Case] {
+			return false
+		}
+		judge, err := s.Job(ctx, round.LoopID, trial.JudgeID)
+		if err != nil || judge.Kind != "judge" || judge.Status != "succeeded" || judge.VersionID != candidate.VersionID {
+			return false
+		}
+		var evidence map[string]string
+		if json.Unmarshal([]byte(judge.Input), &evidence) != nil || evidence["input"] != run.Input || evidence["answer"] != run.Output {
+			return false
+		}
+		var verdict qualityVerdict
+		if json.Unmarshal([]byte(judge.Output), &verdict) != nil || verdict.Passed == nil || !*verdict.Passed || strings.TrimSpace(verdict.Reason) == "" {
+			return false
+		}
 	}
 	return true
 }

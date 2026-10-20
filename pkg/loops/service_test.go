@@ -182,3 +182,26 @@ func TestIncompleteOrDuplicateTrialsCannotQualify(t *testing.T) {
 	trial.Passed = false
 	assert.False(t, candidatePassed(round, Candidate{Trials: []Trial{{JobID: "a", JudgeID: "b", Passed: true}, trial}}))
 }
+
+func TestFailedTerminalPersistenceCannotProducePassingTrial(t *testing.T) {
+	store := testStore(t)
+	loop := testLoop(t, store)
+	_, err := store.db.Exec(`CREATE TRIGGER reject_terminal BEFORE UPDATE ON loop_jobs WHEN NEW.status='succeeded' BEGIN SELECT RAISE(FAIL,'disk failure'); END`)
+	require.NoError(t, err)
+	service, err := NewService(t.Context(), store, fakeRunner{run: func(context.Context, Request, func(Result)) (Result, error) { return Result{Output: "answer"}, nil }}, "auto", func() {})
+	require.NoError(t, err)
+	trial := service.evaluate(t.Context(), loop, "version", "input", 0, 0, []byte("config"), []byte("judge"))
+	assert.False(t, trial.Passed)
+	assert.Empty(t, trial.JudgeID)
+	assert.Contains(t, trial.Reason, "disk failure")
+}
+
+func TestPromotionRejectsSummaryWithoutPersistedEvidence(t *testing.T) {
+	store := testStore(t)
+	loop := testLoop(t, store)
+	version, err := store.AddVersion(t.Context(), loop.ID, "agents:\n  root: {}", "")
+	require.NoError(t, err)
+	round := Round{ID: newID(), LoopID: loop.ID, Status: "completed", Inputs: []string{"input"}, Repeats: 1, Candidates: []Candidate{{VersionID: version.ID, Trials: []Trial{{JobID: "missing", JudgeID: "missing-judge", Passed: true}}}}}
+	require.NoError(t, store.saveRound(t.Context(), round))
+	require.ErrorIs(t, store.Promote(t.Context(), loop.ID, version.ID, ""), ErrConflict)
+}

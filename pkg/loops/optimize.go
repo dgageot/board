@@ -159,7 +159,10 @@ func (s *Service) optimize(ctx context.Context, round Round, loop Loop, baseline
 					job.Status = "failed"
 					job.Error = saveErr.Error()
 				}
-				s.persist(job)
+				if err := s.persist(job); err != nil {
+					job.Status = "failed"
+					job.Error = err.Error()
+				}
 			}
 			candidates[i] = Candidate{VersionID: job.VersionID, Label: fmt.Sprintf("Candidate %d", i+1), Trials: []Trial{}}
 			if job.Status != "succeeded" {
@@ -262,10 +265,7 @@ func (s *Service) evaluate(ctx context.Context, loop Loop, versionID, input stri
 		trial.Reason = "Judge failed: " + judgment.Error
 		return trial
 	}
-	var verdict struct {
-		Passed *bool  `json:"passed"`
-		Reason string `json:"reason"`
-	}
+	var verdict qualityVerdict
 	if err := json.Unmarshal([]byte(judgment.Output), &verdict); err != nil || verdict.Passed == nil || strings.TrimSpace(verdict.Reason) == "" {
 		trial.Reason = "Judge returned an incomplete verdict"
 		return trial
