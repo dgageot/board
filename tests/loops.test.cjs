@@ -218,3 +218,65 @@ test('live refresh restores the exact experiment control instead of a matching v
   assert.equal(doc.activeElement,state.buttons[2]);
   assert.equal(doc.activeElement.dataset.focus,'inspect-second-v1');
 });
+
+function loopAppHarness() {
+  const vm = require('node:vm');
+  const elements = new Map();
+  const handlers = new Map();
+  const calls = [];
+  const fixture = (id) => ({loop:{id,name:id,description:'Task',criteria:'Good',example:'Input'},versions:[]});
+  const element = (id) => {
+    if (!elements.has(id)) elements.set(id, {
+      id, value:'', hidden:false, disabled:false, dataset:{}, innerHTML:'', scrollTop:0,
+      handlers:{}, classList:{toggle() {}}, setAttribute(){},
+      addEventListener(name,callback){this.handlers[name]=callback;},
+      querySelectorAll:()=>[],
+      querySelector:(selector)=>element(`${id}:${selector}`),
+      contains:()=>false, focus(){},
+      showModal(){this.open=true;}, close(){this.open=false;}, reset(){},
+      closest:()=>element('dialog'),
+    });
+    return elements.get(id);
+  };
+  const context = vm.createContext({
+    document:{getElementById:element,body:element('body'),querySelectorAll:()=>[],activeElement:null},
+    window:{addEventListener:(name,callback)=>handlers.set(name,callback)},
+    location:{hash:'#board'},setTimeout,clearTimeout,console,
+  });
+  for(const value of elements.values()) value.ownerDocument=context.document;
+  const api=async(path,options)=>{
+    calls.push({path,options});
+    if(path==='/loops') return [fixture('first').loop,fixture('second').loop];
+    if(options?.method==='POST') return {id:'imported'};
+    return fixture(path.split('/').at(-1));
+  };
+  context.api=api;
+  vm.runInContext(source.replace(/^export /gm,'')+'\ninitLoops(api);',context);
+  return {
+    calls,element,
+    async navigate(id) {
+      context.location.hash=`#loops/${id}`;
+      handlers.get('hashchange')();
+      await new Promise(setImmediate);
+    },
+    async importOpen() {
+      await element('loop-detail').handlers.click({target:{closest:(selector)=>selector==='[data-action="import"]'? {}:null}});
+    },
+    async importSubmit() {
+      element('loop-import-form').handlers.submit({preventDefault(){},target:element('loop-import-form')});
+      await new Promise(setImmediate);
+    },
+  };
+}
+
+test('an open import keeps its original target when navigation changes', async () => {
+  const h=loopAppHarness();
+  await h.navigate('first');
+  await h.importOpen();
+  await h.navigate('second');
+  h.element('loop-yaml').value='agents: {root: {}}';
+  await h.importSubmit();
+  const request=h.calls.find((call)=>call.options?.method==='POST');
+  assert.equal(request.path,'/loops/first/versions');
+  assert.equal(JSON.parse(request.options.body).yaml,'agents: {root: {}}');
+});

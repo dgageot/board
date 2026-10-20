@@ -190,6 +190,7 @@ export function initLoops(api) {
   let optimizeVersion = '';
   let runVersion = '';
   let modalLoop = '';
+  let importLoop = '';
 
   function notice(message = '', error = false) {
     byID('loops-notice').textContent = message;
@@ -240,7 +241,10 @@ export function initLoops(api) {
       selectedVersion = version.dataset.version;
       updateLoopInspector(byID('loop-detail'), detail, selectedVersion);
     }
-    if (event.target.closest('[data-action="import"]')) byID('loop-import-dialog').showModal();
+    if (event.target.closest('[data-action="import"]') && detail) {
+      importLoop = detail.loop.id;
+      byID('loop-import-dialog').showModal();
+    }
     if (event.target.closest('[data-action="run"]') && detail) {
       modalLoop = detail.loop.id;
       runVersion = selectedLoopVersion(detail, selectedVersion)?.id;
@@ -313,13 +317,13 @@ export function initLoops(api) {
   });
   byID('loop-import-form').addEventListener('submit', (event) => {
     event.preventDefault();
-    const id = detail?.loop.id;
+    const id = importLoop;
     if (!id) return;
     submit(event.target, async () => {
       const version = await api(`/loops/${id}/versions`, { method: 'POST', body: JSON.stringify({
         yaml: byID('loop-yaml').value, rationale: byID('loop-rationale').value,
       }) });
-      selectedVersion = version.id;
+      if (detail?.loop.id === id) selectedVersion = version.id;
       await refreshLoops();
     });
   });
