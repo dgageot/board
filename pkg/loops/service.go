@@ -22,6 +22,7 @@ type Service struct {
 	slots   chan struct{}
 	mu      sync.Mutex
 	cancel  map[string]context.CancelFunc
+	running map[string]chan struct{}
 	closed  bool
 	wg      sync.WaitGroup
 }
@@ -31,7 +32,7 @@ func NewService(ctx context.Context, store *Store, runner Runner, model string, 
 	if err := store.Recover(ctx); err != nil {
 		return nil, err
 	}
-	return &Service{ctx: ctx, store: store, runner: runner, model: model, changed: changed, slots: make(chan struct{}, 4), cancel: map[string]context.CancelFunc{}}, nil
+	return &Service{ctx: ctx, store: store, runner: runner, model: model, changed: changed, slots: make(chan struct{}, 4), cancel: map[string]context.CancelFunc{}, running: map[string]chan struct{}{}}, nil
 }
 
 // Wait joins canceled processes before Board closes the shared database.
@@ -153,9 +154,11 @@ func (s *Service) checkAdmission() error {
 func (s *Service) launchLocked(job Job, config []byte) {
 	jobCtx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
 	s.cancel[job.ID] = cancel
+	done := make(chan struct{})
+	s.running[job.ID] = done
 	s.wg.Go(func() {
 		defer cancel()
-		defer func() { s.mu.Lock(); delete(s.cancel, job.ID); s.mu.Unlock() }()
+		defer func() { s.mu.Lock(); delete(s.cancel, job.ID); delete(s.running, job.ID); close(done); s.mu.Unlock() }()
 		s.execute(jobCtx, job, config)
 	})
 }
@@ -242,4 +245,42 @@ func (s *Service) saveProposal(ctx context.Context, loopID, output string) (stri
 	}
 	version, err := s.store.AddVersion(ctx, loopID, config, p.Rationale)
 	return version.ID, err
+}
+
+// CloseRun cancels and joins a user run before marking it closed in history.
+func (s *Service) CloseRun(ctx context.Context, loopID, id string) (Job, error) {
+	s.mu.Lock()
+	job, err := s.store.Job(ctx, loopID, id)
+	if err != nil {
+		s.mu.Unlock()
+		return Job{}, err
+	}
+	if job.Kind != "run" {
+		s.mu.Unlock()
+		return Job{}, fmt.Errorf("%w: only user runs can be closed", ErrInvalid)
+	}
+	done := s.running[id]
+	if cancel := s.cancel[id]; cancel != nil {
+		cancel()
+	}
+	s.mu.Unlock()
+	if done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return Job{}, ctx.Err()
+		}
+	}
+	job, err = s.store.Job(ctx, loopID, id)
+	if err != nil {
+		return Job{}, err
+	}
+	if job.Status == "running" || job.Status == "queued" {
+		return Job{}, fmt.Errorf("%w: run has not stopped; retry close", ErrConflict)
+	}
+	if err := s.store.closeRun(ctx, loopID, id); err != nil {
+		return Job{}, err
+	}
+	s.changed()
+	return s.store.Job(ctx, loopID, id)
 }

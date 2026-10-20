@@ -30,6 +30,7 @@ func Register(mux *http.ServeMux, store *Store, changed func(), services ...*Ser
 	mux.HandleFunc("POST /api/loops/{id}/feedback", h.feedback)
 	mux.HandleFunc("POST /api/loops/{id}/rounds/{round}/cancel", h.cancelRound)
 	mux.HandleFunc("POST /api/loops/{id}/runs", h.run)
+	mux.HandleFunc("POST /api/loops/{id}/runs/{job}/close", h.closeRun)
 	mux.HandleFunc("POST /api/loops/{id}/jobs/{job}/cancel", h.cancel)
 	mux.HandleFunc("GET /api/loops/{id}/jobs/{job}/events", h.events)
 	mux.HandleFunc("GET /api/loops/{id}/jobs/{job}/stderr", h.events)
@@ -350,4 +351,16 @@ func (h *Handler) optimizeDefault(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusAccepted, round)
+}
+
+func (h *Handler) closeRun(w http.ResponseWriter, r *http.Request) {
+	if !h.available(w) {
+		return
+	}
+	job, err := h.service.CloseRun(r.Context(), r.PathValue("id"), r.PathValue("job"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusOK, job)
 }

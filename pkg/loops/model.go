@@ -50,6 +50,7 @@ type Job struct {
 	Metrics    Metrics          `json:"metrics"`
 	CreatedAt  string           `json:"createdAt"`
 	FinishedAt string           `json:"finishedAt"`
+	ClosedAt   string           `json:"closedAt,omitempty"`
 	Project    *ProjectSnapshot `json:"project,omitempty"`
 }
 

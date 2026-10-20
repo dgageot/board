@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const jobColumns = "id,loop_id,version_id,kind,status,input,output,error,metrics,created_at,finished_at,project"
+const jobColumns = "id,loop_id,version_id,kind,status,input,output,error,metrics,created_at,finished_at,project,closed_at"
 
 // Recover marks abandoned jobs rather than replaying uncertain work.
 func (s *Store) Recover(ctx context.Context) error {
@@ -47,7 +47,7 @@ type scanner interface{ Scan(dest ...any) error }
 func scanJob(row scanner) (Job, error) {
 	var job Job
 	var metrics, project string
-	if err := row.Scan(&job.ID, &job.LoopID, &job.VersionID, &job.Kind, &job.Status, &job.Input, &job.Output, &job.Error, &metrics, &job.CreatedAt, &job.FinishedAt, &project); err != nil {
+	if err := row.Scan(&job.ID, &job.LoopID, &job.VersionID, &job.Kind, &job.Status, &job.Input, &job.Output, &job.Error, &metrics, &job.CreatedAt, &job.FinishedAt, &project, &job.ClosedAt); err != nil {
 		return Job{}, notFound(err)
 	}
 	if err := json.Unmarshal([]byte(metrics), &job.Metrics); err != nil {
@@ -82,4 +82,10 @@ func (s *Store) Jobs(ctx context.Context, loopID string) ([]Job, error) {
 // Job retrieves an attempt only within its owning loop.
 func (s *Store) Job(ctx context.Context, loopID, id string) (Job, error) {
 	return scanJob(s.db.QueryRowContext(ctx, "SELECT "+jobColumns+" FROM loop_jobs WHERE loop_id=? AND id=?", loopID, id))
+}
+
+// closeRun hides an attempt without changing its result or deleting evidence.
+func (s *Store) closeRun(ctx context.Context, loopID, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE loop_jobs SET closed_at=? WHERE id=? AND loop_id=? AND closed_at=''`, now(), id, loopID)
+	return err
 }
