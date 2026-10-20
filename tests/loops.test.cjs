@@ -338,7 +338,7 @@ test('newly created loop clearly shows automatic agent creation without another 
   const { renderLoopDetail } = await modulePromise;
   const detail={loop:{id:'new',name:'Review',description:'Review code',criteria:'Accurate'},versions:[],jobs:[{id:'generation',kind:'generate',status:'running',metrics:{}}]};
   const html=renderLoopDetail(detail,'');
-  assert.match(html,/Creating your agent/);
+  assert.match(html,/Creating agent/);
   assert.match(html,/role="status" aria-live="polite"/);
   assert.doesNotMatch(html,/data-action="generate"/);
   assert.match(html,/data-cancel="generation"/);
@@ -361,13 +361,13 @@ test('failed generation offers retry while a ready agent offers a run', async ()
   const { renderLoopDetail }=await modulePromise;
   const detail={loop:{id:'new',name:'Review',description:'Task',criteria:'Good'},versions:[],jobs:[{id:'generation',kind:'generate',status:'failed',error:'Provider unavailable',metrics:{}}]};
   assert.match(renderLoopDetail(detail,''),/Agent creation failed/);
-  assert.match(renderLoopDetail(detail,''),/Retry agent creation/);
+  assert.match(renderLoopDetail(detail,''),/Retry creation/);
   detail.jobs[0].status='succeeded';
   detail.versions=[{id:'v1',number:1,yaml:'agents: {}'}];
   const html=renderLoopDetail(detail,'v1');
-  assert.match(html,/Your agent is ready/);
-  assert.match(html,/Run on a project/);
-  assert.doesNotMatch(html,/Retry agent creation/);
+  assert.match(html,/Ready/);
+  assert.match(html,/data-action="run"/);
+  assert.doesNotMatch(html,/Retry creation/);
 });
 
 test('selected loop sidebar reflects its current running activity', async () => {
@@ -416,7 +416,7 @@ test('partial failed output stays visibly marked when an experiment takes status
  detail.rounds=[{id:'r',status:'designing',inputs:['a'],repeats:1,candidates:[]}];
  const html=renderLoopDetail(detail,'v1');
  const main=html.slice(0,html.indexOf('data-inspect="task"'));
- assert.match(main,/Optimizing your agent/);
+ assert.match(main,/Optimizing/);
  assert.match(main,/Incomplete result/);
  assert.match(main,/Partial output/);
  assert.match(main,/Provider unavailable/);
@@ -452,4 +452,19 @@ test('double-clicking Optimize does not start a second experiment', async () => 
  assert.equal(h.calls.filter((call)=>call.path.endsWith('/optimize/default')).length,1);
  resolve({id:'round'});
  await first;
+});
+
+test('loop status is concise without hiding failures or primary actions', async () => {
+ const { renderLoopDetail, loopActivity }=await modulePromise;
+ const detail=inspectorFixture();
+ detail.jobs=[];
+ assert.equal(loopActivity(detail).title,'Ready');
+ assert.equal(loopActivity(detail).note,'');
+ const ready=renderLoopDetail(detail,'v1');
+ assert.match(ready,/data-action="run"/);
+ assert.match(ready,/data-action="optimize"/);
+ assert.match(ready,/uses provider credits/);
+ assert.doesNotMatch(ready,/whenever you’re ready|Improve this agent|immutable snapshots|REUSABLE INTELLIGENCE/);
+ detail.jobs=[{id:'g',kind:'generate',status:'failed',error:'Provider unavailable',metrics:{}}];
+ assert.match(renderLoopDetail(detail,'v1'),/Provider unavailable/);
 });

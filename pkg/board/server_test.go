@@ -114,3 +114,17 @@ func TestNewLoopFieldsDisablePasswordCompletion(t *testing.T) {
 		assert.Contains(t, field, `data-1p-ignore`)
 	}
 }
+
+func TestLoopsCopyKeepsOperationalGuidanceWithoutSlogans(t *testing.T) {
+	handler := testHandler(t)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
+	require.Equal(t, http.StatusOK, rec.Code)
+	page := rec.Body.String()
+	assert.NotContains(t, page, "Great agents aren't a lucky prompt")
+	assert.NotContains(t, page, "BUILD. MEASURE. EVOLVE.")
+	assert.NotContains(t, page, "Two new agents. One baseline.")
+	assert.Contains(t, page, "Creates an agent immediately. Uses provider credits.")
+	assert.Contains(t, page, "Sends selected committed files to your model provider")
+	assert.Contains(t, page, "Promotion is manual.")
+}

@@ -3,7 +3,7 @@ const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => 
 })[char]);
 
 export function renderLoopList(loops, selected, detail) {
-  if (!loops.length) return '<p class="loop-empty-list">Your reusable agents will live here.</p>';
+  if (!loops.length) return '';
   return loops.map((loop) => {
     const activity = detail?.loop.id === loop.id ? loopActivity(detail) : null;
     const label = activity?.title || (loop.activeVersion ? 'Active agent' : 'Open loop');
@@ -50,37 +50,37 @@ export function loopActivity(detail) {
   const jobs = detail.jobs || [];
   const rounds = detail.rounds || [];
   const generation = jobs.find((job) => job.kind === 'generate' && busyJob(job));
-  if (generation) return { phase: 'generating', title: generation.status === 'queued' ? 'Agent creation queued' : 'Creating your agent', note: 'Turning your task into a specialized agent. You can leave this page; creation continues in the background.', job: generation };
+  if (generation) return { phase: 'generating', title: generation.status === 'queued' ? 'Agent creation queued' : 'Creating agent', note: generation.status === 'queued' ? 'Waiting for a worker.' : '', job: generation };
   const round = rounds.find(liveRound);
-  if (round) return { phase: 'optimizing', title: 'Optimizing your agent', note: round.status === 'designing' ? 'Designing two alternatives to test against your current version.' : 'Running candidates and checking quality. Your active version stays unchanged.', round };
+  if (round) return { phase: 'optimizing', title: 'Optimizing', note: round.status === 'designing' ? 'Designing candidates' : 'Evaluating candidates', round };
   const run = jobs.find((job) => job.kind === 'run' && busyJob(job));
-  if (run) return { phase: 'running', title: run.status === 'queued' ? 'Run queued' : 'Agent running', note: `Working on ${run.project?.name || 'your project'}. Results appear below as they arrive.`, job: run };
+  if (run) return { phase: 'running', title: run.status === 'queued' ? 'Run queued' : 'Agent running', note: run.project?.name || '', job: run };
   const latest = jobs.find((job) => job.kind === 'generate' || job.kind === 'run');
-  if (latest && ['failed', 'canceled', 'interrupted'].includes(latest.status)) return { phase: 'failed', title: latest.status === 'failed' ? (latest.kind === 'generate' ? 'Agent creation failed' : 'Run failed') : (latest.kind === 'generate' ? 'Agent creation stopped' : 'Run stopped'), note: latest.error || 'This attempt did not complete. You can retry safely.', job: latest };
-  if (detail.versions.length) return { phase: 'ready', title: latest?.kind === 'run' ? 'Run complete' : 'Your agent is ready', note: latest?.kind === 'run' ? 'Review the result below, then give feedback or start another run.' : 'Run it on a project whenever you’re ready.' };
-  return { phase: 'empty', title: 'Create your agent', note: 'This older loop has no agent yet. Start agent creation to continue.' };
+  if (latest && ['failed', 'canceled', 'interrupted'].includes(latest.status)) return { phase: 'failed', title: latest.status === 'failed' ? (latest.kind === 'generate' ? 'Agent creation failed' : 'Run failed') : (latest.kind === 'generate' ? 'Agent creation stopped' : 'Run stopped'), note: latest.error || 'Attempt incomplete.', job: latest };
+  if (detail.versions.length) return { phase: 'ready', title: latest?.kind === 'run' ? 'Run complete' : 'Ready', note: '' };
+  return { phase: 'empty', title: 'No agent', note: '' };
 }
 
 function renderActivity(activity, version) {
   let action = '';
   if (activity.job && busyJob(activity.job)) action = `<button class="btn btn-ghost" data-cancel="${escapeHTML(activity.job.id)}">Stop</button>`;
-  else if (activity.round) action = `<button class="btn btn-ghost" data-cancel-round="${escapeHTML(activity.round.id)}">Stop experiment</button>`;
-  else if (!version) action = '<button class="btn btn-primary" data-action="generate">Retry agent creation</button>';
-  else action = `<button class="btn btn-primary" data-action="run">${activity.phase === 'failed' ? 'Retry run' : 'Run on a project'} →</button>`;
+  else if (activity.round) action = `<button class="btn btn-ghost" data-cancel-round="${escapeHTML(activity.round.id)}">Stop</button>`;
+  else if (!version) action = `<button class="btn btn-primary" data-action="generate">${activity.phase === 'failed' ? 'Retry creation' : 'Create agent'}</button>`;
+  else action = `<button class="btn btn-primary" data-action="run">${activity.phase === 'failed' ? 'Retry run' : 'Run'}</button>`;
   const running = ['generating', 'running', 'optimizing'].includes(activity.phase);
   return `<section class="loop-activity ${activity.phase}" aria-label="Current activity"><div class="loop-activity-mark ${running ? 'spinning' : ''}" aria-hidden="true">${running ? '↻' : activity.phase === 'failed' ? '!' : '✓'}</div>
-    <div class="loop-activity-copy"><h3 role="status" aria-live="polite">${escapeHTML(activity.title)}</h3><p>${escapeHTML(activity.note)}</p></div>${action}</section>`;
+    <div class="loop-activity-copy"><h3 role="status" aria-live="polite">${escapeHTML(activity.title)}</h3>${activity.note ? `<p>${escapeHTML(activity.note)}</p>` : ''}</div>${action}</section>`;
 }
 
 function renderResult(job, loopID, feedback) {
   const failed = ['failed', 'canceled', 'interrupted'].includes(job.status);
   const title = busyJob(job) ? 'Live output' : failed ? 'Incomplete result' : 'Latest result';
   return `<section class="loop-panel loop-result"><div class="loop-section-heading"><h3>${title}</h3><span class="loop-muted">${formatMetricCost(job.metrics?.cost)} · ${((job.metrics?.durationMs || 0) / 1000).toFixed(1)}s</span></div>
-    <p class="loop-result-status"><span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span>${failed ? ' Partial output — this run did not finish successfully.' : ''}</p>
+    <p class="loop-result-status"><span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span>${failed ? ' Partial output' : ''}</p>
     ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
     ${job.project ? `<p class="loop-project-context">${escapeHTML(job.project.name)} · ${escapeHTML(job.project.revision.slice(0, 8))}</p>` : ''}
-    <pre class="loop-output" data-inspect="latest-output-${escapeHTML(job.id)}">${escapeHTML(job.output || (busyJob(job) ? 'Waiting for the first response…' : 'No output was produced.'))}</pre>
-    ${!busyJob(job) ? `<button class="btn btn-ghost" data-feedback="${escapeHTML(job.id)}">Give feedback</button>` : ''}
+    <pre class="loop-output" data-inspect="latest-output-${escapeHTML(job.id)}">${escapeHTML(job.output || (busyJob(job) ? 'Waiting for the first response…' : 'No output.'))}</pre>
+    ${!busyJob(job) ? `<button class="btn btn-ghost" data-feedback="${escapeHTML(job.id)}">Feedback</button>` : ''}
     ${feedback.filter((item) => item.jobId === job.id).map((item) => `<p class="loop-feedback-note">${item.rating === 'good' ? '✓' : '✕'} ${escapeHTML(item.note || item.rating)}</p>`).join('')}
     <details class="loop-secondary" data-inspect="result-details-${escapeHTML(job.id)}"><summary>Run details & logs</summary><p class="loop-muted">${escapeHTML(job.metrics?.model || 'Model not reported')} · ${job.metrics?.calls || 0} calls · ${job.metrics?.inputTokens || 0} input / ${job.metrics?.outputTokens || 0} output tokens</p>
     <pre class="loop-output" data-inspect="latest-input-${escapeHTML(job.id)}">${escapeHTML(job.input)}</pre>
@@ -93,23 +93,23 @@ export function renderLoopDetail(detail, selectedVersion) {
   const activity = loopActivity(detail);
   const latestRun = activity.phase === 'running' ? activity.job : jobs.find((job) => job.kind === 'run');
   const inProgress = ['generating', 'running', 'optimizing'].includes(activity.phase);
-  return `<div class="loop-detail-heading"><div><div class="loop-eyebrow">LOOP</div><h2>${escapeHTML(loop.name)}</h2></div>
-    <span class="loop-badge">${version ? `v${version.number}${version.id === loop.activeVersion ? ' · active' : ''}` : 'Preparing agent'}</span></div>
+  return `<div class="loop-detail-heading"><div><h2>${escapeHTML(loop.name)}</h2></div>
+    <span class="loop-badge">${version ? `v${version.number}${version.id === loop.activeVersion ? ' · active' : ''}` : 'No version'}</span></div>
     ${renderActivity(activity, version)}
     ${latestRun ? renderResult(latestRun, loop.id, feedback) : ''}
-    <details class="loop-secondary loop-panel" data-inspect="task"><summary>Task & quality criteria</summary><div class="loop-contract"><section><h3>The task</h3><p>${escapeHTML(loop.description)}</p></section><section><h3>What good looks like</h3><p>${escapeHTML(loop.criteria)}</p></section></div></details>
-    ${version ? `<section class="loop-panel"><div class="loop-section-heading"><div><h3>Improve this agent</h3><p>Compare alternatives without replacing the version you use.</p></div><button class="btn btn-primary" data-action="optimize" ${inProgress ? 'disabled' : ''}>Optimize</button></div>
-    <p class="loop-hint">One click starts two candidates, tested twice on up to three recent inputs from this version’s last project, or the loop’s first project. Uses provider credits. <button class="btn btn-ghost btn-small" data-action="optimize-settings" ${inProgress ? 'disabled' : ''}>Custom settings</button></p>
+    <details class="loop-secondary loop-panel" data-inspect="task"><summary>Task</summary><div class="loop-contract"><section><h3>Task</h3><p>${escapeHTML(loop.description)}</p></section><section><h3>Success criteria</h3><p>${escapeHTML(loop.criteria)}</p></section></div></details>
+    ${version ? `<section class="loop-panel"><div class="loop-section-heading"><h3>Optimization</h3><button class="btn btn-primary" data-action="optimize" ${inProgress ? 'disabled' : ''}>Optimize</button></div>
+    <p class="loop-hint">2 candidates · 2 repeats · recent project and inputs · uses provider credits. <button class="btn btn-ghost btn-small" data-action="optimize-settings" ${inProgress ? 'disabled' : ''}>Custom settings</button></p>
     ${rounds.map((round) => `<details class="loop-secondary" data-inspect="experiment-${escapeHTML(round.id)}" ${liveRound(round) ? 'open' : ''}><summary>Experiment · ${escapeHTML(round.status)}</summary>${renderRound(round, jobs, versions, loop.activeVersion)}</details>`).join('')}</section>` : ''}
-    <details class="loop-secondary loop-panel" data-inspect="agent-config"><summary>Agent configuration${version ? ` · v${version.number}` : ''}</summary>
-      <div class="loop-section-heading"><p class="loop-muted">${versions.length} ${versions.length === 1 ? 'version' : 'versions'} · immutable snapshots</p><button class="btn btn-ghost" data-action="import">Import YAML</button></div>
+    <details class="loop-secondary loop-panel" data-inspect="agent-config"><summary>Agent${version ? ` · v${version.number}` : ''}</summary>
+      <div class="loop-section-heading"><p class="loop-muted">${versions.length} ${versions.length === 1 ? 'version' : 'versions'}</p><button class="btn btn-ghost" data-action="import">Import YAML</button></div>
       ${version ? `<div class="loop-version-tabs">${versions.map((item) => `<button class="btn ${item.id === version.id ? 'btn-primary' : 'btn-ghost'}" data-version="${escapeHTML(item.id)}" data-focus="version-tab-${escapeHTML(item.id)}">v${item.number}${item.id === loop.activeVersion ? ' · active' : ''}</button>`).join('')}</div>
       <p class="loop-rationale">${escapeHTML(version.rationale || 'Imported configuration')}</p><pre class="loop-code" data-inspect="config-${escapeHTML(version.id)}"><code>${escapeHTML(version.yaml)}</code></pre>
       <div class="loop-actions"><button class="btn btn-ghost" data-action="promote" ${version.id === loop.activeVersion ? 'disabled' : ''}>${version.id === loop.activeVersion ? '✓ Active' : 'Use this version'}</button><a class="btn btn-ghost" href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(version.id)}/export" download="agent.yaml">Export YAML ↓</a></div>` : ''}
     </details>
-    <details class="loop-secondary loop-panel" data-inspect="history"><summary>Activity history · ${jobs.length} ${jobs.length === 1 ? 'attempt' : 'attempts'}</summary>
-      ${jobs.length ? jobs.map((job) => renderJob(job, loop.id, feedback)).join('') : '<p class="loop-hint">No attempts recorded yet.</p>'}</details>
-    <details class="loop-secondary loop-panel" data-inspect="spend"><summary>Cost breakdown</summary>${renderSpend(jobs)}</details>`;
+    <details class="loop-secondary loop-panel" data-inspect="history"><summary>History · ${jobs.length} ${jobs.length === 1 ? 'attempt' : 'attempts'}</summary>
+      ${jobs.length ? jobs.map((job) => renderJob(job, loop.id, feedback)).join('') : '<p class="loop-hint">No attempts.</p>'}</details>
+    <details class="loop-secondary loop-panel" data-inspect="spend"><summary>Costs</summary>${renderSpend(jobs)}</details>`;
 }
 
 function formatMetricCost(cost) { return cost == null ? 'Cost unknown' : `$${cost.toFixed(cost < 1 ? 4 : 2)}`; }
@@ -124,10 +124,10 @@ export function renderJob(job, loopID, feedback = []) {
     ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
     <div class="loop-job-facts"><span>${escapeHTML(metrics.model || 'Model pending')}</span><span>${metrics.calls || 0} calls</span><span>${metrics.inputTokens || 0} in / ${metrics.outputTokens || 0} out</span></div>
     ${job.kind !== 'generate' ? `<details data-inspect="input-${escapeHTML(job.id)}"><summary>Input</summary><pre class="loop-output" data-inspect="input-text-${escapeHTML(job.id)}">${escapeHTML(job.input)}</pre></details>` : ''}
-    <pre class="loop-output" data-inspect="output-${escapeHTML(job.id)}">${escapeHTML(job.output || (busy ? 'Waiting for the agent…' : 'No output was produced.'))}</pre>
+    <pre class="loop-output" data-inspect="output-${escapeHTML(job.id)}">${escapeHTML(job.output || (busy ? 'Waiting for the agent…' : 'No output.'))}</pre>
     <div class="loop-actions"><a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/events" download>Raw events ↓</a>
     <a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/stderr" download>Process log ↓</a>
-    ${!busy && ['run', 'test'].includes(job.kind) ? `<button class="btn btn-ghost btn-small" data-feedback="${escapeHTML(job.id)}">＋ Give feedback</button>` : ''}
+    ${!busy && ['run', 'test'].includes(job.kind) ? `<button class="btn btn-ghost btn-small" data-feedback="${escapeHTML(job.id)}">＋ Feedback</button>` : ''}
     ${busy ? `<button class="btn btn-ghost btn-small" data-cancel="${escapeHTML(job.id)}">Cancel</button>` : ''}</div>
     ${feedback.filter((item) => item.jobId === job.id).map((item) => `<p class="loop-feedback-note">${item.rating === 'good' ? '✓' : '✕'} ${escapeHTML(item.note || item.rating)}</p>`).join('')}</details>`;
 }
@@ -165,9 +165,9 @@ export function renderRound(round, jobs, versions, active) {
   const baseline = round.candidates.find((candidate) => candidate.versionId === round.baseline) || round.candidates[0];
   const baseMetrics = baseline ? summarizeCandidate(round, baseline, jobs) : null;
   return `<div class="loop-experiment"><div class="loop-section-heading"><h4>Experiment · ${escapeHTML(round.status)}</h4>
-    ${busy ? `<button class="btn btn-ghost btn-small" data-cancel-round="${escapeHTML(round.id)}">Stop experiment</button>` : ''}</div>
-    ${round.project ? `<p class="loop-project-context"><strong>${escapeHTML(round.project.name)}</strong> · ${escapeHTML(round.project.revision.slice(0, 8))} · same snapshot for every trial</p>` : ''}
-    <p class="loop-hint">${round.inputs.length} inputs × ${round.repeats} repetitions. AI-judged evidence, not a guarantee. Cost and time are observed averages; parallel-run timings include contention.</p>
+    ${busy ? `<button class="btn btn-ghost btn-small" data-cancel-round="${escapeHTML(round.id)}">Stop</button>` : ''}</div>
+    ${round.project ? `<p class="loop-project-context"><strong>${escapeHTML(round.project.name)}</strong> · ${escapeHTML(round.project.revision.slice(0, 8))} · shared snapshot</p>` : ''}
+    <p class="loop-hint">${round.inputs.length} inputs × ${round.repeats} repetitions. AI-judged; not a guarantee. Average cost and time; parallel runs may affect timing.</p>
     ${round.error ? `<p class="loop-job-error">${escapeHTML(round.error)}</p>` : ''}
     <div class="loop-table-scroll"><table class="loop-comparison"><thead><tr><th>Version</th><th>Quality checks</th><th>Cost / run</th><th>Time / run</th><th></th></tr></thead><tbody>
     ${round.candidates.map((candidate) => {
@@ -259,7 +259,7 @@ export function initLoops(api) {
       if (projectLoads.get(selectID) !== request) return;
       select.innerHTML = '<option value="">Choose a project…</option>' + projects.map((project) => `<option value="${escapeHTML(project.id)}">${escapeHTML(project.name)} — ${escapeHTML(project.repoPath)}</option>`).join('');
       select.value = projects.some((project) => project.id === preferred) ? preferred : '';
-      status.textContent = projects.length ? '' : 'No projects configured. Add one using Projects on the Board, then reopen this dialog.';
+      status.textContent = projects.length ? '' : 'No projects configured. Add one in Board → Projects.';
       select.disabled = projects.length === 0;
     } catch (error) {
       if (projectLoads.get(selectID) !== request) return;
@@ -286,6 +286,7 @@ export function initLoops(api) {
       byID('loops-count').textContent = `${list.length} ${list.length === 1 ? 'loop' : 'loops'}`;
       byID('loop-detail').hidden = !detail;
       byID('loops-welcome').hidden = !!detail;
+      byID('loops-welcome-title').textContent = list.length ? 'Select a loop' : 'No loops yet';
       if (detail) {
         updateLoopInspector(byID('loop-detail'), detail, selectedVersion);
         if ((detail.jobs || []).some((job) => ['queued', 'running'].includes(job.status)) || (detail.rounds || []).some((round) => ['designing', 'testing'].includes(round.status))) refreshTimer = setTimeout(refreshLoops, 1000);
@@ -370,7 +371,7 @@ export function initLoops(api) {
     const promote = event.target.closest('[data-promote], [data-action="promote"]');
     if (promote && detail) {
       const version = promote.dataset.promote || selectedLoopVersion(detail, selectedVersion)?.id;
-      if (!version || !window.confirm('Make this the active version? Review the result and quality evidence first. The previous version remains available.')) return;
+      if (!version || !window.confirm('Use this version? The previous version will remain available.')) return;
       promote.disabled = true;
       try {
         await api(`/loops/${detail.loop.id}/promote`, { method: 'POST', body: JSON.stringify({ version, expectedActive: detail.loop.activeVersion }) });
