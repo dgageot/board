@@ -24,7 +24,7 @@ func (s *Service) OptimizeDefault(ctx context.Context, loopID, versionID string)
 	if err != nil {
 		return Round{}, err
 	}
-	input := OptimizeRequest{Version: versionID, ProjectID: detail.Loop.ProjectID, Repeats: 2, Models: []string{"auto", "auto"}}
+	input := OptimizeRequest{Version: versionID, ProjectID: detail.Loop.ProjectID, Repeats: 2}
 	for _, job := range jobs {
 		if job.Kind == "run" && job.VersionID == versionID && job.Project != nil {
 			input.ProjectID = job.Project.ID

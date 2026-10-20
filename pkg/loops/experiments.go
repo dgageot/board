@@ -30,14 +30,28 @@ type Round struct {
 	Error      string           `json:"error"`
 	CreatedAt  string           `json:"createdAt"`
 	Project    *ProjectSnapshot `json:"project,omitempty"`
+	Pass       int              `json:"pass,omitempty"`
+	MaxPasses  int              `json:"maxPasses,omitempty"`
+	Winner     string           `json:"winner,omitempty"`
+	Outcome    string           `json:"outcome,omitempty"`
+	CheckJob   string           `json:"checkJob,omitempty"`
+	Stage      string           `json:"stage,omitempty"`
+	Task       string           `json:"task,omitempty"`
+	Criteria   string           `json:"criteria,omitempty"`
+	JudgeModel string           `json:"judgeModel,omitempty"`
 }
 
 // Candidate keeps every attempt, including failures, in the comparison.
 type Candidate struct {
-	VersionID string  `json:"versionId"`
-	Label     string  `json:"label"`
-	Trials    []Trial `json:"trials"`
-	Error     string  `json:"error"`
+	VersionID    string  `json:"versionId"`
+	Parent       string  `json:"parent,omitempty"`
+	ProposalID   string  `json:"proposalId,omitempty"`
+	Decision     string  `json:"decision,omitempty"`
+	Pass         int     `json:"pass,omitempty"`
+	Label        string  `json:"label"`
+	Trials       []Trial `json:"trials"`
+	Confirmation []Trial `json:"confirmation,omitempty"`
+	Error        string  `json:"error"`
 }
 
 // Trial is an execution paired with an independent quality judgment.
@@ -48,6 +62,7 @@ type Trial struct {
 	Repeat  int    `json:"repeat"`
 	Passed  bool   `json:"passed"`
 	Reason  string `json:"reason"`
+	Outcome string `json:"outcome,omitempty"`
 }
 
 // AddFeedback validates ownership and preserves the original user's assessment.
@@ -143,13 +158,13 @@ func (s *Store) Promote(ctx context.Context, loopID, versionID, expectedActive s
 			continue
 		}
 		for _, candidate := range round.Candidates {
-			if candidate.VersionID == versionID && candidatePassed(round, candidate) && s.persistedEvidence(ctx, round, candidate) {
+			if candidate.VersionID == versionID && (round.MaxPasses == 0 || round.Winner == versionID) && candidatePassed(round, candidate) && s.persistedEvidence(ctx, round, candidate) && s.confirmedEvidence(ctx, round, candidate) {
 				qualified = true
 			}
 		}
 	}
 	// The initial baseline may be selected after its first successful inspected run.
-	if !qualified && expectedActive == "" {
+	if !qualified && expectedActive == "" && len(detail.Versions) > 0 && detail.Versions[len(detail.Versions)-1].ID == versionID {
 		jobs, err := s.Jobs(ctx, loopID)
 		if err != nil {
 			return err
@@ -209,6 +224,9 @@ func (s *Store) persistedEvidence(ctx context.Context, round Round, candidate Ca
 		if json.Unmarshal([]byte(judge.Input), &evidence) != nil || evidence["input"] != run.Input || evidence["answer"] != run.Output {
 			return false
 		}
+		if round.MaxPasses > 0 && (evidence["task"] != round.Task || evidence["criteria"] != round.Criteria) {
+			return false
+		}
 		var verdict qualityVerdict
 		if json.Unmarshal([]byte(judge.Output), &verdict) != nil || verdict.Passed == nil || !*verdict.Passed || strings.TrimSpace(verdict.Reason) == "" {
 			return false
@@ -222,4 +240,12 @@ func sameProject(a, b *ProjectSnapshot) bool {
 		return a == b
 	}
 	return a.ID == b.ID && a.Path == b.Path && a.Revision == b.Revision && a.Digest == b.Digest
+}
+
+func (s *Store) confirmedEvidence(ctx context.Context, round Round, candidate Candidate) bool {
+	if round.MaxPasses == 0 || candidate.Pass == 0 {
+		return true
+	}
+	confirmation := Candidate{VersionID: candidate.VersionID, Trials: candidate.Confirmation}
+	return candidatePassed(round, confirmation) && s.persistedEvidence(ctx, round, confirmation)
 }

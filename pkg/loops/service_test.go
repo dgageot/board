@@ -3,8 +3,10 @@ package loops
 import (
 	"context"
 	"database/sql/driver"
+	"encoding/json"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -113,8 +115,11 @@ func TestLiveLoopSmoke(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, rounds, 1)
 		require.Equal(t, "completed", rounds[0].Status, rounds[0].Error)
-		require.Len(t, rounds[0].Candidates, 3)
+		require.NotEmpty(t, rounds[0].Winner)
 		for _, candidate := range rounds[0].Candidates {
+			if candidate.VersionID != rounds[0].Winner {
+				continue
+			}
 			require.Empty(t, candidate.Error)
 			require.Len(t, candidate.Trials, 1)
 			require.NotEmpty(t, candidate.Trials[0].JudgeID)
@@ -154,43 +159,68 @@ func TestServiceCloseStopsAdmissionAndJoinsWork(t *testing.T) {
 func TestOptimizationRunsCompleteSuiteAndGatesPromotion(t *testing.T) {
 	store := testStore(t)
 	loop := testLoop(t, store)
-	version, err := store.AddVersion(t.Context(), loop.ID, "agents:\n  root:\n    model: auto\n    instruction: summarize\n", "baseline")
+	version, err := store.AddVersion(t.Context(), loop.ID, "agents:\n  root:\n    model: auto\n    instruction: Summarize.\n", "baseline")
 	require.NoError(t, err)
-	cost := 0.01
 	project := testProject(t, store)
 	snapshot, err := store.projectSnapshot(t.Context(), project.ID)
 	require.NoError(t, err)
 	service, err := NewService(t.Context(), store, fakeRunner{run: func(_ context.Context, req Request, _ func(Result)) (Result, error) {
 		switch {
-		case strings.Contains(string(req.Config), "agent_proposal"):
-			return Result{Output: `{"instruction":"Summarize precisely","model":"auto","rationale":"Less repetition"}`}, nil
+		case strings.Contains(string(req.Config), "capability_check"):
+			return Result{Output: `{"feasible":true,"reason":"Text task"}`}, nil
+		case strings.Contains(string(req.Config), "instruction_patch"):
+			payload := patchPayload(t, req.Input)
+			output, err := json.Marshal(instructionPatch{BaseHash: payload.BaseHash, Rationale: "Be concise", Edits: []instructionEdit{{"Summarize.", "Summarize concisely."}}})
+			require.NoError(t, err)
+			return Result{Output: string(output)}, nil
 		case strings.Contains(string(req.Config), "quality_judgment"):
-			assert.Contains(t, req.Input, "A committed project")
 			assert.Contains(t, req.Input, snapshot.Digest)
 			return Result{Output: `{"passed":true,"reason":"Meets all criteria"}`}, nil
 		default:
-			assert.Contains(t, req.Input, "A committed project")
 			assert.Contains(t, req.Input, snapshot.Digest)
-			return Result{Output: "Good answer", Metrics: Metrics{Cost: &cost, DurationMS: 100}}, nil
+			cost := .02
+			duration := int64(200)
+			if strings.Contains(string(req.Config), "concisely") {
+				cost = .01
+				duration = 100
+			}
+			return Result{Output: "Good answer", Metrics: Metrics{Cost: &cost, DurationMS: duration}}, nil
 		}
 	}}, "auto", func() {})
 	require.NoError(t, err)
-	round, err := service.Optimize(t.Context(), loop.ID, OptimizeRequest{ProjectID: project.ID, Version: version.ID, Inputs: []string{"case one", "case two"}, Repeats: 2, Models: []string{"auto", "auto"}})
+	round, err := service.Optimize(t.Context(), loop.ID, OptimizeRequest{ProjectID: project.ID, Version: version.ID, Inputs: []string{"case one", "case two"}, Repeats: 2})
 	require.NoError(t, err)
 	service.Wait()
 	rounds, err := store.Rounds(t.Context(), loop.ID)
 	require.NoError(t, err)
 	require.Len(t, rounds, 1)
-	assert.Equal(t, round.ID, rounds[0].ID)
-	assert.Equal(t, "completed", rounds[0].Status)
-	require.Len(t, rounds[0].Candidates, 3)
-	for _, candidate := range rounds[0].Candidates {
-		assert.True(t, candidatePassed(rounds[0], candidate))
-		assert.Len(t, candidate.Trials, 4)
-	}
-	candidate := rounds[0].Candidates[1]
-	require.NoError(t, store.Promote(t.Context(), loop.ID, candidate.VersionID, ""))
+	got := rounds[0]
+	assert.Equal(t, round.ID, got.ID)
+	assert.Equal(t, "completed", got.Status, got.Error)
+	assert.Equal(t, "improved", got.Outcome)
+	require.NotEmpty(t, got.Winner)
+	require.Len(t, got.Candidates, 3)
+	assert.True(t, candidatePassed(got, got.Candidates[0]))
+	assert.True(t, candidatePassed(got, got.Candidates[1]))
+	require.NoError(t, store.Promote(t.Context(), loop.ID, got.Winner, ""))
 	require.ErrorIs(t, store.Promote(t.Context(), loop.ID, version.ID, ""), ErrConflict)
+}
+
+type patchInput struct {
+	BaseHash    string `json:"base_hash"`
+	Instruction string `json:"instruction"`
+	Variant     int    `json:"variant"`
+}
+
+func patchPayload(t *testing.T, input string) patchInput {
+	t.Helper()
+	_, quoted, ok := strings.Cut(input, "\n")
+	require.True(t, ok)
+	payload, err := strconv.Unquote(quoted)
+	require.NoError(t, err)
+	var decoded patchInput
+	require.NoError(t, json.Unmarshal([]byte(payload), &decoded))
+	return decoded
 }
 
 func TestIncompleteOrDuplicateTrialsCannotQualify(t *testing.T) {
