@@ -21,6 +21,7 @@ type Service struct {
 	slots   chan struct{}
 	mu      sync.Mutex
 	cancel  map[string]context.CancelFunc
+	closed  bool
 	wg      sync.WaitGroup
 }
 
@@ -34,6 +35,17 @@ func NewService(ctx context.Context, store *Store, runner Runner, model string, 
 
 // Wait joins canceled processes before Board closes the shared database.
 func (s *Service) Wait() { s.wg.Wait() }
+
+// Close shuts admission before joining all admitted work.
+func (s *Service) Close() {
+	s.mu.Lock()
+	s.closed = true
+	for _, cancel := range s.cancel {
+		cancel()
+	}
+	s.mu.Unlock()
+	s.wg.Wait()
+}
 
 // Generate creates an initial agent without running arbitrary generated YAML.
 func (s *Service) Generate(ctx context.Context, loopID string) (Job, error) {
@@ -78,7 +90,7 @@ func (s *Service) Run(ctx context.Context, loopID, versionID, input string) (Job
 func (s *Service) start(ctx context.Context, loopID, versionID, kind, input string, config []byte) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.ctx.Err() != nil {
+	if s.closed || s.ctx.Err() != nil {
 		return Job{}, errors.New("board is shutting down")
 	}
 	if len(s.cancel) >= 16 {

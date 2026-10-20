@@ -100,3 +100,24 @@ func TestLiveLoopSmoke(t *testing.T) {
 	assert.Positive(t, completed.Metrics.InputTokens)
 	t.Logf("generated v1 and ran it: model=%s duration=%dms cost=%v", completed.Metrics.Model, completed.Metrics.DurationMS, completed.Metrics.Cost)
 }
+
+func TestServiceCloseStopsAdmissionAndJoinsWork(t *testing.T) {
+	store := testStore(t)
+	loop := testLoop(t, store)
+	started := make(chan struct{})
+	service, err := NewService(t.Context(), store, fakeRunner{run: func(ctx context.Context, _ Request, _ func(Result)) (Result, error) {
+		close(started)
+		<-ctx.Done()
+		return Result{}, ctx.Err()
+	}}, "auto", func() {})
+	require.NoError(t, err)
+	job, err := service.Generate(t.Context(), loop.ID)
+	require.NoError(t, err)
+	<-started
+	service.Close()
+	saved, err := store.Job(t.Context(), loop.ID, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "canceled", saved.Status)
+	_, err = service.Generate(t.Context(), loop.ID)
+	require.Error(t, err)
+}

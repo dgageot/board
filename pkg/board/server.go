@@ -97,7 +97,7 @@ func Run() error {
 	if err != nil {
 		return err
 	}
-	defer func() { cancel(); b.loopService.Wait() }()
+	defer func() { cancel(); b.loopService.Close() }()
 
 	handler, err := buildMux(b)
 	if err != nil {
