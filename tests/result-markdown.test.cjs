@@ -51,3 +51,13 @@ test('vendored Markdown bundle matches its recorded digest', () => {
   const entry = manifest['markdown-it'];
   assert.equal(createHash('sha256').update(fs.readFileSync(path.join(dir, entry.file))).digest('hex'), entry.sha256);
 });
+
+test('sparse tables cannot amplify short input into unbounded implicit cells', async () => {
+  const { renderResultMarkdown } = await modulePromise;
+  const table = 'a|'.repeat(256) + '\n' + '-|'.repeat(256) + '\n' + 'x\n'.repeat(256) + '\n';
+  const source = table.repeat(4);
+  const result = renderResultMarkdown(source);
+  assert.equal(result.tablesAsText, true);
+  assert.doesNotMatch(result.html, /<table>/);
+  assert.ok(result.html.length < source.length * 4);
+});
