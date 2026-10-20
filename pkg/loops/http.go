@@ -3,20 +3,31 @@ package loops
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 )
 
 // Handler serves the loop workspace without depending on Board's card model.
 type Handler struct {
 	store   *Store
 	changed func()
+	service *Service
 }
 
 // Register mounts the loop API on Board's same-origin protected router.
-func Register(mux *http.ServeMux, store *Store, changed func()) {
+func Register(mux *http.ServeMux, store *Store, changed func(), services ...*Service) {
 	h := &Handler{store: store, changed: changed}
+	if len(services) > 0 {
+		h.service = services[0]
+	}
+	mux.HandleFunc("POST /api/loops/{id}/generate", h.generate)
+	mux.HandleFunc("POST /api/loops/{id}/runs", h.run)
+	mux.HandleFunc("POST /api/loops/{id}/jobs/{job}/cancel", h.cancel)
+	mux.HandleFunc("GET /api/loops/{id}/jobs/{job}/events", h.events)
+	mux.HandleFunc("GET /api/loops/{id}/jobs/{job}/stderr", h.events)
 	mux.HandleFunc("GET /api/loops", h.list)
 	mux.HandleFunc("POST /api/loops", h.create)
 	mux.HandleFunc("GET /api/loops/{id}", h.get)
@@ -95,7 +106,16 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	respond(w, http.StatusOK, detail)
+	jobs, err := h.store.Jobs(r.Context(), detail.Loop.ID)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusOK, struct {
+		Detail
+
+		Jobs []Job `json:"jobs"`
+	}{Detail: detail, Jobs: jobs})
 }
 
 func (h *Handler) addVersion(w http.ResponseWriter, r *http.Request) {
@@ -130,4 +150,92 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	fail(w, ErrNotFound)
+}
+
+func (h *Handler) available(w http.ResponseWriter) bool {
+	if h.service == nil {
+		http.Error(w, "Loop execution is unavailable", http.StatusServiceUnavailable)
+		return false
+	}
+	return true
+}
+
+func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
+	if !h.available(w) {
+		return
+	}
+	job, err := h.service.Generate(r.Context(), r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusAccepted, job)
+}
+
+func (h *Handler) run(w http.ResponseWriter, r *http.Request) {
+	if !h.available(w) {
+		return
+	}
+	var input struct {
+		Version string `json:"version"`
+		Input   string `json:"input"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	job, err := h.service.Run(r.Context(), r.PathValue("id"), input.Version, input.Input)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusAccepted, job)
+}
+
+func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
+	if !h.available(w) {
+		return
+	}
+	job, err := h.store.Job(r.Context(), r.PathValue("id"), r.PathValue("job"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	h.service.Cancel(job.ID)
+	respond(w, http.StatusAccepted, map[string]string{"status": "cancel requested"})
+}
+
+func (h *Handler) events(w http.ResponseWriter, r *http.Request) {
+	if !h.available(w) {
+		return
+	}
+	job, err := h.store.Job(r.Context(), r.PathValue("id"), r.PathValue("job"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	runner, ok := h.service.runner.(interface {
+		Log(id, kind string) (io.ReadCloser, error)
+	})
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	kind := "events"
+	if r.Pattern == "GET /api/loops/{id}/jobs/{job}/stderr" {
+		kind = "stderr"
+	}
+	file, err := runner.Log(job.ID, kind)
+	if errors.Is(err, os.ErrNotExist) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	defer file.Close()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.txt"`, job.ID, kind))
+	_, _ = io.Copy(w, io.LimitReader(file, 16*1024*1024))
 }

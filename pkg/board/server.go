@@ -1,6 +1,7 @@
 package board
 
 import (
+	"cmp"
 	"context"
 	"embed"
 	"encoding/json"
@@ -88,6 +89,16 @@ func Run() error {
 		return err
 	}
 
+	loopDir, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	b.loopService, err = loops.NewService(ctx, b.loops, &loops.ProcessRunner{Directory: filepath.Join(loopDir, "board", "loops", "attempts")}, cmp.Or(os.Getenv("BOARD_LOOPS_MODEL"), "auto"), b.broadcast)
+	if err != nil {
+		return err
+	}
+	defer func() { cancel(); b.loopService.Wait() }()
+
 	handler, err := buildMux(b)
 	if err != nil {
 		return err
@@ -139,7 +150,7 @@ func serve(ctx context.Context, srv *http.Server, ln net.Listener) error {
 func buildMux(b *Board) (http.Handler, error) {
 	mux := http.NewServeMux()
 
-	loops.Register(mux, b.loops, b.broadcast)
+	loops.Register(mux, b.loops, b.broadcast, b.loopService)
 
 	// API routes
 	mux.HandleFunc("GET /api/projects", b.handleListProjects)

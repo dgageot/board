@@ -12,16 +12,17 @@ import (
 
 // Board holds the application state.
 type Board struct {
-	done       <-chan struct{}
-	config     Config
-	store      Store
-	sessions   SessionManager
-	controller *Controller
-	loops      *loops.Store
-	mu         sync.RWMutex
-	clients    map[chan struct{}]struct{}
-	coaches    map[string]bool
-	watching   map[string]struct{}
+	done        <-chan struct{}
+	config      Config
+	store       Store
+	sessions    SessionManager
+	controller  *Controller
+	loops       *loops.Store
+	loopService *loops.Service
+	mu          sync.RWMutex
+	clients     map[chan struct{}]struct{}
+	coaches     map[string]bool
+	watching    map[string]struct{}
 }
 
 func newBoard(ctx context.Context, cfg Config, store Store, sessions SessionManager) (*Board, error) {

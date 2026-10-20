@@ -59,3 +59,17 @@
   #loop-detail { overflow: visible; padding: 20px 14px; }
   .workspace-nav a { padding: 6px 8px; }
 }
+.loop-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.loop-example { margin-top: 18px; max-height: 180px; overflow: auto; }
+.loop-job { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 14px; }
+.loop-job > summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; padding: 5px 0; }
+.loop-job > summary::before { content: '›'; color: var(--text-muted); }
+.loop-job[open] > summary::before { content: '⌄'; }
+.loop-job-metrics { margin-left: auto; color: var(--text-muted); font: 11px var(--font-mono); }
+.loop-status { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); background: var(--surface-hover); border-radius: 5px; padding: 4px 7px; }
+.loop-status.running, .loop-status.queued { color: var(--info); }
+.loop-status.succeeded { color: var(--success); }
+.loop-status.failed, .loop-status.interrupted { color: var(--danger); }
+.loop-job-error { padding: 12px; background: var(--surface-input); border-left: 2px solid var(--danger); margin-top: 12px; color: var(--danger); white-space: pre-wrap; }
+.loop-job-facts { display: flex; flex-wrap: wrap; gap: 18px; padding: 12px 0; color: var(--text-muted); font: 11px var(--font-mono); }
+.loop-output { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-input); border-radius: var(--radius-sm); padding: 16px; font: 12px/1.8 var(--font-mono); max-height: 460px; overflow: auto; margin: 10px 0; }

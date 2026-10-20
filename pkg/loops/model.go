@@ -35,3 +35,29 @@ type Detail struct {
 	Loop     Loop      `json:"loop"`
 	Versions []Version `json:"versions"`
 }
+
+// Job is a durable generation or execution attempt; interrupted attempts never resume silently.
+type Job struct {
+	ID         string  `json:"id"`
+	LoopID     string  `json:"loopId"`
+	VersionID  string  `json:"versionId"`
+	Kind       string  `json:"kind"`
+	Status     string  `json:"status"`
+	Input      string  `json:"input"`
+	Output     string  `json:"output"`
+	Error      string  `json:"error"`
+	Metrics    Metrics `json:"metrics"`
+	CreatedAt  string  `json:"createdAt"`
+	FinishedAt string  `json:"finishedAt"`
+}
+
+// Metrics separates process wall time from active inference and preserves unknown pricing.
+type Metrics struct {
+	Cost         *float64 `json:"cost"`
+	InputTokens  int64    `json:"inputTokens"`
+	OutputTokens int64    `json:"outputTokens"`
+	DurationMS   int64    `json:"durationMs"`
+	ModelMS      int64    `json:"modelMs"`
+	Model        string   `json:"model"`
+	Calls        int      `json:"calls"`
+}

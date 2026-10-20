@@ -93,6 +93,15 @@
     </form>
   </dialog>
 
+  <dialog id="loop-run-dialog" class="dialog-large" aria-labelledby="loop-run-title">
+    <div class="dialog-header"><span id="loop-run-title">Run this version</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
+    <form id="loop-run-form" class="dialog-body" autocomplete="off">
+      <label>Input<textarea id="loop-run-input" required rows="12" maxlength="65536" placeholder="Give the agent a new input, or use your original example."></textarea></label>
+      <p class="loop-form-help">This preview executes self-contained text agents only. Tools, hooks, skills and ambient context are disabled. Each run has a five-minute deadline. Provider API calls incur costs.</p>
+      <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Run agent →</button></div>
+    </form>
+  </dialog>
+
   <dialog id="terminal-dialog" class="dialog-terminal" aria-labelledby="terminal-title">
     <div class="dialog-header">
       <div class="dialog-title-group">

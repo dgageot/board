@@ -31,3 +31,13 @@ test('empty loops offer a first version without inventing metrics', async () => 
   assert.match(html, /0 versions/);
   assert.doesNotMatch(html, /\$0|100%/);
 });
+
+test('job metrics distinguish unpriced calls from free execution and escape output', async () => {
+  const { renderJob } = await modulePromise;
+  const html = renderJob({ id: 'job', kind: 'run', status: 'failed', input: '<input>', output: '<script>x</script>', error: '<failure>', metrics: { cost: null, durationMs: 1500, calls: 1, model: '<model>' } }, 'loop');
+  assert.match(html, /Cost unknown/);
+  assert.match(html, /1\.5s/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.doesNotMatch(html, /<script>|\$0/);
+  assert.match(html, /jobs\/job\/events/);
+});
