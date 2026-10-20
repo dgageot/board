@@ -9,9 +9,15 @@ export function renderLoopList(loops, selected) {
     <small>${loop.activeVersion ? 'Active version' : 'Draft · ready to build'}</small></span><span aria-hidden="true">›</span></button>`).join('');
 }
 
+export function selectedLoopVersion(detail, selectedVersion) {
+  return detail.versions.find((item) => item.id === selectedVersion)
+    || detail.versions.find((item) => item.id === detail.loop.activeVersion)
+    || detail.versions.at(-1);
+}
+
 export function renderLoopDetail(detail, selectedVersion) {
   const { loop, versions, jobs = [], rounds = [], feedback = [] } = detail;
-  const version = versions.find((item) => item.id === selectedVersion) || versions[0];
+  const version = selectedLoopVersion(detail, selectedVersion);
   return `<div class="loop-detail-heading"><div><div class="loop-eyebrow">REUSABLE INTELLIGENCE</div><h2>${escapeHTML(loop.name)}</h2></div>
     <span class="loop-badge">${versions.length} ${versions.length === 1 ? 'version' : 'versions'}</span></div>
     <div class="loop-contract"><section><h3>The task</h3><p>${escapeHTML(loop.description)}</p></section>
@@ -111,6 +117,7 @@ export function initLoops(api) {
       const [list, nextDetail] = await Promise.all([api('/loops'), id ? api(`/loops/${encodeURIComponent(id)}`) : null]);
       if (request !== sequence) return;
       detail = nextDetail;
+      if (detail) selectedVersion = selectedLoopVersion(detail, selectedVersion)?.id || '';
       byID('loops-list').innerHTML = renderLoopList(list, id);
       byID('loops-count').textContent = `${list.length} ${list.length === 1 ? 'loop' : 'loops'}`;
       byID('loop-detail').hidden = !detail;
@@ -152,13 +159,13 @@ export function initLoops(api) {
     if (event.target.closest('[data-action="import"]')) byID('loop-import-dialog').showModal();
     if (event.target.closest('[data-action="run"]') && detail) {
       modalLoop = detail.loop.id;
-      runVersion = (detail.versions.find((item) => item.id === selectedVersion) || detail.versions[0])?.id;
+      runVersion = selectedLoopVersion(detail, selectedVersion)?.id;
       byID('loop-run-input').value = detail.loop.example;
       byID('loop-run-dialog').showModal();
     }
     if (event.target.closest('[data-action="optimize"]') && detail) {
       modalLoop = detail.loop.id;
-      optimizeVersion = (detail.versions.find((item) => item.id === selectedVersion) || detail.versions[0])?.id;
+      optimizeVersion = selectedLoopVersion(detail, selectedVersion)?.id;
       byID('loop-test-inputs').value = detail.loop.example;
       byID('loop-optimize-dialog').showModal();
     }
@@ -170,7 +177,7 @@ export function initLoops(api) {
     }
     const promote = event.target.closest('[data-promote], [data-action="promote"]');
     if (promote && detail) {
-      const version = promote.dataset.promote || (detail.versions.find((item) => item.id === selectedVersion) || detail.versions[0])?.id;
+      const version = promote.dataset.promote || selectedLoopVersion(detail, selectedVersion)?.id;
       if (!version || !window.confirm('Make this the active version? Review the result and quality evidence first. The previous version remains available.')) return;
       promote.disabled = true;
       try {

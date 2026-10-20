@@ -62,3 +62,13 @@ test('experiments never offer promotion for failing candidates', async () => {
   assert.match(html, /&lt;failed&gt;/);
   assert.match(html, /not a guarantee/);
 });
+
+test('active version remains the default when unpromoted candidates arrive', async () => {
+  const { selectedLoopVersion } = await modulePromise;
+  const detail = { loop: { activeVersion: 'v1' }, versions: [{id:'v3'},{id:'v2'},{id:'v1'}] };
+  assert.equal(selectedLoopVersion(detail, '').id, 'v1');
+  assert.equal(selectedLoopVersion(detail, 'v2').id, 'v2');
+  assert.equal(selectedLoopVersion(detail, 'removed').id, 'v1');
+  detail.loop.activeVersion = '';
+  assert.equal(selectedLoopVersion(detail, '').id, 'v1');
+});
