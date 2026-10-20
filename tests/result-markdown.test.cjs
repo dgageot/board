@@ -61,3 +61,44 @@ test('sparse tables cannot amplify short input into unbounded implicit cells', a
   assert.doesNotMatch(result.html, /<table>/);
   assert.ok(result.html.length < source.length * 4);
 });
+
+test('normal tables render within long reports and next to fenced pipes', async () => {
+  const { renderResultMarkdown } = await modulePromise;
+  const prose = 'Report paragraph.\n\n'.repeat(200);
+  const code = '```sh\n' + 'echo a | cat\n'.repeat(100) + '```\n\n';
+  const table = '| File | Result |\n| --- | --- |\n| a.go | **Passed** |\n';
+  const result = renderResultMarkdown(prose + code + table);
+  assert.equal(result.tablesAsText, false);
+  assert.match(result.html, /<table>/);
+  assert.match(result.html, /<strong>Passed<\/strong>/);
+});
+
+test('table budget counts actual columns, sparse rows and all rendered tables', async () => {
+  const { renderResultMarkdown } = await modulePromise;
+  const table = 'a|b\n-|-' + '\nx'.repeat(31) + '\n\n'; // 64 cells per table.
+  const result = renderResultMarkdown(table.repeat(65));
+  assert.equal((result.html.match(/<(?:th|td)(?:\s|>)/g) || []).length, 4096);
+  assert.equal((result.html.match(/<table>/g) || []).length, 64);
+  assert.equal(result.tablesAsText, true);
+  const next = renderResultMarkdown(table + 'Next render.');
+  assert.equal(next.tablesAsText, false, 'budget resets for each result');
+});
+
+test('an oversized table does not prevent later normal tables from rendering', async () => {
+  const { renderResultMarkdown } = await modulePromise;
+  const oversized = 'a|'.repeat(256) + '\n' + '-|'.repeat(256) + '\n' + 'x\n'.repeat(256) + '\n';
+  const result = renderResultMarkdown(oversized + 'Small|Table\n---|---\nyes|works\n');
+  assert.equal(result.tablesAsText, true);
+  assert.equal((result.html.match(/<table>/g) || []).length, 1);
+  assert.match(result.html, /<td>works<\/td>/);
+});
+
+test('tables retain alignment, escaped pipes and nested block behavior', async () => {
+  const { renderResultMarkdown } = await modulePromise;
+  const result = renderResultMarkdown('> | Name | Count |\n> | :--- | ---: |\n> | a\\|b | `42` |\n\n# Next\n');
+  assert.equal(result.tablesAsText, false);
+  assert.match(result.html, /<blockquote>\n<table>/);
+  assert.match(result.html, /style="text-align:right"/);
+  assert.match(result.html, /a\|b/);
+  assert.match(result.html, /<h1>Next<\/h1>/);
+});
