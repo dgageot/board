@@ -749,3 +749,12 @@ test('a mode change completing after navigation leaves the other loop selection 
  resolve({mode:'project'});await changing;
  assert.match(h.element('loop-detail').innerHTML,/btn-primary" data-version="second-v2"/);
 });
+
+test('blocked analysis offers a recovery path instead of another impossible run', async () => {
+ const {renderLoopDetail}=await modulePromise;const detail=inspectorFixture();detail.jobs=[];
+ detail.rounds=[{status:'blocked',outcome:'capability_blocked',error:'Needs file writes',inputs:[],candidates:[]}];
+ const html=renderLoopDetail(detail,'v1');
+ assert.match(html,/This task needs project work/);
+ assert.match(html,/data-mode="project"/);
+ assert.match(html,/data-action="run" disabled/);
+});
