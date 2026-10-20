@@ -491,8 +491,8 @@ function richInspectorHarness() {
   const { container, state, doc } = inspectorHarness();
   const setter = Object.getOwnPropertyDescriptor(container, 'innerHTML').set;
   let body = null;
-  function richBody(id) {
-    const block = { scrollTop: 0, scrollLeft: 0 };
+  function richBody(id, content) {
+    const block = { scrollTop: 0, scrollLeft: 0, content };
     return {
       dataset: { resultBody: id }, ownerDocument: doc, childNodes: [block],
       querySelectorAll() { return this.childNodes; },
@@ -504,7 +504,8 @@ function richInspectorHarness() {
   Object.defineProperty(container, 'innerHTML', { set(html) {
     setter.call(container, html);
     const id = html.match(/data-result-body="([^"]+)"/)?.[1];
-    body = id ? richBody(id) : null;
+    const content = html.match(/data-inspect="latest-output-[^"]+">([\s\S]*?)<\/div>/)?.[1] || '';
+    body = id ? richBody(id, content) : null;
   }});
   return { container, state, body: () => body };
 }
@@ -525,4 +526,18 @@ test('metadata updates reuse rich result nodes and changed output preserves code
   updateLoopInspector(h.container, detail, 'v1');
   assert.notEqual(h.body().childNodes[0], block);
   assert.equal(h.body().childNodes[0].scrollLeft, 500);
+});
+
+test('empty finished results replace the live waiting placeholder', async () => {
+ const {updateLoopInspector}=await modulePromise;
+ for(const status of ['succeeded','failed','canceled']) {
+  const h=richInspectorHarness(), detail=inspectorFixture();
+  detail.jobs[0].output='';
+  updateLoopInspector(h.container,detail,'v1');
+  assert.match(h.body().childNodes[0].content,/Waiting for the first response/);
+  detail.jobs[0].status=status;
+  updateLoopInspector(h.container,detail,'v1');
+  assert.match(h.body().childNodes[0].content,/No output/);
+  assert.doesNotMatch(h.body().childNodes[0].content,/Waiting/);
+ }
 });

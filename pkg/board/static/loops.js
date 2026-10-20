@@ -225,7 +225,7 @@ export function updateLoopInspector(container, detail, selectedVersion, sourceJo
   // Reuse unchanged rich content; keep code and table scrolling across updates.
   const body = container.querySelector('[data-result-body]');
   const latest = detail.jobs?.find((job) => job.id === body?.dataset.resultBody);
-  const keepBody = sameLoop && body && latest && previous.output === latest.output && previous.sourceJob === sourceJob;
+  const keepBody = sameLoop && body && latest?.output && previous.output === latest.output && previous.sourceJob === sourceJob;
   const bodyScroll = body ? [...body.querySelectorAll('pre, table')].map((element) => ({ top: element.scrollTop, left: element.scrollLeft })) : [];
   const parked = keepBody ? body.ownerDocument.createElement('div') : null;
   if (parked) {
