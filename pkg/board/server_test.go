@@ -3,6 +3,7 @@ package board
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -95,4 +96,21 @@ func TestLoopCreationDoesNotAskForExample(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.NotContains(t, rec.Body.String(), `id="loop-example"`)
 	assert.NotContains(t, rec.Body.String(), "An example input")
+}
+
+func TestNewLoopFieldsDisablePasswordCompletion(t *testing.T) {
+	handler := testHandler(t)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
+	require.Equal(t, http.StatusOK, rec.Code)
+	_, dialog, found := strings.Cut(rec.Body.String(), `<dialog id="loop-new-dialog"`)
+	require.True(t, found)
+	dialog, _, found = strings.Cut(dialog, "</dialog>")
+	require.True(t, found)
+	fields := regexp.MustCompile(`<(?:input|select|textarea)\b[^>]*>`).FindAllString(dialog, -1)
+	require.Len(t, fields, 4)
+	for _, field := range fields {
+		assert.Contains(t, field, `autocomplete="off"`)
+		assert.Contains(t, field, `data-1p-ignore`)
+	}
 }

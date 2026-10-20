@@ -71,13 +71,13 @@
   </main>
   <dialog id="loop-new-dialog" class="dialog-large" aria-labelledby="loop-new-title">
     <div class="dialog-header"><span id="loop-new-title">Create a loop</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
-    <form id="loop-new-form" class="dialog-body" autocomplete="off">
+    <form id="loop-new-form" class="dialog-body" autocomplete="off" data-1p-ignore>
       <p class="dialog-subtitle">Define the job once. Make the agent better with evidence.</p>
-      <label>Name<input id="loop-name" required maxlength="160" placeholder="Release notes, distilled"></label>
-      <label>Project for the first run<select id="loop-first-project" required><option value="">Choose a project…</option></select></label>
+      <label>Name<input autocomplete="off" data-1p-ignore id="loop-name" required maxlength="160" placeholder="Release notes, distilled"></label>
+      <label>Project for the first run<select autocomplete="off" data-1p-ignore id="loop-first-project" required><option value="">Choose a project…</option></select></label>
       <p id="loop-first-project-status" class="loop-form-help" role="note"></p>
-      <label>The repeatable task<textarea id="loop-task" required rows="3" maxlength="16000" placeholder="Turn a list of commits into concise, user-facing release notes."></textarea></label>
-      <label>What does a good result look like?<textarea id="loop-criteria" required rows="3" maxlength="16000" placeholder="Group changes by feature, fix and maintenance. Never invent details. Omit internal refactors."></textarea></label>
+      <label>The repeatable task<textarea autocomplete="off" data-1p-ignore id="loop-task" required rows="3" maxlength="16000" placeholder="Turn a list of commits into concise, user-facing release notes."></textarea></label>
+      <label>What does a good result look like?<textarea autocomplete="off" data-1p-ignore id="loop-criteria" required rows="3" maxlength="16000" placeholder="Group changes by feature, fix and maintenance. Never invent details. Omit internal refactors."></textarea></label>
       <p class="loop-form-help">Define the task once. You can choose a different project for every run.</p>
       <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Create loop →</button></div>
     </form>
