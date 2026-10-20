@@ -20,7 +20,7 @@ func TestCollectorUsesLatestSessionCostsAndMessage(t *testing.T) {
 		`{"type":"agent_choice","message_id":"old","content":"Discard"}`,
 		`{"type":"agent_choice","message_id":"final","content":"Hello"}`,
 		`{"type":"agent_choice","message_id":"final","content":" world"}`,
-		`{"type":"token_usage","session_id":"root","usage":{"cost":0.1,"last_message":{"Model":"provider/model","input_tokens":100,"output_tokens":20}}}`,
+		`{"type":"token_usage","session_id":"root","usage":{"cost":0.1,"last_message":{"Model":"provider/model","input_tokens":100,"cached_input_tokens":50,"cached_write_tokens":10,"output_tokens":20}}}`,
 		`{"type":"token_usage","session_id":"root","usage":{"cost":0.15,"snapshot_only":true}}`,
 		`{"type":"stream_stopped","reason":"normal","timestamp":"2026-10-20T10:00:02Z"}`,
 	} {
@@ -31,7 +31,7 @@ func TestCollectorUsesLatestSessionCostsAndMessage(t *testing.T) {
 	require.NotNil(t, result.Metrics.Cost)
 	assert.InDelta(t, .15, *result.Metrics.Cost, .000001)
 	assert.Equal(t, 1, result.Metrics.Calls)
-	assert.Equal(t, int64(100), result.Metrics.InputTokens)
+	assert.Equal(t, int64(160), result.Metrics.InputTokens)
 	assert.Equal(t, int64(2000), result.Metrics.ModelMS)
 	assert.Equal(t, "provider/model", result.Metrics.Model)
 }

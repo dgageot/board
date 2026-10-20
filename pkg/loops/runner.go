@@ -185,9 +185,11 @@ func (c *eventCollector) observe(line []byte) error {
 			Cost     float64 `json:"cost"`
 			Snapshot bool    `json:"snapshot_only"`
 			Last     *struct {
-				Model  string `json:"Model"`
-				Input  int64  `json:"input_tokens"`
-				Output int64  `json:"output_tokens"`
+				Model      string `json:"Model"`
+				Input      int64  `json:"input_tokens"`
+				Output     int64  `json:"output_tokens"`
+				CacheRead  int64  `json:"cached_input_tokens"`
+				CacheWrite int64  `json:"cached_write_tokens"`
 			} `json:"last_message"`
 		} `json:"usage"`
 		Budgets []struct {
@@ -223,7 +225,7 @@ func (c *eventCollector) observe(line []byte) error {
 			c.costs[event.SessionID] = event.Usage.Cost
 			if last := event.Usage.Last; last != nil && !event.Usage.Snapshot {
 				c.metrics.Calls++
-				c.metrics.InputTokens += last.Input
+				c.metrics.InputTokens += last.Input + last.CacheRead + last.CacheWrite
 				c.metrics.OutputTokens += last.Output
 				c.metrics.Model = last.Model
 			}
