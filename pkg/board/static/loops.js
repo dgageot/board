@@ -1,3 +1,5 @@
+import { renderResultMarkdown, previewLimit } from './result-markdown.js';
+
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[char]);
@@ -72,14 +74,22 @@ function renderActivity(activity, version) {
     <div class="loop-activity-copy"><h3 role="status" aria-live="polite">${escapeHTML(activity.title)}</h3>${activity.note ? `<p>${escapeHTML(activity.note)}</p>` : ''}</div>${action}</section>`;
 }
 
-function renderResult(job, loopID, feedback) {
+function renderResult(job, loopID, feedback, sourceView = false) {
   const failed = ['failed', 'canceled', 'interrupted'].includes(job.status);
   const title = busyJob(job) ? 'Live output' : failed ? 'Incomplete result' : 'Latest result';
+  const output = job.output || '';
+  const markdown = sourceView ? null : renderResultMarkdown(output);
+  const truncated = output.length > previewLimit;
+  const content = !output ? `<p class="loop-muted">${busyJob(job) ? 'Waiting for the first response…' : 'No output.'}</p>`
+    : sourceView ? `<pre class="loop-source-text">${escapeHTML(output.slice(0, previewLimit))}</pre>` : markdown.html;
   return `<section class="loop-panel loop-result"><div class="loop-section-heading"><h3>${title}</h3><span class="loop-muted">${formatMetricCost(job.metrics?.cost)} · ${((job.metrics?.durationMs || 0) / 1000).toFixed(1)}s</span></div>
     <p class="loop-result-status"><span class="loop-status ${escapeHTML(job.status)}">${escapeHTML(job.status)}</span>${failed ? ' Partial output' : ''}</p>
     ${job.error ? `<p class="loop-job-error">${escapeHTML(job.error)}</p>` : ''}
     ${job.project ? `<p class="loop-project-context">${escapeHTML(job.project.name)} · ${escapeHTML(job.project.revision.slice(0, 8))}</p>` : ''}
-    <pre class="loop-output" data-inspect="latest-output-${escapeHTML(job.id)}">${escapeHTML(job.output || (busyJob(job) ? 'Waiting for the first response…' : 'No output.'))}</pre>
+    <div class="loop-result-toolbar"><button class="btn btn-ghost btn-small" data-source="${escapeHTML(job.id)}" aria-pressed="${sourceView}" ${!output ? 'disabled' : ''}>${sourceView ? 'Rendered' : 'Source'}</button><button class="btn btn-ghost btn-small" data-copy-result="${escapeHTML(job.id)}" ${!output ? 'disabled' : ''}>Copy</button></div>
+    <div class="loop-prose" data-result-body="${escapeHTML(job.id)}" data-inspect="latest-output-${escapeHTML(job.id)}">${content}</div>
+    ${truncated ? '<p class="loop-hint">Preview limited to 64K characters. Copy includes the full result.</p>' : ''}
+    ${markdown?.tablesAsText ? '<p class="loop-hint">Large tables shown as text.</p>' : ''}
     ${!busyJob(job) ? `<button class="btn btn-ghost" data-feedback="${escapeHTML(job.id)}">Feedback</button>` : ''}
     ${feedback.filter((item) => item.jobId === job.id).map((item) => `<p class="loop-feedback-note">${item.rating === 'good' ? '✓' : '✕'} ${escapeHTML(item.note || item.rating)}</p>`).join('')}
     <details class="loop-secondary" data-inspect="result-details-${escapeHTML(job.id)}"><summary>Run details & logs</summary><p class="loop-muted">${escapeHTML(job.metrics?.model || 'Model not reported')} · ${job.metrics?.calls || 0} calls · ${job.metrics?.inputTokens || 0} input / ${job.metrics?.outputTokens || 0} output tokens</p>
@@ -87,7 +97,7 @@ function renderResult(job, loopID, feedback) {
     <div class="loop-actions"><a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/events" download>Raw events ↓</a><a class="btn btn-ghost btn-small" href="/api/loops/${encodeURIComponent(loopID)}/jobs/${encodeURIComponent(job.id)}/stderr" download>Process log ↓</a></div></details></section>`;
 }
 
-export function renderLoopDetail(detail, selectedVersion) {
+export function renderLoopDetail(detail, selectedVersion, sourceJob = '') {
   const { loop, versions, jobs = [], rounds = [], feedback = [] } = detail;
   const version = selectedLoopVersion(detail, selectedVersion);
   const activity = loopActivity(detail);
@@ -96,7 +106,7 @@ export function renderLoopDetail(detail, selectedVersion) {
   return `<div class="loop-detail-heading"><div><h2>${escapeHTML(loop.name)}</h2></div>
     <span class="loop-badge">${version ? `v${version.number}${version.id === loop.activeVersion ? ' · active' : ''}` : 'No version'}</span></div>
     ${renderActivity(activity, version)}
-    ${latestRun ? renderResult(latestRun, loop.id, feedback) : ''}
+    ${latestRun ? renderResult(latestRun, loop.id, feedback, sourceJob === latestRun.id) : ''}
     <details class="loop-secondary loop-panel" data-inspect="task"><summary>Task</summary><div class="loop-contract"><section><h3>Task</h3><p>${escapeHTML(loop.description)}</p></section><section><h3>Success criteria</h3><p>${escapeHTML(loop.criteria)}</p></section></div></details>
     ${version ? `<section class="loop-panel"><div class="loop-section-heading"><h3>Optimization</h3><button class="btn btn-primary" data-action="optimize" ${inProgress ? 'disabled' : ''}>Optimize</button></div>
     <p class="loop-hint">2 candidates · 2 repeats · recent project and inputs · uses provider credits. <button class="btn btn-ghost btn-small" data-action="optimize-settings" ${inProgress ? 'disabled' : ''}>Custom settings</button></p>
@@ -192,14 +202,14 @@ function focusIdentity(element) {
   if (!element) return '';
   if (element.dataset.focus) return `control:${element.dataset.focus}`;
   if (element.tagName === 'SUMMARY') return `summary:${element.parentElement.dataset.inspect || ''}`;
-  for (const key of ['version', 'action', 'promote', 'cancel', 'feedback', 'cancelRound']) {
+  for (const key of ['version', 'action', 'promote', 'cancel', 'feedback', 'cancelRound', 'source', 'copyResult']) {
     if (element.dataset[key]) return `${key}:${element.dataset[key]}`;
   }
   return element.getAttribute('href') || '';
 }
 
-export function updateLoopInspector(container, detail, selectedVersion) {
-  const html = renderLoopDetail(detail, selectedVersion);
+export function updateLoopInspector(container, detail, selectedVersion, sourceJob = '') {
+  const html = renderLoopDetail(detail, selectedVersion, sourceJob);
   const previous = inspectorRenders.get(container);
   if (previous?.loop === detail.loop.id && previous.html === html) return;
   const sameLoop = previous?.loop === detail.loop.id;
@@ -239,6 +249,7 @@ export function initLoops(api) {
   let runVersion = '';
   let modalLoop = '';
   let importLoop = '';
+  let sourceJob = '';
   const projectLoads = new Map();
   const startingOptimizations = new Set();
 
@@ -288,7 +299,7 @@ export function initLoops(api) {
       byID('loops-welcome').hidden = !!detail;
       byID('loops-welcome-title').textContent = list.length ? 'Select a loop' : 'No loops yet';
       if (detail) {
-        updateLoopInspector(byID('loop-detail'), detail, selectedVersion);
+        updateLoopInspector(byID('loop-detail'), detail, selectedVersion, sourceJob);
         if ((detail.jobs || []).some((job) => ['queued', 'running'].includes(job.status)) || (detail.rounds || []).some((round) => ['designing', 'testing'].includes(round.status))) refreshTimer = setTimeout(refreshLoops, 1000);
       }
     } catch (error) {
@@ -312,10 +323,30 @@ export function initLoops(api) {
     if (button) { selectedVersion = ''; location.hash = `loops/${button.dataset.loop}`; }
   });
   byID('loop-detail').addEventListener('click', async (event) => {
+    const source = event.target.closest('[data-source]');
+    if (source && detail) {
+      sourceJob = sourceJob === source.dataset.source ? '' : source.dataset.source;
+      updateLoopInspector(byID('loop-detail'), detail, selectedVersion, sourceJob);
+      return;
+    }
+    const copy = event.target.closest('[data-copy-result]');
+    if (copy && detail) {
+      const job = detail.jobs?.find((item) => item.id === copy.dataset.copyResult);
+      if (!job || copy.disabled) return;
+      const loopID = detail.loop.id;
+      copy.disabled = true;
+      try {
+        await navigator.clipboard.writeText(job.output || '');
+        if (detail?.loop.id === loopID) notice('Result copied.');
+      } catch {
+        if (detail?.loop.id === loopID) notice('Could not copy. Select the text in Source view instead.', true);
+      } finally { copy.disabled = false; }
+      return;
+    }
     const version = event.target.closest('[data-version]');
     if (version && detail) {
       selectedVersion = version.dataset.version;
-      updateLoopInspector(byID('loop-detail'), detail, selectedVersion);
+      updateLoopInspector(byID('loop-detail'), detail, selectedVersion, sourceJob);
       const config = byID('loop-detail').querySelector('[data-inspect="agent-config"]');
       if (config) {
         config.open = true;

@@ -2,8 +2,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { test } = require('node:test');
+const { pathToFileURL } = require('node:url');
+const markdownModule = require('../pkg/board/static/result-markdown.js');
 const source = fs.readFileSync(path.join(__dirname, '../pkg/board/static/loops.js'), 'utf8');
-const modulePromise = import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const modulePromise = import(pathToFileURL(path.join(__dirname, '../pkg/board/static/loops.js')).href);
 
 test('loop lists escape untrusted names and expose selection', async () => {
   const { renderLoopList } = await modulePromise;
@@ -245,7 +247,7 @@ function loopAppHarness(overrides = {}) {
   const context = vm.createContext({
     document:Object.assign(document,{getElementById:element,body:element('body'),querySelectorAll:()=>[]}),
     window:{addEventListener:(name,callback)=>handlers.set(name,callback)},
-    location:{hash:'#board'},setTimeout,clearTimeout,console,
+    location:{hash:'#board'},setTimeout,clearTimeout,console, ...markdownModule,
   });
   const api=async(path,options)=>{
     calls.push({path,options});
@@ -256,7 +258,7 @@ function loopAppHarness(overrides = {}) {
     return fixture(path.split('/').at(-1));
   };
   context.api=api;
-  vm.runInContext(source.replace(/^export /gm,'')+'\ninitLoops(api);',context);
+  vm.runInContext(source.replace(/^import .*;\n/gm,'').replace(/^export /gm,'')+'\ninitLoops(api);',context);
   return {
     calls,element,
     async action(name) {
@@ -467,4 +469,19 @@ test('loop status is concise without hiding failures or primary actions', async 
  assert.doesNotMatch(ready,/whenever you’re ready|Improve this agent|immutable snapshots|REUSABLE INTELLIGENCE/);
  detail.jobs=[{id:'g',kind:'generate',status:'failed',error:'Provider unavailable',metrics:{}}];
  assert.match(renderLoopDetail(detail,'v1'),/Provider unavailable/);
+});
+
+test('latest result renders safe Markdown with Source and Copy controls', async () => {
+ const { renderLoopDetail }=await modulePromise;
+ const detail=inspectorFixture();
+ detail.jobs[0].output='# Findings\n\n- **One**\n- Two\n\n```go\nfunc main() {}\n```';
+ const rendered=renderLoopDetail(detail,'v1');
+ assert.match(rendered,/<h1>Findings<\/h1>/);
+ assert.match(rendered,/<strong>One<\/strong>/);
+ assert.match(rendered,/data-copy-result="j1"/);
+ assert.match(rendered,/data-source="j1" aria-pressed="false"/);
+ const raw=renderLoopDetail(detail,'v1','j1');
+ assert.match(raw,/# Findings/);
+ assert.doesNotMatch(raw,/<h1>Findings<\/h1>/);
+ assert.match(raw,/data-source="j1" aria-pressed="true"/);
 });

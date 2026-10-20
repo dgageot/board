@@ -128,3 +128,28 @@
 #loop-detail > section.loop-panel { margin-bottom: 18px; }
 .loop-result > .loop-output { font-family: var(--font); font-size: 13px; line-height: 1.7; }
 #loops-workspace button:focus-visible, #loops-workspace a:focus-visible, #loops-workspace summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.loop-result-toolbar { display: flex; justify-content: flex-end; gap: 4px; margin: 0 0 8px; }
+.loop-prose { font: 14px/1.75 var(--font); color: var(--text); overflow-wrap: anywhere; max-height: 65vh; overflow: auto; padding: 4px 12px 12px 0; margin-bottom: 14px; }
+.loop-prose > :first-child { margin-top: 0; }
+.loop-prose > :last-child { margin-bottom: 0; }
+.loop-prose p, .loop-prose ul, .loop-prose ol, .loop-prose blockquote, .loop-prose pre, .loop-prose table { margin: 0 0 1em; }
+.loop-prose h1, .loop-prose h2, .loop-prose h3, .loop-prose h4, .loop-prose h5, .loop-prose h6 { line-height: 1.35; margin: 1.4em 0 .55em; color: var(--text); font-weight: 600; }
+.loop-prose h1 { font-size: 1.6em; }
+.loop-prose h2 { font-size: 1.3em; }
+.loop-prose h3 { font-size: 1.1em; }
+.loop-prose h4, .loop-prose h5, .loop-prose h6 { font-size: 1em; }
+.loop-prose ul, .loop-prose ol { padding-left: 1.6em; }
+.loop-prose li { margin: .2em 0; }
+.loop-prose li > ul, .loop-prose li > ol { margin-bottom: .3em; }
+.loop-prose blockquote { border-left: 3px solid var(--accent); padding: .2em 1em; color: var(--text-muted); }
+.loop-prose blockquote > :last-child { margin-bottom: 0; }
+.loop-prose a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.loop-prose code { font: .88em var(--font-mono); background: var(--surface-hover); border-radius: 4px; padding: .15em .35em; }
+.loop-prose pre { overflow-x: auto; background: var(--surface-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; line-height: 1.65; }
+.loop-prose pre code { padding: 0; background: none; }
+.loop-prose table { display: block; overflow-x: auto; border-collapse: collapse; width: max-content; max-width: 100%; font-size: .92em; }
+.loop-prose th, .loop-prose td { border: 1px solid var(--border-strong); padding: 8px 12px; text-align: left; }
+.loop-prose th { background: var(--surface-hover); font-weight: 600; }
+.loop-prose hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
+.loop-prose .loop-source-text { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 var(--font-mono); }
+@media (max-width: 560px) { .loop-prose { font-size: 13px; padding-right: 0; } }
