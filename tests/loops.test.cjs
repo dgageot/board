@@ -954,3 +954,39 @@ test('deletion errors survive recovery from an earlier refresh error', async () 
  await h.navigate('first');failRefresh=true;await h.refresh();await h.action('delete-loop');
  assert.match(h.element('loops-notice').textContent,/Task could not stop/);
 });
+
+test('new loops show automatic first-run progress without another Run action', async () => {
+ const {renderLoopDetail,loopActivity}=await modulePromise;
+ const detail=inspectorFixture();detail.initialRun={taskId:'initial',jobId:'g',state:'waiting'};
+ detail.jobs=[{id:'g',kind:'generate',status:'running'}];
+ assert.match(renderLoopDetail(detail),/first task run starts automatically/);
+ detail.jobs=[{id:'g',kind:'generate',status:'succeeded'}];
+ assert.equal(loopActivity(detail).title,'Starting first run');
+ const html=renderLoopDetail(detail);
+ assert.match(html,/data-action="project-task" disabled/);assert.match(html,/task will run automatically/);
+});
+
+test('first run keeps polling after generation without posting task launches from the browser', async () => {
+ let scheduled=0;
+ const summary={loop:{id:'first',name:'first',mode:'project'},versions:[{id:'v1',mode:'project',number:1}],jobs:[{id:'g',kind:'generate',status:'succeeded'}],initialRun:{state:'waiting',taskId:'initial',jobId:'g'}};
+ const h=loopAppHarness({setTimeout:()=>{scheduled++;return 1;},api:path=>path==='/loops/first/overview'?summary:undefined});
+ await h.navigate('first');await h.refresh();
+ assert.ok(scheduled>=2);assert.equal(h.calls.filter(c=>c.options?.method==='POST').length,0);
+ assert.match(h.element('loop-detail').innerHTML,/Starting first run/);
+});
+
+test('initial-run failures expose recovery without claiming task execution', async () => {
+ const {renderLoopDetail}=await modulePromise;const detail=inspectorFixture();detail.jobs=[];
+ detail.initialRun={state:'failed',error:'Project changed; select its current agent'};
+ const html=renderLoopDetail(detail);
+ assert.match(html,/First run could not start/);assert.match(html,/Project changed/);
+ assert.match(html,/data-action="project-task" >/);
+});
+
+test('an initial-run error never hides a live project task or enables another Run', async () => {
+ const {renderLoopDetail}=await modulePromise;const detail=inspectorFixture();detail.jobs=[];
+ detail.initialRun={state:'admitted',error:'Could not persist initial launch',taskId:'initial'};
+ detail.projectTasks=[{id:'manual-later',status:'launched',projectName:'Repo',card:{id:'card',status:'running'}}];
+ const html=renderLoopDetail(detail);
+ assert.match(html,/Project run active/);assert.match(html,/data-action="project-task" disabled/);
+});

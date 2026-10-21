@@ -124,7 +124,7 @@ func TestLoopsCopyKeepsOperationalGuidanceWithoutSlogans(t *testing.T) {
 	assert.NotContains(t, page, "Great agents aren't a lucky prompt")
 	assert.NotContains(t, page, "BUILD. MEASURE. EVOLVE.")
 	assert.NotContains(t, page, "Two new agents. One baseline.")
-	assert.Contains(t, page, "Creates an agent immediately.")
+	assert.Contains(t, page, "Creates the first agent version and runs the task once on the selected project.")
 	assert.Contains(t, page, "Sends selected committed files to your model provider")
 	assert.Contains(t, page, "Promotion is manual.")
 }

@@ -9,7 +9,7 @@ export function renderLoopList(loops, selected, detail) {
   return loops.map((loop) => {
     const activity = detail?.loop.id === loop.id ? loopActivity(detail) : null;
     const label = activity?.title || (loop.activeVersion ? 'Active agent' : 'Open loop');
-    const running = activity && ['generating', 'running', 'optimizing', 'project-running', 'preparing'].includes(activity.phase);
+    const running = activity && ['generating', 'running', 'optimizing', 'project-running', 'preparing', 'initial-run'].includes(activity.phase);
     return `<button class="loop-list-item ${loop.id === selected ? 'selected' : ''}" data-loop="${escapeHTML(loop.id)}" aria-pressed="${loop.id === selected}">
     <span class="loop-list-icon ${running ? 'spinning' : ''}" aria-hidden="true">↻</span><span><strong>${escapeHTML(loop.name)}</strong>
     <small>${escapeHTML(label)}</small></span><span aria-hidden="true">›</span></button>`;
@@ -55,13 +55,17 @@ export function loopActivity(detail) {
   const jobs = (detail.jobs || []).filter((job) => !job.closedAt);
   const rounds = detail.rounds || [];
   const generation = jobs.find((job) => job.kind === 'generate' && busyJob(job));
-  if (generation) return { phase: 'generating', title: generation.status === 'queued' ? 'Agent creation queued' : 'Creating agent', note: generation.status === 'queued' ? 'Waiting for a worker.' : '', job: generation };
+  if (generation) return { phase: 'generating', title: generation.status === 'queued' ? 'Agent creation queued' : 'Creating agent', note: detail.initialRun?.state==='waiting' ? 'The first task run starts automatically when the agent is ready.' : generation.status === 'queued' ? 'Waiting for a worker.' : '', job: generation };
+  const initial=detail.initialRun;
+  if(initial?.state==='waiting')return {phase:'initial-run',title:'Starting first run',note:'The task will run automatically on the selected project.'};
   const round = rounds.find(liveRound);
   if (round) return { phase: 'optimizing', title: 'Optimizing', note: [round.pass ? `Pass ${round.pass}/${round.maxPasses || 4}` : '', round.stage || (round.status === 'designing' ? 'Designing candidates' : 'Evaluating candidates')].filter(Boolean).join(' · '), round };
   const run = jobs.find((job) => job.kind === 'run' && busyJob(job));
   if (run) return { phase: 'running', title: run.status === 'queued' ? 'Run queued' : 'Agent running', note: run.project?.name || '', job: run };
   const task = detail.projectTasks?.find((item) => item.status !== 'closed' && item.card && ['starting','running','paused'].includes(item.card.status));
   if(task) return {phase:'project-running',title:task.card.status==='paused'?'Project run paused':'Project run active',note:task.projectName,task};
+  if(initial?.state==='admitted' && initial.error)return {phase:'failed',title:'First run launch needs attention',note:initial.error};
+  if(initial?.state==='failed')return {phase:'failed',title:'First run could not start',note:initial.error||'Review the project and start a run when ready.'};
   const preparing = detail.projectTasks?.find(item => ['pending','processing'].includes(item.review?.state));
   if(preparing) return {phase:'preparing',title:preparing.review.state==='pending'?'Review queued':'Judging and preparing next version',note:preparing.projectName};
   const latest = jobs.find((job) => job.kind === 'generate' || job.kind === 'run');
@@ -78,7 +82,7 @@ function renderActivity(activity, version) {
   else if (activity.round) action = `<button class="btn btn-ghost" data-cancel-round="${escapeHTML(activity.round.id)}">Stop</button>`;
   else if (!version) action = `<button class="btn btn-primary" data-action="generate">${activity.phase === 'failed' ? 'Retry creation' : 'Create agent'}</button>`;
   else action = '';
-  const running = ['generating', 'running', 'optimizing', 'project-running', 'preparing'].includes(activity.phase);
+  const running = ['generating', 'running', 'optimizing', 'project-running', 'preparing', 'initial-run'].includes(activity.phase);
   return `<section class="loop-activity ${activity.phase}" aria-label="Current activity"><div class="loop-activity-mark ${running ? 'spinning' : ''}" aria-hidden="true">${running ? '↻' : activity.phase === 'failed' ? '!' : activity.phase === 'empty' ? '○' : '✓'}</div>
     <div class="loop-activity-copy"><h3 role="status" aria-live="polite">${escapeHTML(activity.title)}</h3>${activity.note ? `<p>${escapeHTML(activity.note)}</p>` : ''}</div>${action}</section>`;
 }
@@ -134,7 +138,7 @@ export function renderLoopDetail(detail, selectedVersion, sourceJob = '', panel 
   const { loop, versions, jobs = [], rounds = [], feedback = [], projectTasks = [] } = detail;
   const version = selectedLoopVersion(detail, selectedVersion);
   const activity = loopActivity(detail);
-  const inProgress = loop.deleting || ['generating', 'running', 'optimizing', 'project-running'].includes(activity.phase);
+  const inProgress = loop.deleting || ['generating', 'running', 'optimizing', 'project-running', 'initial-run'].includes(activity.phase);
   const runs = [...jobs.filter((job) => job.kind === 'run').map((job) => ({id: job.id, type: 'analysis', time: job.createdAt || '', job})),
     ...projectTasks.map((task) => ({id: task.id, type: 'project', time: task.createdAt || '', task}))].sort((a,b) => a.time.localeCompare(b.time) || a.id.localeCompare(b.id));
   const selected = runs.find((run) => run.id === selectedRun) || [...runs].reverse().find((run) => run.type==='analysis' && busyJob(run.job) || run.type==='project' && ['starting','running','paused'].includes(run.task.card?.status)) || [...runs].reverse().find((run) => run.type === 'analysis' ? !run.job.closedAt : run.task.status !== 'closed') || runs.at(-1);
@@ -422,7 +426,7 @@ export function initLoops(api, boardActions = {}) {
       byID('loops-list').innerHTML=renderLoopList(list,id,detail);
       updateLoopInspector(byID('loop-detail'),detail,selectedVersion,sourceJob,panel,selected);
       loadSelectedRun();
-      if(!detail.loop.deleting && ((projectTasks||[]).some(t=>['pending','processing'].includes(t.review?.state) || t.status!=='closed'&&['starting','running','paused'].includes(t.card?.status)) || (detail.jobs||[]).some(busyJob) || (detail.rounds||[]).some(liveRound)))refreshTimer=setTimeout(refreshLoops,1000);
+      if(!detail.loop.deleting && (detail.initialRun?.state==='waiting' || (projectTasks||[]).some(t=>['pending','processing'].includes(t.review?.state) || t.status!=='closed'&&['starting','running','paused'].includes(t.card?.status)) || (detail.jobs||[]).some(busyJob) || (detail.rounds||[]).some(liveRound)))refreshTimer=setTimeout(refreshLoops,1000);
     }catch(error){
       if(request!==sequence)return;
       if(error.status===404&&deletingLoops.has(id))return;
