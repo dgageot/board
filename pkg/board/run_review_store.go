@@ -36,7 +36,7 @@ func (s *SQLiteStore) ObserveRun(cardID, root string, seq uint64, raw []byte) er
 			return err
 		}
 		review.State = row.State
-		if seq <= review.LastSeq {
+		if seq != 0 && seq <= review.LastSeq {
 			return nil
 		}
 		if err := review.observe(root, seq, raw); err != nil {

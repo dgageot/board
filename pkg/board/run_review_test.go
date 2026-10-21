@@ -49,3 +49,41 @@ func TestRunAssessmentValidatesEvidenceLabels(t *testing.T) {
 	require.NoError(t, validAssessment(RunAssessment{Quality: "unknown", Efficiency: "mixed", ChangeImpact: "inconclusive", Summary: "CI evidence absent"}))
 	require.Error(t, validAssessment(RunAssessment{Quality: "perfect", Summary: "Trust me"}))
 }
+
+func TestRunReviewGapsNeverClaimCompleteEvidence(t *testing.T) {
+	for _, gap := range []bool{false, true} {
+		review := RunReview{State: "observing"}
+		require.NoError(t, review.observe("root", 1, []byte(`{"type":"stream_started","session_id":"root","timestamp":"2026-10-21T10:00:00Z"}`)))
+		if gap {
+			require.NoError(t, review.observe("root", 0, []byte(`{"type":"gap"}`)))
+		}
+		require.NoError(t, review.observe("root", 3, []byte(`{"type":"stream_stopped","session_id":"root","reason":"normal","timestamp":"2026-10-21T10:00:02Z"}`)))
+		assert.False(t, review.Complete)
+		assert.Nil(t, review.Cost)
+	}
+}
+
+func TestRunReviewTracksDetachedChildrenAndMissingUsage(t *testing.T) {
+	review := RunReview{State: "observing"}
+	for i, event := range []string{
+		`{"type":"stream_started","session_id":"root","timestamp":"2026-10-21T10:00:00Z"}`,
+		`{"type":"background_agent_status","session_id":"child","running":true}`,
+		`{"type":"token_usage","session_id":"root","usage":{"cost":0.1}}`,
+		`{"type":"stream_stopped","session_id":"root","reason":"normal","timestamp":"2026-10-21T10:00:02Z"}`,
+	} {
+		require.NoError(t, review.observe("root", uint64(i+1), []byte(event)))
+	}
+	assert.False(t, review.Complete)
+	assert.Nil(t, review.Cost)
+	complete := RunReview{State: "observing"}
+	for i, event := range []string{
+		`{"type":"stream_started","session_id":"root","timestamp":"2026-10-21T10:00:00Z"}`,
+		`{"type":"stream_started","session_id":"child","timestamp":"2026-10-21T10:00:00Z"}`,
+		`{"type":"stream_stopped","session_id":"child","reason":"normal","timestamp":"2026-10-21T10:00:01Z"}`,
+		`{"type":"token_usage","session_id":"root","usage":{"cost":0.1}}`,
+		`{"type":"stream_stopped","session_id":"root","reason":"normal","timestamp":"2026-10-21T10:00:02Z"}`,
+	} {
+		require.NoError(t, complete.observe("root", uint64(i+1), []byte(event)))
+	}
+	assert.Nil(t, complete.Cost)
+}

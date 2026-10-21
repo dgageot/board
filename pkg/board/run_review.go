@@ -25,6 +25,8 @@ type RunReview struct {
 	ExpectedActive string             `json:"expectedActive,omitempty"`
 	LastSeq        uint64             `json:"lastSeq,omitempty"`
 	OpenStreams    map[string]int     `json:"openStreams,omitempty"`
+	SeenSessions   map[string]bool    `json:"seenSessions,omitempty"`
+	Background     map[string]bool    `json:"background,omitempty"`
 	Usage          map[string]float64 `json:"usage,omitempty"`
 	Events         []json.RawMessage  `json:"events,omitempty"`
 	EventBytes     int                `json:"eventBytes,omitempty"`
@@ -41,7 +43,7 @@ type RunAssessment struct {
 }
 
 func (r *RunReview) observe(root string, seq uint64, raw []byte) error {
-	if seq == 0 || seq <= r.LastSeq || r.FinishedAt != "" {
+	if r.FinishedAt != "" {
 		return nil
 	}
 	var event struct {
@@ -49,6 +51,7 @@ func (r *RunReview) observe(root string, seq uint64, raw []byte) error {
 		SessionID string    `json:"session_id"`
 		Timestamp time.Time `json:"timestamp"`
 		Reason    string    `json:"reason"`
+		Running   bool      `json:"running"`
 		Usage     *struct {
 			Cost float64 `json:"cost"`
 		} `json:"usage"`
@@ -56,12 +59,19 @@ func (r *RunReview) observe(root string, seq uint64, raw []byte) error {
 	if err := json.Unmarshal(raw, &event); err != nil {
 		return err
 	}
-	r.LastSeq = seq
 	if event.Type == "gap" {
 		r.Complete = false
 		r.Truncated = true
 		return nil
 	}
+	if seq == 0 || seq <= r.LastSeq {
+		return nil
+	}
+	if seq > r.LastSeq+1 {
+		r.Complete = false
+		r.Truncated = true
+	}
+	r.LastSeq = seq
 	if r.StartedAt == "" {
 		if event.Type != "stream_started" || event.SessionID != root || event.Timestamp.IsZero() {
 			return nil
@@ -71,9 +81,20 @@ func (r *RunReview) observe(root string, seq uint64, raw []byte) error {
 		r.Outcome = "running"
 		r.OpenStreams = map[string]int{}
 		r.Usage = map[string]float64{}
+		r.SeenSessions = map[string]bool{}
+		r.Background = map[string]bool{}
 	}
 	if event.Type == "stream_started" && event.SessionID != "" {
 		r.OpenStreams[event.SessionID]++
+		r.SeenSessions[event.SessionID] = true
+	}
+	if event.Type == "background_agent_status" && event.SessionID != "" {
+		r.SeenSessions[event.SessionID] = true
+		if event.Running {
+			r.Background[event.SessionID] = true
+		} else {
+			delete(r.Background, event.SessionID)
+		}
 	}
 	if event.Type == "token_usage" && event.Usage != nil && event.SessionID != "" {
 		cost := event.Usage.Cost
@@ -120,11 +141,16 @@ func (r *RunReview) finish(reason string, at time.Time) {
 		r.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
 		r.Complete = false
 	}
-	if len(r.OpenStreams) > 0 {
+	if len(r.OpenStreams) > 0 || len(r.Background) > 0 {
 		r.Complete = false
 	}
 	var cost float64
-	priced := len(r.Usage) > 0
+	priced := len(r.Usage) > 0 && r.Complete
+	for session := range r.SeenSessions {
+		if _, ok := r.Usage[session]; !ok {
+			priced = false
+		}
+	}
 	for _, value := range r.Usage {
 		cost += value
 		priced = priced && value > 0
@@ -137,7 +163,7 @@ func (r *RunReview) finish(reason string, at time.Time) {
 
 func relevantRunEvent(kind string) bool {
 	switch kind {
-	case "stream_started", "stream_stopped", "agent_choice", "tool_call", "tool_call_response", "token_usage", "error", "budget_exceeded", "warning":
+	case "stream_started", "stream_stopped", "background_agent_status", "agent_choice", "tool_call", "tool_call_response", "token_usage", "error", "budget_exceeded", "warning":
 		return true
 	default:
 		return false
