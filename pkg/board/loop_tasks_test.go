@@ -46,9 +46,9 @@ func taskFixture(t *testing.T) (*Board, *SQLiteStore, loops.Loop, *Project) {
 	return b, store, loop, project
 }
 
-func taskRequest(t *testing.T, b *Board, loopID string, project *Project, id string, consent bool) *httptest.ResponseRecorder {
+func taskRequest(t *testing.T, b *Board, loopID string, project *Project, id string) *httptest.ResponseRecorder {
 	t.Helper()
-	body, err := json.Marshal(map[string]any{"requestId": id, "versionId": "workflow", "projectId": project.ID, "repoPath": project.RepoPath, "agent": project.Agent, "confirmed": consent})
+	body, err := json.Marshal(map[string]any{"requestId": id, "versionId": "workflow", "projectId": project.ID, "repoPath": project.RepoPath, "agent": project.Agent})
 	require.NoError(t, err)
 	req := httptest.NewRequest(http.MethodPost, "/api/loops/"+loopID+"/tasks", strings.NewReader(string(body)))
 	req.SetPathValue("id", loopID)
@@ -75,13 +75,13 @@ func TestLoopTaskReservesBeforeLaunchAndDeduplicates(t *testing.T) {
 		return nil
 	}}
 	b.sessions = sessions
-	rec := taskRequest(t, b, loop.ID, project, "request-one", true)
+	rec := taskRequest(t, b, loop.ID, project, "request-one")
 	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
 	var task ProjectTask
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &task))
 	t.Cleanup(func() { b.controller.Stop(task.CardID) })
 	assert.Equal(t, "launched", task.Status)
-	rec = taskRequest(t, b, loop.ID, project, "request-one", true)
+	rec = taskRequest(t, b, loop.ID, project, "request-one")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, int32(1), sessions.calls.Load())
 	require.NoError(t, store.DeleteCard(task.CardID))
@@ -91,14 +91,28 @@ func TestLoopTaskReservesBeforeLaunchAndDeduplicates(t *testing.T) {
 	assert.Equal(t, loop.Description, tasks[0].Task)
 }
 
-func TestLoopTaskRejectsMissingConsentAndChangedProject(t *testing.T) {
+func TestLoopTaskRejectsMissingRequestIDAndChangedProject(t *testing.T) {
 	b, store, loop, project := taskFixture(t)
-	rec := taskRequest(t, b, loop.ID, project, "unconfirmed", false)
+	rec := taskRequest(t, b, loop.ID, project, "")
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	stale := *project
 	stale.Agent = "changed"
-	rec = taskRequest(t, b, loop.ID, &stale, "request-one", true)
+	rec = taskRequest(t, b, loop.ID, &stale, "request-one")
 	assert.Equal(t, http.StatusConflict, rec.Code)
+	cards, err := store.ListCards()
+	require.NoError(t, err)
+	assert.Empty(t, cards)
+}
+
+func TestLoopTaskStillRequiresProjectSelection(t *testing.T) {
+	b, store, loop, project := taskFixture(t)
+	sessions := &taskSessions{launch: func(string, string) error { return nil }}
+	b.sessions = sessions
+	missing := *project
+	missing.ID = ""
+	rec := taskRequest(t, b, loop.ID, &missing, "request-one")
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Zero(t, sessions.calls.Load())
 	cards, err := store.ListCards()
 	require.NoError(t, err)
 	assert.Empty(t, cards)
@@ -108,7 +122,7 @@ func TestLoopTaskFailedLaunchIsNeverReplayed(t *testing.T) {
 	b, store, loop, project := taskFixture(t)
 	sessions := &taskSessions{launch: func(string, string) error { return errors.New("launch failed") }}
 	b.sessions = sessions
-	rec := taskRequest(t, b, loop.ID, project, "request-one", true)
+	rec := taskRequest(t, b, loop.ID, project, "request-one")
 	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
 	task, err := store.GetProjectTask("request-one")
 	require.NoError(t, err)
@@ -118,7 +132,7 @@ func TestLoopTaskFailedLaunchIsNeverReplayed(t *testing.T) {
 	t.Cleanup(func() { b.controller.Stop(task.CardID) })
 	assert.Equal(t, StatusError, card.Status)
 	require.ErrorContains(t, b.controller.relaunch(card, ""), "not automatically relaunched")
-	rec = taskRequest(t, b, loop.ID, project, "request-one", true)
+	rec = taskRequest(t, b, loop.ID, project, "request-one")
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, int32(1), sessions.calls.Load())
 }
@@ -129,7 +143,7 @@ func TestLoopTaskReservationFailureNeverLaunches(t *testing.T) {
 	require.NoError(t, err)
 	sessions := &taskSessions{launch: func(string, string) error { return nil }}
 	b.sessions = sessions
-	rec := taskRequest(t, b, loop.ID, project, "request-one", true)
+	rec := taskRequest(t, b, loop.ID, project, "request-one")
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.Zero(t, sessions.calls.Load())
 	cards, err := store.ListCards()
@@ -143,7 +157,7 @@ func TestLoopTaskPersistenceFailureStillMonitorsLaunch(t *testing.T) {
 	require.NoError(t, err)
 	sessions := &taskSessions{launch: func(string, string) error { return nil }}
 	b.sessions = sessions
-	rec := taskRequest(t, b, loop.ID, project, "request-one", true)
+	rec := taskRequest(t, b, loop.ID, project, "request-one")
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 	task, err := store.GetProjectTask("request-one")
 	require.NoError(t, err)
@@ -175,7 +189,7 @@ func TestDeletingReservedLoopTaskWaitsForLaunchThenCleansUp(t *testing.T) {
 	sessions := &blockingTaskSessions{entered: make(chan struct{}), release: make(chan struct{})}
 	b.sessions = sessions
 	launched := make(chan struct{})
-	body, err := json.Marshal(map[string]any{"requestId": "request-one", "versionId": "workflow", "projectId": project.ID, "repoPath": project.RepoPath, "agent": project.Agent, "confirmed": true})
+	body, err := json.Marshal(map[string]any{"requestId": "request-one", "versionId": "workflow", "projectId": project.ID, "repoPath": project.RepoPath, "agent": project.Agent})
 	require.NoError(t, err)
 	request := httptest.NewRequest(http.MethodPost, "/api/loops/"+loop.ID+"/tasks", strings.NewReader(string(body)))
 	request.SetPathValue("id", loop.ID)
@@ -219,7 +233,7 @@ func TestProjectTaskUsesExactGeneratedWorkflow(t *testing.T) {
 func TestProjectExecutionRejectsAnalysisLoop(t *testing.T) {
 	b, store, loop, project := taskFixture(t)
 	require.NoError(t, b.loops.SetMode(t.Context(), loop.ID, loops.ModeAnalysis))
-	rec := taskRequest(t, b, loop.ID, project, "wrong-mode", true)
+	rec := taskRequest(t, b, loop.ID, project, "wrong-mode")
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	cards, err := store.ListCards()
 	require.NoError(t, err)

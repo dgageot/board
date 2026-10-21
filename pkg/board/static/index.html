@@ -110,9 +110,7 @@
       <label>Project<select id="loop-task-project" required autocomplete="off" data-1p-ignore><option value="">Choose a project…</option></select></label>
       <p id="loop-task-project-status" class="loop-form-help" role="note"></p>
       <p id="loop-task-agent" class="loop-project-context"></p>
-      <p class="loop-form-help">Runs the selected agent version with the project’s tools in a fresh worktree. The result is judged and the next version is prepared automatically; only a later run can validate an improvement.</p>
-      <p class="loop-job-error">Normal Board privileges: local tools, network and available credentials, with automatic tool approval. The agent can edit files, run commands, sign commits or publish remotely. A worktree is not a security sandbox.</p>
-      <label class="loop-consent"><input id="loop-task-consent" type="checkbox" required autocomplete="off" data-1p-ignore> I authorize this project agent to carry out the task with those privileges.</label>
+      <p class="loop-form-help">Runs the selected version with the project’s configured agent and tools in a fresh worktree. The result is judged and the next version is prepared automatically; only a later run can validate an improvement.</p>
       <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Run task</button></div>
     </form>
   </dialog>

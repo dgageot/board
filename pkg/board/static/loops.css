@@ -155,8 +155,6 @@
 .loop-prose hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
 .loop-prose .loop-source-text { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 var(--font-mono); }
 @media (max-width: 560px) { .loop-prose { font-size: 13px; padding-right: 0; } }
-.loop-consent { display: flex; align-items: flex-start; gap: 10px; line-height: 1.6; }
-.loop-consent input[type="checkbox"] { width: auto; flex: 0 0 auto; margin-top: 4px; }
 .loop-project-task { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
 .loop-tabs { display:flex; gap:22px; border-bottom:1px solid var(--border); margin:0 0 18px; }
 .loop-tabs button { background:none; border:0; border-bottom:2px solid transparent; padding:12px 2px; color:var(--text-muted); cursor:pointer; }

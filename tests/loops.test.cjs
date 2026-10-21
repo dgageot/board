@@ -594,18 +594,40 @@ test('custom model settings preserve blank choices without substituting auto', a
  }
 });
 
-test('project tasks require fresh explicit consent and submit the reviewed agent', async () => {
- const h=loopAppHarness();await h.navigate('first');await h.action('project-task');
+test('Run task starts the selected project agent without extra authorization', async () => {
+ const h=loopAppHarness({confirm:()=>assert.fail('Run must not ask for extra permission')});
+ await h.navigate('first');await h.action('project-task');
  assert.equal(h.element('loop-project-task-dialog').open,true);
- assert.equal(h.element('loop-task-consent').checked,false);
- await h.submit('loop-project-task-form');
  assert.equal(h.calls.filter((call)=>call.path.endsWith('/tasks') && call.options?.method==='POST').length,0);
- h.element('loop-task-consent').checked=true;
  await h.submit('loop-project-task-form');
  const request=h.calls.find((call)=>call.path==='/loops/first/tasks' && call.options?.method==='POST');
  assert.ok(request);
  const input=JSON.parse(request.options.body);
- assert.equal(input.confirmed,true);assert.equal(input.agent,'project-agent');assert.equal(input.repoPath,'/repo/one');assert.ok(input.requestId);
+ assert.equal(Object.hasOwn(input,'confirmed'),false);assert.equal(input.agent,'project-agent');assert.equal(input.repoPath,'/repo/one');assert.ok(input.requestId);
+});
+
+test('project selection stays required and does not start work by itself', async () => {
+ const h=loopAppHarness();await h.navigate('first');await h.action('project-task');
+ h.element('loop-task-project').value='';
+ await h.submit('loop-project-task-form');
+ assert.equal(h.calls.filter(c=>c.path.endsWith('/tasks')&&c.options?.method==='POST').length,0);
+ h.element('loop-task-project').value='project-second';
+ h.element('loop-task-project').handlers.change();
+ assert.match(h.element('loop-task-agent').textContent,/second-agent/);
+ assert.equal(h.calls.filter(c=>c.path.endsWith('/tasks')&&c.options?.method==='POST').length,0);
+ await h.submit('loop-project-task-form');
+ const request=h.calls.find(c=>c.path.endsWith('/tasks')&&c.options?.method==='POST');
+ assert.equal(JSON.parse(request.options.body).projectId,'project-second');
+ assert.equal(JSON.parse(request.options.body).agent,'second-agent');
+});
+
+test('double submitting Run task launches only once without extra permission', async () => {
+ let resolve;const pending=new Promise(r=>resolve=r);
+ const h=loopAppHarness({api:(path,opts)=>path.endsWith('/tasks')&&opts?.method==='POST'?pending:undefined});
+ await h.navigate('first');await h.action('project-task');
+ await h.submit('loop-project-task-form');await h.submit('loop-project-task-form');
+ assert.equal(h.calls.filter(c=>c.path.endsWith('/tasks')&&c.options?.method==='POST').length,1);
+ resolve({id:'new-task'});await new Promise(setImmediate);
 });
 
 test('idle Board task status never claims verified success', async () => {

@@ -13,7 +13,7 @@ import (
 	"github.com/dgageot/board/pkg/loops"
 )
 
-// ProjectTask links an explicitly authorized Board task to its original loop contract.
+// ProjectTask links a user-started Board task to its original loop contract.
 type ProjectTask struct {
 	ID          string `db:"id"           json:"id"`
 	LoopID      string `db:"loop_id"      json:"loopId"`
@@ -94,14 +94,13 @@ func (b *Board) handleRunLoopProjectTask(w http.ResponseWriter, r *http.Request)
 		ProjectID string `json:"projectId"`
 		Agent     string `json:"agent"`
 		RepoPath  string `json:"repoPath"`
-		Confirmed bool   `json:"confirmed"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if !input.Confirmed || input.RequestID == "" || len(input.RequestID) > 128 || input.ProjectID == "" {
-		writeError(w, fmt.Errorf("%w: explicit project-task consent and a request ID are required", errBadInput))
+	if input.RequestID == "" || len(input.RequestID) > 128 || input.ProjectID == "" {
+		writeError(w, fmt.Errorf("%w: a project and request ID are required", errBadInput))
 		return
 	}
 	store, ok := b.store.(projectTaskStore)

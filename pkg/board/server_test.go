@@ -129,7 +129,7 @@ func TestLoopsCopyKeepsOperationalGuidanceWithoutSlogans(t *testing.T) {
 	assert.Contains(t, page, "Promotion is manual.")
 }
 
-func TestProjectTaskConsentExplainsExecutionPrivileges(t *testing.T) {
+func TestProjectTaskRunNeedsNoExtraAuthorization(t *testing.T) {
 	handler := testHandler(t)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
@@ -138,9 +138,10 @@ func TestProjectTaskConsentExplainsExecutionPrivileges(t *testing.T) {
 	require.True(t, found)
 	dialog, _, found = strings.Cut(dialog, "</dialog>")
 	require.True(t, found)
-	assert.Contains(t, dialog, `id="loop-task-consent" type="checkbox" required`)
-	assert.Contains(t, dialog, "automatic tool approval")
-	assert.Contains(t, dialog, "not a security sandbox")
-	assert.Contains(t, dialog, "publish remotely")
-	assert.Contains(t, dialog, "selected agent version")
+	assert.NotContains(t, dialog, `type="checkbox"`)
+	assert.NotContains(t, dialog, "I authorize")
+	assert.NotContains(t, dialog, `class="loop-job-error"`)
+	assert.Contains(t, dialog, "project’s configured agent and tools")
+	assert.Contains(t, dialog, "fresh worktree")
+	assert.Contains(t, dialog, `type="submit" class="btn btn-primary">Run task</button>`)
 }

@@ -581,7 +581,6 @@ export function initLoops(api, boardActions = {}) {
       taskVersion = selectedLoopVersion(detail,selectedVersion)?.id || '';
       if(!taskVersion){notice('Generate a project workflow first.',true);return;}
       taskRequestID = crypto.randomUUID();
-      byID('loop-task-consent').checked = false;
       taskProjects = [];
       byID('loop-task-agent').textContent = '';
       byID('loop-project-task-dialog').showModal();
@@ -804,7 +803,6 @@ export function initLoops(api, boardActions = {}) {
   function showTaskAgent() {
     const project = taskProjects.find((item) => item.id === byID('loop-task-project').value);
     byID('loop-task-agent').textContent = project ? `${project.agent} · ${project.repoPath}` : '';
-    byID('loop-task-consent').checked = false;
   }
   byID('loop-task-project').addEventListener('change', () => {
     if (taskSubmitting) return;
@@ -815,13 +813,13 @@ export function initLoops(api, boardActions = {}) {
     event.preventDefault();
     if (taskSubmitting) return;
     const project = taskProjects.find((item) => item.id === byID('loop-task-project').value);
-    if (!project || !byID('loop-task-consent').checked) return;
+    if (!project) return;
     const loopID = taskLoop, requestId = taskRequestID, versionId=taskVersion;
     taskSubmitting = true;
     byID('loop-task-project').disabled = true;
     submit(event.target, async () => {
       try {
-        const task=await api(`/loops/${loopID}/tasks`, { method: 'POST', body: JSON.stringify({ requestId, versionId, projectId: project.id, repoPath: project.repoPath, agent: project.agent, confirmed: true }) });
+        const task=await api(`/loops/${loopID}/tasks`, { method: 'POST', body: JSON.stringify({ requestId, versionId, projectId: project.id, repoPath: project.repoPath, agent: project.agent }) });
         if(detail?.loop.id===loopID){selectedRun=task.id;panel='runs';runLoad++;}
         await refreshLoops();
       } finally { taskSubmitting = false; byID('loop-task-project').disabled = false; }
