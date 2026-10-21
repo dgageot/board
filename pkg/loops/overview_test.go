@@ -2,6 +2,7 @@ package loops
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -40,12 +41,14 @@ func TestRecentInputsDoNotLoseOlderCasesBehindRetries(t *testing.T) {
 	store := testStore(t)
 	loop := testLoop(t, store)
 	project := &ProjectSnapshot{ID: "project"}
-	for _, input := range []string{"A", "B"} {
-		_, err := store.newJob(t.Context(), loop.ID, "v", "run", input, project)
+	inputs := append([]string{"A", "B"}, make([]string, 25)...)
+	for i, input := range inputs {
+		if input == "" {
+			input = "C"
+		}
+		job, err := store.newJob(t.Context(), loop.ID, "v", "run", input, project)
 		require.NoError(t, err)
-	}
-	for range 25 {
-		_, err := store.newJob(t.Context(), loop.ID, "v", "run", "C", project)
+		_, err = store.db.Exec(`UPDATE loop_jobs SET created_at=? WHERE id=?`, fmt.Sprintf("2026-10-21T10:00:%02dZ", i), job.ID)
 		require.NoError(t, err)
 	}
 	jobs, err := store.LatestRunInputs(t.Context(), loop.ID, "v")
