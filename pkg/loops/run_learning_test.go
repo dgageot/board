@@ -3,6 +3,7 @@ package loops
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -75,4 +76,35 @@ func TestInvalidJudgeStopsBeforeDesign(t *testing.T) {
 	assert.Equal(t, 1, calls)
 	assert.NotEmpty(t, result.JudgeJob)
 	assert.Empty(t, result.RevisionJobs)
+}
+
+func TestLiveRunLearning(t *testing.T) {
+	if os.Getenv("BOARD_LOOPS_SMOKE") != "1" {
+		t.Skip("set BOARD_LOOPS_SMOKE=1 to call the provider")
+	}
+	store := testStore(t)
+	loop := testLoop(t, store)
+	service, err := NewService(t.Context(), store, &ProcessRunner{Directory: t.TempDir()}, "auto", func() {})
+	require.NoError(t, err)
+	t.Cleanup(service.Close)
+	result, err := service.LearnRun(t.Context(), loop.ID, RunLearningRequest{
+		RunID: "synthetic-test", Project: "test-fixture", Complete: true, Task: "Update dependencies and run tests", Criteria: "Actual updated files and passing tests",
+		Parent:   Version{ID: "fixture", YAML: "agents:\n  root:\n    model: auto\n    instruction: Update the dependencies. Report the result.\n"},
+		Evidence: json.RawMessage(`{"fixture":true,"outcome":"normal","events":[{"type":"tool_call","command":"go get example.com/module@v1.2.3"},{"type":"tool_call_response","response":"dependency updated"},{"type":"agent_choice","content":"Dependency updated. I did not run tests."}]}`),
+		History:  json.RawMessage(`{"recentRuns":[]}`),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, result.YAML, result.Error)
+	var assessment RunAssessment
+	require.NoError(t, json.Unmarshal(result.Assessment, &assessment))
+	require.NoError(t, assessment.Validate())
+	assert.NotEqual(t, "satisfied", assessment.Quality)
+	_, err = ProjectInstruction(Version{YAML: result.YAML})
+	require.NoError(t, err)
+	jobs, err := store.Jobs(t.Context(), loop.ID)
+	require.NoError(t, err)
+	for _, job := range jobs {
+		assert.Contains(t, []string{"run_judge", "run_revision"}, job.Kind)
+	}
+	t.Logf("Judged synthetic execution and prepared a validated patch; quality=%s. No project task executed.", assessment.Quality)
 }
