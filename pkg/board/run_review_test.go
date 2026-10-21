@@ -87,3 +87,38 @@ func TestRunReviewTracksDetachedChildrenAndMissingUsage(t *testing.T) {
 	}
 	assert.Nil(t, complete.Cost)
 }
+
+func TestUnpricedBudgetKeepsPositiveSubtotalUnknown(t *testing.T) {
+	review := RunReview{State: "observing"}
+	for i, event := range []string{
+		`{"type":"stream_started","session_id":"root","timestamp":"2026-10-21T10:00:00Z"}`,
+		`{"type":"budget_usage","budgets":[{"unpriced":true}]}`,
+		`{"type":"token_usage","session_id":"root","usage":{"cost":0.4}}`,
+		`{"type":"stream_stopped","session_id":"root","reason":"normal","timestamp":"2026-10-21T10:00:02Z"}`,
+	} {
+		require.NoError(t, review.observe("root", uint64(i+1), []byte(event)))
+	}
+	assert.True(t, review.Complete)
+	assert.True(t, review.Unpriced)
+	assert.Nil(t, review.Cost)
+}
+
+func TestStoredReviewReplayKeepsFirstResultAndGapUncertainty(t *testing.T) {
+	worker, task := learningFixture(t)
+	_, err := worker.store.db.Exec(`UPDATE loop_run_reviews SET state='observing',data='{}' WHERE task_id=?`, task.ID)
+	require.NoError(t, err)
+	start := []byte(`{"type":"stream_started","session_id":"root","timestamp":"2026-10-21T10:00:00Z"}`)
+	require.NoError(t, worker.store.ObserveRun(task.CardID, "root", 1, start))
+	require.NoError(t, worker.store.ObserveRun(task.CardID, "root", 1, start))
+	require.NoError(t, worker.store.ObserveRun(task.CardID, "root", 0, []byte(`{"type":"gap"}`)))
+	require.NoError(t, worker.store.ObserveRun(task.CardID, "root", 2, []byte(`{"type":"stream_stopped","session_id":"root","reason":"normal","timestamp":"2026-10-21T10:00:02Z"}`)))
+	review, err := worker.store.RunReview(task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "pending", review.State)
+	assert.False(t, review.Complete)
+	assert.Len(t, review.Events, 2)
+	require.NoError(t, worker.store.ObserveRun(task.CardID, "root", 3, start))
+	frozen, err := worker.store.RunReview(task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, review, frozen)
+}

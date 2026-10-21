@@ -1,12 +1,14 @@
 package board
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -178,6 +180,11 @@ func (w *runLearningWorker) history(ctx context.Context, task ProjectTask) (json
 	}
 	defer rows.Close()
 	items := []map[string]any{}
+	quality := map[string]int{}
+	efficiency := map[string]int{}
+	impact := map[string]int{}
+	suggestions := map[string]int{}
+	total := 0
 	omitted := 0
 	used := 0
 	for rows.Next() {
@@ -185,6 +192,16 @@ func (w *runLearningWorker) history(ctx context.Context, task ProjectTask) (json
 		var outcome, cost, duration, assessment, complete, truncated any
 		if err := rows.Scan(&id, &project, &version, &base, &outcome, &cost, &duration, &assessment, &complete, &truncated); err != nil {
 			return nil, err
+		}
+		total++
+		var verdict RunAssessment
+		if text, ok := assessment.(string); ok && json.Unmarshal([]byte(text), &verdict) == nil && verdict.Validate() == nil {
+			quality[verdict.Quality]++
+			efficiency[verdict.Efficiency]++
+			impact[verdict.ChangeImpact]++
+			for _, hint := range verdict.Improvements {
+				suggestions[hint]++
+			}
 		}
 		item := map[string]any{"run": id, "project": project, "version": version, "base": base, "outcome": outcome, "cost": cost, "durationMs": duration, "assessment": assessment, "complete": complete, "truncated": truncated}
 		data, err := json.Marshal(item)
@@ -201,7 +218,24 @@ func (w *runLearningWorker) history(ctx context.Context, task ProjectTask) (json
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return json.Marshal(map[string]any{"recentRuns": items, "omittedOlderRuns": omitted, "contract": "Same immutable loop task and criteria as the current run"})
+	type recurring struct {
+		Suggestion string `json:"suggestion"`
+		Count      int    `json:"count"`
+	}
+	themes := []recurring{}
+	for hint, count := range suggestions {
+		themes = append(themes, recurring{hint, count})
+	}
+	slices.SortFunc(themes, func(a, b recurring) int {
+		if c := cmp.Compare(b.Count, a.Count); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Suggestion, b.Suggestion)
+	})
+	if len(themes) > 12 {
+		themes = themes[:12]
+	}
+	return json.Marshal(map[string]any{"allRuns": map[string]any{"count": total, "quality": quality, "efficiency": efficiency, "changeImpact": impact, "recurringSuggestions": themes, "note": "Aggregate includes all preceding runs, across projects and versions; not a controlled comparison."}, "recentRuns": items, "omittedOlderRuns": omitted, "contract": "Same immutable loop task and criteria as the current run"})
 }
 
 func (w *runLearningWorker) publish(ctx context.Context, task ProjectTask, review RunReview, result loops.RunLearningResult) error {

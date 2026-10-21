@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -179,4 +182,70 @@ func TestMissingStopOnCloseKeepsUnknownEvidence(t *testing.T) {
 	assert.False(t, review.Complete)
 	assert.Nil(t, review.Cost)
 	assert.Nil(t, review.DurationMS)
+}
+
+func TestBoundedHistoryKeepsLearningFromAllRuns(t *testing.T) {
+	worker, task := learningFixture(t)
+	for i := range 55 {
+		id := fmt.Sprintf("history-%d", i)
+		_, err := worker.store.db.Exec(`INSERT INTO loop_project_tasks(id,loop_id,project_id,project_name,repo_path,agent,task,criteria,prompt,card_id,base,status,error,created_at,version_id) SELECT ?,loop_id,project_id,project_name,repo_path,agent,task,criteria,prompt,?,base,status,error,created_at,version_id FROM loop_project_tasks WHERE id=?`, id, id, task.ID)
+		require.NoError(t, err)
+		data := `{"complete":true,"assessment":{"quality":"failed","efficiency":"mixed","changeImpact":"hurt","summary":"Missing tests","improvements":["Run tests"]}}`
+		_, err = worker.store.db.Exec(`INSERT INTO loop_run_reviews(task_id,state,data) VALUES (?,'ready',?)`, id, data)
+		require.NoError(t, err)
+	}
+	last := *task
+	last.ID = "history-54"
+	data, err := worker.history(t.Context(), last)
+	require.NoError(t, err)
+	var history struct {
+		RecentRuns []any `json:"recentRuns"`
+		Omitted    int   `json:"omittedOlderRuns"`
+		AllRuns    struct {
+			Count   int            `json:"count"`
+			Quality map[string]int `json:"quality"`
+		} `json:"allRuns"`
+	}
+	require.NoError(t, json.Unmarshal(data, &history))
+	assert.Len(t, history.RecentRuns, 50)
+	assert.Equal(t, 5, history.Omitted)
+	assert.Equal(t, 55, history.AllRuns.Count)
+	assert.Equal(t, 54, history.AllRuns.Quality["failed"])
+}
+
+func TestStartupInterruptsPreparationWithoutReplayingTask(t *testing.T) {
+	worker, task := learningFixture(t)
+	_, err := worker.store.db.Exec(`UPDATE loop_run_reviews SET state='processing' WHERE task_id=?`, task.ID)
+	require.NoError(t, err)
+	service, err := loops.NewService(t.Context(), worker.loops, &loops.ProcessRunner{Directory: t.TempDir()}, "auto", func() {})
+	require.NoError(t, err)
+	defer service.Close()
+	b := &Board{store: worker.store, loops: worker.loops, loopService: service}
+	stop := b.startRunLearning(t.Context())
+	stop()
+	review, err := worker.store.RunReview(task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "interrupted", review.State)
+	jobs, err := worker.loops.Jobs(t.Context(), task.LoopID)
+	require.NoError(t, err)
+	assert.Empty(t, jobs)
+}
+
+func TestRetryPreparationOnlyQueuesRecordedRun(t *testing.T) {
+	worker, task := learningFixture(t)
+	_, err := worker.store.db.Exec(`UPDATE loop_run_reviews SET state='interrupted' WHERE task_id=?`, task.ID)
+	require.NoError(t, err)
+	b := &Board{store: worker.store, loops: worker.loops}
+	req := httptest.NewRequest(http.MethodPost, "/prepare", http.NoBody)
+	req.SetPathValue("id", task.LoopID)
+	req.SetPathValue("task", task.ID)
+	rec := httptest.NewRecorder()
+	b.handleRetryRunLearning(rec, req)
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	review, err := worker.store.RunReview(task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "pending", review.State)
+	rec = httptest.NewRecorder()
+	b.handleRetryRunLearning(rec, req)
+	assert.Equal(t, http.StatusConflict, rec.Code)
 }
