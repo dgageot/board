@@ -157,6 +157,7 @@ func TestNewSessionContextDeliversLiteralCommandAndPromptFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "new-session -d -P -F #{pane_id}")
 	assert.Contains(t, string(data), "send-keys -t %7 -l exec docker agent run")
+	assert.Contains(t, string(data), "--worktree=worktree --worktree-base base")
 	assert.Contains(t, string(data), "send-keys -t %7 Enter")
 	prompt, err := os.ReadFile(promptFilePath("session"))
 	require.NoError(t, err)
