@@ -1,10 +1,12 @@
 package git
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,4 +43,17 @@ func TestLocalExecutionBaseAlsoSupportsDiffAndCommits(t *testing.T) {
 	commits, err = Commits(repo, base)
 	require.NoError(t, err)
 	assert.Len(t, commits, 1)
+}
+
+func TestExecutionPreflightHonorsCancellation(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "git"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o700))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := ExecutionBase(ctx, dir)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.False(t, IsRepoContext(ctx, dir))
+	assert.Less(t, time.Since(start), 2*time.Second)
 }

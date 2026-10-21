@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/GianlucaP106/gotmux/gotmux"
@@ -201,6 +203,46 @@ func (s Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocke
 	}
 
 	return nil
+}
+
+// NewSessionContext bounds command delivery; cancellation may leave a created session.
+// Callers must retain the reservation rather than retry an ambiguous launch.
+func (s Sessions) NewSessionContext(ctx context.Context, sessionName, workDir, agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) error {
+	run := func(args ...string) ([]byte, error) {
+		cmd := exec.CommandContext(ctx, "tmux", append([]string{"-S", SocketPath()}, args...)...)
+		cmd.WaitDelay = time.Second
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("tmux %s: %s: %w", args[0], out, err)
+		}
+		return out, nil
+	}
+	out, err := run("new-session", "-d", "-P", "-F", "#{pane_id}", "-s", sessionName, "-c", workDir)
+	if err != nil {
+		return err
+	}
+	pane := strings.TrimSpace(string(out))
+	if pane == "" {
+		return errors.New("no pane in new session")
+	}
+	for _, args := range serverDefaults {
+		_, _ = run(args...)
+	}
+	if _, err := run("set-option", "-t", sessionName, "remain-on-exit", "on"); err != nil {
+		return err
+	}
+	promptFile := ""
+	if prompt != "" {
+		promptFile = promptFilePath(sessionID)
+		if err := os.WriteFile(promptFile, []byte(prompt), 0o600); err != nil {
+			return err
+		}
+	}
+	if _, err := run("send-keys", "-t", pane, "-l", "exec "+s.launchCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile)); err != nil {
+		return err
+	}
+	_, err = run("send-keys", "-t", pane, "Enter")
+	return err
 }
 
 // launchCommand passes only the helper socket through the interactive shell.

@@ -1,11 +1,13 @@
 package tmux
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/GianlucaP106/gotmux/gotmux"
@@ -128,4 +130,35 @@ func TestKillLookupFailure(t *testing.T) {
 func TestKillNoServer(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	require.NoError(t, Sessions{}.KillSession("not-found"))
+}
+
+func TestNewSessionContextCancelsBlockedCommand(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tmux"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o700))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := (Sessions{}).NewSessionContext(ctx, "s", dir, "agent", "session", "socket", "worktree", "HEAD", "")
+	require.Error(t, err)
+	require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+	assert.Less(t, time.Since(start), 2*time.Second)
+}
+
+func TestNewSessionContextDeliversLiteralCommandAndPromptFile(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "commands")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tmux"), []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TMUX_TEST_LOG\"\nif [ \"$3\" = new-session ]; then printf '%%7\\n'; fi\n"), 0o700))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TMPDIR", dir)
+	t.Setenv("TMUX_TEST_LOG", log)
+	require.NoError(t, (Sessions{}).NewSessionContext(t.Context(), "s", dir, "agent", "session", "socket", "worktree", "base", "task $(not shell)"))
+	data, err := os.ReadFile(log)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "new-session -d -P -F #{pane_id}")
+	assert.Contains(t, string(data), "send-keys -t %7 -l exec docker agent run")
+	assert.Contains(t, string(data), "send-keys -t %7 Enter")
+	prompt, err := os.ReadFile(promptFilePath("session"))
+	require.NoError(t, err)
+	assert.Equal(t, "task $(not shell)", string(prompt))
 }
