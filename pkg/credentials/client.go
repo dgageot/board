@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"slices"
@@ -27,14 +28,15 @@ func Exec(socket string, args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout+5*time.Second)
 	defer cancel()
-	env, err := fetchEnvironment(ctx, socket)
+	inherited := os.Environ()
+	env, err := fetchEnvironment(ctx, socket, inherited)
 	if err != nil {
 		return err
 	}
 	if env.Warning != "" {
 		log.Print(env.Warning)
 	}
-	values, err := commandEnvironment(os.Environ(), env)
+	values, err := commandEnvironment(inherited, env)
 	if err != nil {
 		return err
 	}
@@ -45,7 +47,7 @@ func Exec(socket string, args []string) error {
 	return syscall.Exec(path, args, values)
 }
 
-func fetchEnvironment(ctx context.Context, socket string) (environment, error) {
+func fetchEnvironment(ctx context.Context, socket string, inherited []string) (environment, error) {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
@@ -53,7 +55,11 @@ func fetchEnvironment(ctx context.Context, socket string) (environment, error) {
 	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://board/env", http.NoBody)
+	query := url.Values{}
+	for name := range secretReferences(inherited) {
+		query.Add("reference", name)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://board/env?"+query.Encode(), http.NoBody)
 	if err != nil {
 		return environment{}, err
 	}

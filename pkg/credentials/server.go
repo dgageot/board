@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -54,6 +55,7 @@ func Start(ctx context.Context, dir, source string, inherited []string) (_ *Serv
 	}()
 
 	references := secretReferences(inherited)
+	literals := literalEnvironment(inherited)
 	// tmux and shell startup files can retain an obsolete authentication socket.
 	// An empty value explicitly removes it; older helpers omit this field.
 	authSocket := ""
@@ -103,8 +105,15 @@ func Start(ctx context.Context, dir, source string, inherited []string) (_ *Serv
 		return nil, err
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /env", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /env", func(w http.ResponseWriter, r *http.Request) {
 		resolved := resolve()
+		// Replace stale tmux references with Board's current literal, if any.
+		resolved.Values = maps.Clone(resolved.Values)
+		for _, name := range r.URL.Query()["reference"] {
+			if value, ok := literals[name]; ok {
+				resolved.Values[name] = value
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(resolved)
@@ -129,6 +138,22 @@ func secretReferences(inherited []string) map[string]string {
 		}
 	}
 	return references
+}
+
+// literalEnvironment snapshots replacements without exporting unrelated values.
+func literalEnvironment(inherited []string) map[string]string {
+	values := make(map[string]string)
+	for _, entry := range inherited {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok || name == "" {
+			continue
+		}
+		delete(values, name)
+		if !strings.HasPrefix(value, "op://") {
+			values[name] = value
+		}
+	}
+	return values
 }
 
 // Independent lookups share neither a timeout nor a failure. Aliases reuse the

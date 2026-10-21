@@ -42,7 +42,7 @@ func TestSecretReferencesResolvedOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 10 {
 		wg.Go(func() {
-			env, err := fetchEnvironment(t.Context(), s.Socket)
+			env, err := fetchEnvironment(t.Context(), s.Socket, nil)
 			errors <- err
 			assert.Equal(t, map[string]string{
 				"SEARCH_TOKEN": "fake-shared-key", "SEARCH_ALIAS": "fake-shared-key", "OTHER_TOKEN": "fake-shared-key",
@@ -68,7 +68,7 @@ func TestSecretFailureDoesNotBlockSigningOrOtherSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 	defer s.Close()
-	env, err := fetchEnvironment(t.Context(), s.Socket)
+	env, err := fetchEnvironment(t.Context(), s.Socket, nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, env.Signer)
 	assert.Contains(t, env.Warning, "Some credentials are unavailable")
@@ -95,7 +95,7 @@ func TestServerLockPermissionsAndRestart(t *testing.T) {
 	s, err = Start(t.Context(), dir, "", nil)
 	require.NoError(t, err)
 	defer s.Close()
-	_, err = fetchEnvironment(t.Context(), s.Socket)
+	_, err = fetchEnvironment(t.Context(), s.Socket, nil)
 	require.NoError(t, err)
 }
 
@@ -143,7 +143,7 @@ func TestAuthenticationSocketComesFromBoard(t *testing.T) {
 			s, err := Start(t.Context(), socketDir(t)+"/helper", "/signing-only/agent.sock", inherited)
 			require.NoError(t, err)
 			defer s.Close()
-			shared, err := fetchEnvironment(t.Context(), s.Socket)
+			shared, err := fetchEnvironment(t.Context(), s.Socket, nil)
 			require.NoError(t, err)
 			env, err := commandEnvironment([]string{"SSH_AUTH_SOCK=/stale/tmux.sock"}, shared)
 			require.NoError(t, err)
@@ -169,7 +169,7 @@ func TestAuthenticationSocketReference(t *testing.T) {
 			s, err := Start(t.Context(), dir+"/"+name, "", []string{"SSH_AUTH_SOCK=op://test/" + name})
 			require.NoError(t, err)
 			defer s.Close()
-			shared, err := fetchEnvironment(t.Context(), s.Socket)
+			shared, err := fetchEnvironment(t.Context(), s.Socket, nil)
 			require.NoError(t, err)
 			env, err := commandEnvironment([]string{"SSH_AUTH_SOCK=/stale"}, shared)
 			require.NoError(t, err)
@@ -245,7 +245,7 @@ func TestMissingReferencesClearStaleTmuxEnvironment(t *testing.T) {
 	s, err := Start(t.Context(), socketDir(t)+"/helper", "", nil)
 	require.NoError(t, err)
 	defer s.Close()
-	shared, err := fetchEnvironment(t.Context(), s.Socket)
+	shared, err := fetchEnvironment(t.Context(), s.Socket, nil)
 	require.NoError(t, err)
 	env, err := commandEnvironment([]string{"OLD_TOKEN=op://old/token", "OTHER_TOKEN=op://old/other", "LITERAL=preserved"}, shared)
 	require.NoError(t, err)
@@ -262,7 +262,7 @@ func TestSecretReferencesSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 	inherited[1] = "TOKEN=op://must-not-be-read"
-	shared, err := fetchEnvironment(t.Context(), s.Socket)
+	shared, err := fetchEnvironment(t.Context(), s.Socket, nil)
 	require.NoError(t, err)
 	assert.Empty(t, shared.Values)
 	assert.Empty(t, shared.Warning)
@@ -276,14 +276,14 @@ func TestReferenceChangesAcrossRestart(t *testing.T) {
 	s, err := Start(t.Context(), dir+"/helper", "", inherited)
 	require.NoError(t, err)
 	defer s.Close()
-	first, err := fetchEnvironment(t.Context(), s.Socket)
+	first, err := fetchEnvironment(t.Context(), s.Socket, nil)
 	require.NoError(t, err)
 	assert.Len(t, first.Values, 2)
 	s.Close()
 	s, err = Start(t.Context(), dir+"/helper", "", []string{"TOKEN=op://new/value"})
 	require.NoError(t, err)
 	defer s.Close()
-	second, err := fetchEnvironment(t.Context(), s.Socket)
+	second, err := fetchEnvironment(t.Context(), s.Socket, nil)
 	require.NoError(t, err)
 	child, err := commandEnvironment(inherited, second)
 	require.NoError(t, err)
