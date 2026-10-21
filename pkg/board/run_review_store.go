@@ -1,6 +1,7 @@
 package board
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -65,16 +66,16 @@ func (s *SQLiteStore) RunReview(taskID string) (RunReview, error) {
 	return review, nil
 }
 
-func reserveReview(tx *sqlx.Tx, task *ProjectTask) error {
+func reserveReview(ctx context.Context, tx *sqlx.Tx, task *ProjectTask) error {
 	var active string
-	if err := tx.QueryRow(`SELECT active_version FROM loops WHERE id=?`, task.LoopID).Scan(&active); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT active_version FROM loops WHERE id=?`, task.LoopID).Scan(&active); err != nil {
 		return err
 	}
 	data, err := json.Marshal(RunReview{State: "observing", ExpectedActive: active})
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(`INSERT INTO loop_run_reviews(task_id,data) VALUES (?,?)`, task.ID, string(data))
+	_, err = tx.ExecContext(ctx, `INSERT INTO loop_run_reviews(task_id,data) VALUES (?,?)`, task.ID, string(data))
 	return err
 }
 

@@ -89,7 +89,7 @@ func (s *SQLiteStore) finishLoopDelete(ctx context.Context, id string) error {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM loop_run_reviews WHERE task_id IN (SELECT id FROM loop_project_tasks WHERE loop_id=?)`, id); err != nil {
 			return err
 		}
-		for _, table := range []string{"loop_feedback", "loop_rounds", "loop_jobs", "loop_versions"} {
+		for _, table := range []string{"loop_initial_runs", "loop_feedback", "loop_rounds", "loop_jobs", "loop_versions"} {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE loop_id=?`, id); err != nil {
 				return err
 			}

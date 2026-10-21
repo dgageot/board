@@ -389,3 +389,21 @@ func TestCreateRejectsAdmissionBeforeSavingLoop(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, all)
 }
+
+func TestInitialRunIntentIsAtomicWithLoopCreation(t *testing.T) {
+	store := testStore(t)
+	project := testProject(t, store)
+	_, err := store.db.Exec(`CREATE TRIGGER reject_initial BEFORE INSERT ON loop_initial_runs BEGIN SELECT RAISE(FAIL,'intent failure'); END`)
+	require.NoError(t, err)
+	service, err := NewService(t.Context(), store, fakeRunner{}, "auto", func() {})
+	require.NoError(t, err)
+	defer service.Close()
+	_, err = service.Create(t.Context(), Loop{Name: "Work", Description: "Perform task", Criteria: "Good", ProjectID: project.ID, Mode: ModeProject})
+	require.ErrorContains(t, err, "intent failure")
+	all, err := store.List(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, all)
+	var count int
+	require.NoError(t, store.db.QueryRow(`SELECT count(*) FROM loop_jobs`).Scan(&count))
+	assert.Zero(t, count)
+}

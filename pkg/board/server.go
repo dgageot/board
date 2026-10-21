@@ -118,6 +118,8 @@ func Run() error {
 	if err != nil {
 		return err
 	}
+	stopInitialRuns := b.startInitialRuns(ctx)
+	defer stopInitialRuns()
 	fmt.Printf("Board running at http://%s\n", cfg.ListenAddr)
 
 	return serve(ctx, srv, ln)

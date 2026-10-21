@@ -162,7 +162,11 @@ func migrate(db *sqlx.DB) error {
 // runInTx runs fn inside a transaction, committing on success and rolling
 // back on error.
 func runInTx(db *sqlx.DB, fn func(*sqlx.Tx) error) error {
-	tx, err := db.Beginx()
+	return runInTxContext(context.Background(), db, fn)
+}
+
+func runInTxContext(ctx context.Context, db *sqlx.DB, fn func(*sqlx.Tx) error) error {
+	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}

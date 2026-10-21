@@ -36,8 +36,9 @@ type Version struct {
 
 // Detail is the snapshot displayed by the loop inspector.
 type Detail struct {
-	Loop     Loop      `json:"loop"`
-	Versions []Version `json:"versions"`
+	Loop       Loop        `json:"loop"`
+	Versions   []Version   `json:"versions"`
+	InitialRun *InitialRun `json:"initialRun,omitempty"`
 }
 
 // Job is a durable generation or execution attempt; interrupted attempts never resume silently.
@@ -68,4 +69,12 @@ type Metrics struct {
 	ModelMS      int64    `json:"modelMs"`
 	Model        string   `json:"model"`
 	Calls        int      `json:"calls"`
+}
+
+// InitialRun records the one task execution requested by creating a project loop.
+type InitialRun struct {
+	TaskID string `json:"taskId"`
+	JobID  string `json:"jobId"`
+	State  string `json:"state"`
+	Error  string `json:"error,omitempty"`
 }

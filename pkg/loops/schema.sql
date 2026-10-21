@@ -46,3 +46,15 @@ CREATE TABLE IF NOT EXISTS loop_rounds (
     data TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS loop_rounds_loop ON loop_rounds(loop_id);
+CREATE TABLE IF NOT EXISTS loop_initial_runs (
+    loop_id TEXT PRIMARY KEY REFERENCES loops(id),
+    task_id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    repo_path TEXT NOT NULL,
+    execution_path TEXT NOT NULL,
+    agent TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'waiting',
+    error TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS loop_initial_runs_state ON loop_initial_runs(state);

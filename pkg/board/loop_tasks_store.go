@@ -1,6 +1,7 @@
 package board
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -30,9 +31,13 @@ func (s *SQLiteStore) ProjectTaskForCard(cardID string) (*ProjectTask, error) {
 
 // ReserveProjectTask commits the card and its authorization before launching any agent.
 func (s *SQLiteStore) ReserveProjectTask(task *ProjectTask, card *Card) error {
-	return runInTx(s.db, func(tx *sqlx.Tx) error {
+	return s.reserveProjectTask(context.Background(), task, card)
+}
+
+func (s *SQLiteStore) reserveProjectTask(ctx context.Context, task *ProjectTask, card *Card) error {
+	return runInTxContext(ctx, s.db, func(tx *sqlx.Tx) error {
 		var available bool
-		if err := tx.Get(&available, `SELECT EXISTS(SELECT 1 FROM loops WHERE id=? AND deleting=0)`, task.LoopID); err != nil {
+		if err := tx.GetContext(ctx, &available, `SELECT EXISTS(SELECT 1 FROM loops WHERE id=? AND deleting=0)`, task.LoopID); err != nil {
 			return err
 		}
 		if !available {
@@ -40,27 +45,30 @@ func (s *SQLiteStore) ReserveProjectTask(task *ProjectTask, card *Card) error {
 		}
 		if task.VersionID != "" {
 			var valid bool
-			if err := tx.Get(&valid, `SELECT EXISTS(SELECT 1 FROM loops JOIN loop_versions ON loop_versions.loop_id=loops.id WHERE loops.id=? AND loops.mode='project' AND loop_versions.id=? AND loop_versions.mode='project')`, task.LoopID, task.VersionID); err != nil {
+			if err := tx.GetContext(ctx, &valid, `SELECT EXISTS(SELECT 1 FROM loops JOIN loop_versions ON loop_versions.loop_id=loops.id WHERE loops.id=? AND loops.mode='project' AND loop_versions.id=? AND loop_versions.mode='project')`, task.LoopID, task.VersionID); err != nil {
 				return err
 			}
 			if !valid {
 				return fmt.Errorf("%w: workflow mode or version changed; reopen the run dialog", errBadInput)
 			}
 		}
-		if err := tx.Get(&card.Column, "SELECT id FROM columns ORDER BY pos LIMIT 1"); err != nil {
+		if err := reserveInitialRun(ctx, tx, task); err != nil {
+			return err
+		}
+		if err := tx.GetContext(ctx, &card.Column, "SELECT id FROM columns ORDER BY pos LIMIT 1"); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("%w: no columns configured", errBadInput)
 			}
 			return err
 		}
-		if _, err := tx.NamedExec(insertCardSQL, card); err != nil {
+		if _, err := tx.NamedExecContext(ctx, insertCardSQL, card); err != nil {
 			return err
 		}
-		_, err := tx.NamedExec(`INSERT INTO loop_project_tasks (`+projectTaskColumns+`) VALUES (:id,:loop_id,:project_id,:project_name,:repo_path,:agent,:task,:criteria,:prompt,:card_id,:base,:status,:error,:created_at,:version_id)`, task)
+		_, err := tx.NamedExecContext(ctx, `INSERT INTO loop_project_tasks (`+projectTaskColumns+`) VALUES (:id,:loop_id,:project_id,:project_name,:repo_path,:agent,:task,:criteria,:prompt,:card_id,:base,:status,:error,:created_at,:version_id)`, task)
 		if err != nil {
 			return err
 		}
-		return reserveReview(tx, task)
+		return reserveReview(ctx, tx, task)
 	})
 }
 

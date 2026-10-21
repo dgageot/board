@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -107,6 +108,23 @@ func (s *Store) createGenerating(ctx context.Context, loop Loop) (Loop, Job, err
 	if _, err := tx.ExecContext(ctx, `INSERT INTO loop_jobs (id,loop_id,version_id,kind,status,input,created_at) VALUES (?,?,?,?,?,?,?)`, job.ID, job.LoopID, "", job.Kind, job.Status, job.Input, job.CreatedAt); err != nil {
 		return Loop{}, Job{}, err
 	}
+	if loop.Mode == ModeProject {
+		var path, agent string
+		if err := tx.QueryRowContext(ctx, `SELECT repo_path,agent FROM projects WHERE id=?`, loop.ProjectID).Scan(&path, &agent); err != nil {
+			return Loop{}, Job{}, notFound(err)
+		}
+		if strings.TrimSpace(path) == "" || strings.TrimSpace(agent) == "" {
+			return Loop{}, Job{}, fmt.Errorf("%w: first project requires a repository and configured agent", ErrInvalid)
+		}
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return Loop{}, Job{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO loop_initial_runs(loop_id,task_id,job_id,project_id,repo_path,execution_path,agent) VALUES (?,?,?,?,?,?,?)`, loop.ID, newID(), job.ID, loop.ProjectID, path, absolute, agent); err != nil {
+			return Loop{}, Job{}, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return Loop{}, Job{}, err
 	}
@@ -152,7 +170,21 @@ func (s *Store) Get(ctx context.Context, id string) (Detail, error) {
 		}
 		detail.Versions = append(detail.Versions, version)
 	}
-	return detail, rows.Err()
+	if err := rows.Err(); err != nil {
+		return Detail{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return Detail{}, err
+	}
+	var initial InitialRun
+	err = s.db.QueryRowContext(ctx, `SELECT task_id,job_id,state,error FROM loop_initial_runs WHERE loop_id=?`, id).Scan(&initial.TaskID, &initial.JobID, &initial.State, &initial.Error)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return Detail{}, err
+	}
+	if err == nil {
+		detail.InitialRun = &initial
+	}
+	return detail, nil
 }
 
 // AddVersion preserves the previous configuration rather than editing it.

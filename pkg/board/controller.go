@@ -135,6 +135,11 @@ func (c *Controller) Start(card *Card) {
 			return
 		}
 	}
+	c.startWatcher(card)
+}
+
+// startWatcher also accepts a freshly reserved task while its launch lock is held.
+func (c *Controller) startWatcher(card *Card) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, ok := c.watchers[card.ID]; ok {

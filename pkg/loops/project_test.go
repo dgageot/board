@@ -28,7 +28,7 @@ func testProject(t *testing.T, store *Store) ProjectSnapshot {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("A committed project"), 0o600))
 	git("add", ".")
 	git("-c", "commit.gpgsign=false", "commit", "-m", "initial")
-	_, err := store.db.Exec(`CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY,name TEXT NOT NULL,repo_path TEXT NOT NULL)`)
+	_, err := store.db.Exec(`CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY,name TEXT NOT NULL,repo_path TEXT NOT NULL, agent TEXT NOT NULL DEFAULT 'test-agent')`)
 	require.NoError(t, err)
 	project := ProjectSnapshot{ID: newID(), Name: "Example project", Path: dir}
 	_, err = store.db.Exec(`INSERT INTO projects (id,name,repo_path) VALUES (?,?,?)`, project.ID, project.Name, project.Path)
