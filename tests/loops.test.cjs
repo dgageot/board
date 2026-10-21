@@ -248,7 +248,7 @@ function loopAppHarness(overrides = {}) {
   };
   const context = vm.createContext({
     document:Object.assign(document,{getElementById:element,body:element('body'),querySelectorAll:()=>[]}),
-    window:{addEventListener:(name,callback)=>handlers.set(name,callback),confirm:()=>true},
+    window:{addEventListener:(name,callback)=>handlers.set(name,callback),confirm:overrides.confirm||(()=>true)},
     location:{hash:'#board'},crypto:require('node:crypto').webcrypto,setTimeout:overrides.setTimeout||setTimeout,clearTimeout,console, ...markdownModule,
   });
   const api=async(path,options)=>{
@@ -263,14 +263,14 @@ function loopAppHarness(overrides = {}) {
   context.api=api;
   vm.runInContext(source.replace(/^import .*;\n/gm,'').replace(/^export /gm,'')+'\ninitLoops(api);',context);
   return {
-    calls,element,
+    calls,element,location:context.location,
     async refresh(){handlers.get('board-refresh')();await new Promise(setImmediate);},
     async click(selector,dataset) {
       await element('loop-detail').handlers.click({target:{closest:(value)=>value===selector?{dataset,disabled:false,textContent:'Close'}:null}});
       await new Promise(setImmediate);
     },
     async action(name) {
-      await element('loop-detail').handlers.click({target:{closest:(selector)=>selector===`[data-action="${name}"]` ? {} : null}});
+      await element('loop-detail').handlers.click({target:{closest:(selector)=>selector===`[data-action="${name}"]` || selector==='[data-action], [data-promote], [data-retry-learning]' ? {dataset:{action:name}} : null}});
       await new Promise(setImmediate);
     },
     async submit(form) {
@@ -854,4 +854,81 @@ test('late project evidence cannot replace the selected technical job', async ()
  assert.match(h.element('loop-detail').innerHTML,/Selected technical result/);
  resolve({events:[]});await new Promise(setImmediate);
  assert.match(h.element('loop-detail').innerHTML,/Selected technical result/);
+});
+
+test('deleting a loop requires confirmation and returns to the list', async () => {
+ let question='';
+ const h=loopAppHarness({confirm:text=>{question=text;return true;}});
+ await h.navigate('first');await h.action('delete-loop');
+ assert.match(question,/first/);assert.match(question,/worktrees, commits/);
+ assert.deepEqual(h.calls.filter(c=>c.options?.method==='DELETE').map(c=>c.path),['/loops/first']);
+ assert.equal(h.location.hash,'#loops');assert.equal(h.element('loop-detail').hidden,true);
+});
+
+test('canceling loop deletion does not call the API', async () => {
+ const h=loopAppHarness({confirm:()=>false});await h.navigate('first');await h.action('delete-loop');
+ assert.equal(h.calls.filter(c=>c.options?.method==='DELETE').length,0);assert.equal(h.location.hash,'#loops/first');
+});
+
+test('deletion failure preserves the selected loop and shows the error', async () => {
+ const h=loopAppHarness({api:(path,opts)=>opts?.method==='DELETE'?Promise.reject(new Error('Could not stop active task')):undefined});
+ await h.navigate('first');await h.action('delete-loop');
+ assert.match(h.element('loops-notice').textContent,/Could not stop active task/);
+ assert.equal(h.location.hash,'#loops/first');assert.equal(h.element('loop-detail').hidden,false);
+});
+
+test('a pending deletion cannot delete twice or navigate away from another loop', async () => {
+ let resolve;const pending=new Promise(r=>resolve=r);
+ const h=loopAppHarness({api:(path,opts)=>opts?.method==='DELETE'?pending:undefined});
+ await h.navigate('first');const deleting=h.action('delete-loop');await new Promise(setImmediate);await h.action('delete-loop');
+ assert.equal(h.calls.filter(c=>c.options?.method==='DELETE').length,1);
+ await h.navigate('second');resolve();await deleting;
+ assert.equal(h.location.hash,'#loops/second');assert.match(h.element('loop-detail').innerHTML,/<h2>second<\/h2>/);
+});
+
+test('deletion pending disables running and offers a retry', async () => {
+ const {renderLoopDetail}=await modulePromise;const detail=inspectorFixture();detail.loop.deleting=true;
+ const html=renderLoopDetail(detail,'v1');
+ assert.match(html,/Deletion pending/);assert.match(html,/data-action="project-task" disabled/);assert.match(html,/Retry deletion/);
+ assert.match(renderLoopDetail(detail,'v1','','settings'),/data-action="delete-loop"/);
+});
+
+test('a lost delete response resolves confirmed absence without leaving a stale loop', async () => {
+ let deleted=false;
+ const h=loopAppHarness({api:(path,opts)=>{
+  if(opts?.method==='DELETE'){deleted=true;return Promise.reject(new Error('Connection lost'));}
+  if(deleted&&path==='/loops/first/overview')return Promise.reject(Object.assign(new Error('Not found'),{status:404}));
+ }});
+ await h.navigate('first');await h.action('delete-loop');
+ assert.equal(h.location.hash,'#loops');assert.equal(h.element('loop-detail').hidden,true);
+ assert.match(h.element('loops-notice').textContent,/Loop deleted/);
+});
+
+test('deletion blocks new mutating dialogs and closes existing dialogs for the deleted loop', async () => {
+ let resolve;const pending=new Promise(r=>resolve=r);
+ const h=loopAppHarness({api:(path,opts)=>opts?.method==='DELETE'?pending:undefined});
+ await h.navigate('first');await h.action('import');assert.equal(h.element('loop-import-dialog').open,true);
+ const deleting=h.action('delete-loop');await new Promise(setImmediate);await h.action('project-task');
+ assert.notEqual(h.element('loop-project-task-dialog').open,true);
+ resolve();await deleting;assert.equal(h.element('loop-import-dialog').open,false);
+ const before=h.calls.filter(c=>c.options?.method==='POST').length;
+ await h.submit('loop-import-form');assert.equal(h.calls.filter(c=>c.options?.method==='POST').length,before);
+});
+
+test('deleting another loop does not close the current loop dialog', async () => {
+ let resolve;const pending=new Promise(r=>resolve=r);
+ const h=loopAppHarness({api:(path,opts)=>opts?.method==='DELETE'?pending:undefined});
+ await h.navigate('first');const deleting=h.action('delete-loop');await new Promise(setImmediate);
+ await h.navigate('second');await h.action('import');resolve();await deleting;
+ assert.equal(h.element('loop-import-dialog').open,true);assert.equal(h.location.hash,'#loops/second');
+});
+
+test('deletion errors survive recovery from an earlier refresh error', async () => {
+ let failRefresh=false;
+ const h=loopAppHarness({api:(path,opts)=>{
+  if(path==='/loops/first/overview'&&failRefresh)return Promise.reject(new Error('Overview offline'));
+  if(opts?.method==='DELETE'){failRefresh=false;return Promise.reject(new Error('Task could not stop'));}
+ }});
+ await h.navigate('first');failRefresh=true;await h.refresh();await h.action('delete-loop');
+ assert.match(h.element('loops-notice').textContent,/Task could not stop/);
 });

@@ -51,6 +51,7 @@ const busyJob = (job) => job.status === 'queued' || job.status === 'running';
 const liveRound = (round) => round.status === 'designing' || round.status === 'testing';
 
 export function loopActivity(detail) {
+  if(detail.loop.deleting)return {phase:'deleting',title:'Deletion pending',note:'New runs are disabled. Retry deletion to finish stopping active work.'};
   const jobs = (detail.jobs || []).filter((job) => !job.closedAt);
   const rounds = detail.rounds || [];
   const generation = jobs.find((job) => job.kind === 'generate' && busyJob(job));
@@ -71,7 +72,8 @@ export function loopActivity(detail) {
 
 function renderActivity(activity, version) {
   let action = '';
-  if (activity.job && busyJob(activity.job)) action = `<button class="btn btn-ghost" data-cancel="${escapeHTML(activity.job.id)}">Stop</button>`;
+  if(activity.phase==='deleting')action='<button class="btn btn-danger" data-action="delete-loop">Retry deletion</button>';
+  else if (activity.job && busyJob(activity.job)) action = `<button class="btn btn-ghost" data-cancel="${escapeHTML(activity.job.id)}">Stop</button>`;
   else if (activity.task) action = `<button class="btn btn-ghost" data-task-terminal="${escapeHTML(activity.task.card.id)}">Open agent</button>`;
   else if (activity.round) action = `<button class="btn btn-ghost" data-cancel-round="${escapeHTML(activity.round.id)}">Stop</button>`;
   else if (!version) action = `<button class="btn btn-primary" data-action="generate">${activity.phase === 'failed' ? 'Retry creation' : 'Create agent'}</button>`;
@@ -132,7 +134,7 @@ export function renderLoopDetail(detail, selectedVersion, sourceJob = '', panel 
   const { loop, versions, jobs = [], rounds = [], feedback = [], projectTasks = [] } = detail;
   const version = selectedLoopVersion(detail, selectedVersion);
   const activity = loopActivity(detail);
-  const inProgress = ['generating', 'running', 'optimizing', 'project-running'].includes(activity.phase);
+  const inProgress = loop.deleting || ['generating', 'running', 'optimizing', 'project-running'].includes(activity.phase);
   const runs = [...jobs.filter((job) => job.kind === 'run').map((job) => ({id: job.id, type: 'analysis', time: job.createdAt || '', job})),
     ...projectTasks.map((task) => ({id: task.id, type: 'project', time: task.createdAt || '', task}))].sort((a,b) => a.time.localeCompare(b.time) || a.id.localeCompare(b.id));
   const selected = runs.find((run) => run.id === selectedRun) || [...runs].reverse().find((run) => run.type==='analysis' && busyJob(run.job) || run.type==='project' && ['starting','running','paused'].includes(run.task.card?.status)) || [...runs].reverse().find((run) => run.type === 'analysis' ? !run.job.closedAt : run.task.status !== 'closed') || runs.at(-1);
@@ -155,7 +157,7 @@ export function renderLoopDetail(detail, selectedVersion, sourceJob = '', panel 
     <nav class="loop-tabs" aria-label="Loop views">${[['runs','Runs'],['agent','Agent versions'],['settings','Settings']].map(([id,label])=>`<button class="${panel===id?'selected':''}" data-loop-panel="${id}" aria-pressed="${panel===id}">${label}</button>`).join('')}</nav>
     ${panel === 'runs' ? `${runList}${result}` : ''}
     ${panel === 'agent' ? `<section class="loop-panel"><div class="loop-section-heading"><h3>Agent instruction</h3><button class="btn btn-ghost" data-action="generate" ${inProgress?'disabled':''}>Generate new version</button></div><div class="loop-version-tabs">${versions.filter((item)=>item.mode==='project').map((item)=>`<button class="btn ${item.id===version?.id?'btn-primary':'btn-ghost'}" data-version="${escapeHTML(item.id)}" data-focus="version-tab-${escapeHTML(item.id)}">v${item.number}${item.id===loop.activeVersion?' · next run':''}</button>`).join('')}</div>${version?`<p class="loop-rationale">${escapeHTML(version.rationale)}</p><pre class="loop-code" data-inspect="config-${escapeHTML(version.id)}"><code>${escapeHTML(version.yaml)}</code></pre><div class="loop-actions"><button class="btn btn-ghost" data-action="promote">Use version</button><a class="btn btn-ghost" href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(version.id)}/export" download="agent.yaml">Export YAML</a></div>`:'<p class="loop-hint">Create a task agent to run this loop.</p>'}</section>` : ''}
-    ${panel === 'settings' ? `<section class="loop-panel"><h3>Task</h3><p class="loop-example">${escapeHTML(loop.description)}</p><h3>Success criteria</h3><p class="loop-example">${escapeHTML(loop.criteria)}</p><div class="loop-actions"><button class="btn btn-ghost" data-action="import" ${loop.mode!=='project'?'disabled':''}>Import instruction</button></div></section>${renderSpend(jobs)}${versions.some(v=>v.mode!=='project')?`<details class="loop-secondary loop-panel" data-inspect="legacy-versions"><summary>Legacy agent versions</summary>${versions.filter(v=>v.mode!=='project').map(v=>`<details data-inspect="legacy-${escapeHTML(v.id)}"><summary>v${v.number} · snapshot analysis</summary><pre class="loop-code"><code>${escapeHTML(v.yaml)}</code></pre><a href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(v.id)}/export" download>Export YAML</a></details>`).join('')}</details>`:''}${rounds.length?`<details class="loop-secondary loop-panel" data-inspect="legacy-experiments"><summary>Legacy experiments</summary>${rounds.map(round=>renderRound(round,jobs,versions,loop.activeVersion)).join('')}</details>`:''}<details class="loop-secondary loop-panel" data-inspect="history"><summary>Technical activity · ${jobs.length} attempts</summary>${jobs.map((job)=>`<button class="loop-run-row" data-select-job="${escapeHTML(job.id)}">${escapeHTML(job.kind)} · ${escapeHTML(job.status)}</button>`).join('')}</details>${detail.loadedJob&&selectedRun===detail.loadedJob.id?renderJob(detail.loadedJob,loop.id,feedback):''}` : ''}`;
+    ${panel === 'settings' ? `<section class="loop-panel"><h3>Task</h3><p class="loop-example">${escapeHTML(loop.description)}</p><h3>Success criteria</h3><p class="loop-example">${escapeHTML(loop.criteria)}</p><div class="loop-actions"><button class="btn btn-ghost" data-action="import" ${loop.mode!=='project'||loop.deleting?'disabled':''}>Import instruction</button><button class="btn btn-danger" data-action="delete-loop">${loop.deleting?'Retry deletion':'Delete loop'}</button></div></section>${renderSpend(jobs)}${versions.some(v=>v.mode!=='project')?`<details class="loop-secondary loop-panel" data-inspect="legacy-versions"><summary>Legacy agent versions</summary>${versions.filter(v=>v.mode!=='project').map(v=>`<details data-inspect="legacy-${escapeHTML(v.id)}"><summary>v${v.number} · snapshot analysis</summary><pre class="loop-code"><code>${escapeHTML(v.yaml)}</code></pre><a href="/api/loops/${encodeURIComponent(loop.id)}/versions/${encodeURIComponent(v.id)}/export" download>Export YAML</a></details>`).join('')}</details>`:''}${rounds.length?`<details class="loop-secondary loop-panel" data-inspect="legacy-experiments"><summary>Legacy experiments</summary>${rounds.map(round=>renderRound(round,jobs,versions,loop.activeVersion)).join('')}</details>`:''}<details class="loop-secondary loop-panel" data-inspect="history"><summary>Technical activity · ${jobs.length} attempts</summary>${jobs.map((job)=>`<button class="loop-run-row" data-select-job="${escapeHTML(job.id)}">${escapeHTML(job.kind)} · ${escapeHTML(job.status)}</button>`).join('')}</details>${detail.loadedJob&&selectedRun===detail.loadedJob.id?renderJob(detail.loadedJob,loop.id,feedback):''}` : ''}`;
 }
 
 export function renderProjectTask(task, versions = [], evidence, sourceView = false, tasks = []) {
@@ -364,6 +366,7 @@ export function initLoops(api, boardActions = {}) {
   const projectLoads = new Map();
   const startingOptimizations = new Set();
   const closingRuns = new Set();
+  const deletingLoops = new Set();
 
   function notice(message = '', error = false) {
     byID('loops-notice').textContent = message;
@@ -419,9 +422,10 @@ export function initLoops(api, boardActions = {}) {
       byID('loops-list').innerHTML=renderLoopList(list,id,detail);
       updateLoopInspector(byID('loop-detail'),detail,selectedVersion,sourceJob,panel,selected);
       loadSelectedRun();
-      if((projectTasks||[]).some(t=>['pending','processing'].includes(t.review?.state) || t.status!=='closed'&&['starting','running','paused'].includes(t.card?.status)) || (detail.jobs||[]).some(busyJob) || (detail.rounds||[]).some(liveRound))refreshTimer=setTimeout(refreshLoops,1000);
+      if(!detail.loop.deleting && ((projectTasks||[]).some(t=>['pending','processing'].includes(t.review?.state) || t.status!=='closed'&&['starting','running','paused'].includes(t.card?.status)) || (detail.jobs||[]).some(busyJob) || (detail.rounds||[]).some(liveRound)))refreshTimer=setTimeout(refreshLoops,1000);
     }catch(error){
       if(request!==sequence)return;
+      if(error.status===404&&deletingLoops.has(id))return;
       refreshError=true;notice(error.message,true);
       if(error.status===404){detail=null;byID('loop-detail').hidden=true;byID('loops-welcome').hidden=false;}
       else refreshTimer=setTimeout(refreshLoops,3000);
@@ -494,11 +498,50 @@ export function initLoops(api, boardActions = {}) {
     else { sequence++; clearTimeout(refreshTimer); }
   }
 
+  async function finishLoopDeletion(id) {
+    for(const cache of [loadedJobs,loadedEvidence])for(const key of cache.keys())if(key.startsWith(`${id}/`))cache.delete(key);
+    if(importLoop===id){byID('loop-import-dialog').close();importLoop='';}
+    if(taskLoop===id){byID('loop-project-task-dialog').close();taskLoop='';taskVersion='';taskProjects=[];taskLoading++;}
+    if(modalLoop===id){
+      for(const name of ['loop-run-dialog','loop-optimize-dialog','loop-feedback-dialog'])byID(name).close();
+      modalLoop='';runVersion='';optimizeVersion='';feedbackJob='';
+    }
+    if(location.hash.split('/')[1]===id){
+      sequence++;runLoad++;clearTimeout(refreshTimer);detail=null;selectedRun='';selectedJob='';selectedVersion='';versionPinned=false;panel='runs';refreshError=false;
+      location.hash='#loops';notice('Loop deleted.');route();
+    }else await refreshLoops();
+  }
+
   byID('loops-list').addEventListener('click', (event) => {
     const button = event.target.closest('[data-loop]');
     if (button) { selectedVersion = '';versionPinned=false; selectedRun=''; panel='runs'; location.hash = `loops/${button.dataset.loop}`; }
   });
   byID('loop-detail').addEventListener('click', async (event) => {
+    const deleteLoop=event.target.closest('[data-action="delete-loop"]');
+    if(deleteLoop&&detail){
+      const id=detail.loop.id;
+      if(deletingLoops.has(id)||!window.confirm(`Delete “${detail.loop.name}”? Active work will be stopped and the loop, agent versions, and run history removed. Project cards, worktrees, commits, and local process logs are kept. This cannot be undone.`))return;
+      deletingLoops.add(id);deleteLoop.disabled=true;
+      try {
+        await api(`/loops/${encodeURIComponent(id)}`,{method:'DELETE'});
+        await finishLoopDeletion(id);
+      }catch(error){
+        deletingLoops.delete(id);
+        let missing=error.status===404;
+        if(!missing){
+          try{await api(`/loops/${encodeURIComponent(id)}/overview`);}
+          catch(lookup){missing=lookup.status===404;}
+        }
+        if(missing)await finishLoopDeletion(id);
+        else {
+          await refreshLoops();
+          if(location.hash.split('/')[1]===id)notice(error.message,true);
+        }
+      }finally{deletingLoops.delete(id);deleteLoop.disabled=false;}
+      return;
+    }
+
+    if(detail&&(deletingLoops.has(detail.loop.id)||detail.loop.deleting)&&event.target.closest('[data-action], [data-promote], [data-retry-learning]'))return;
     const tab=event.target.closest('[data-loop-panel]');
     if(tab&&detail){panel=tab.dataset.loopPanel;runLoad++;detail.loadedJob=loadedJobs.get(`${detail.loop.id}/${panel==='settings'?selectedJob:selectedRun}`);updateLoopInspector(byID('loop-detail'),detail,selectedVersion,sourceJob,panel,panel==='settings'?selectedJob:selectedRun);loadSelectedRun();return;}
     const run=event.target.closest('[data-select-run], [data-select-job]');
