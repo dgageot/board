@@ -108,7 +108,7 @@ func TestNewLoopFieldsDisablePasswordCompletion(t *testing.T) {
 	dialog, _, found = strings.Cut(dialog, "</dialog>")
 	require.True(t, found)
 	fields := regexp.MustCompile(`<(?:input|select|textarea)\b[^>]*>`).FindAllString(dialog, -1)
-	require.Len(t, fields, 5)
+	require.Len(t, fields, 4)
 	for _, field := range fields {
 		assert.Contains(t, field, `autocomplete="off"`)
 		assert.Contains(t, field, `data-1p-ignore`)
@@ -124,7 +124,7 @@ func TestLoopsCopyKeepsOperationalGuidanceWithoutSlogans(t *testing.T) {
 	assert.NotContains(t, page, "Great agents aren't a lucky prompt")
 	assert.NotContains(t, page, "BUILD. MEASURE. EVOLVE.")
 	assert.NotContains(t, page, "Two new agents. One baseline.")
-	assert.Contains(t, page, "Creates an agent immediately. Uses provider credits.")
+	assert.Contains(t, page, "Creates an agent immediately.")
 	assert.Contains(t, page, "Sends selected committed files to your model provider")
 	assert.Contains(t, page, "Promotion is manual.")
 }
@@ -142,5 +142,5 @@ func TestProjectTaskConsentExplainsExecutionPrivileges(t *testing.T) {
 	assert.Contains(t, dialog, "automatic tool approval")
 	assert.Contains(t, dialog, "not a security sandbox")
 	assert.Contains(t, dialog, "publish remotely")
-	assert.Contains(t, dialog, "selected workflow instruction")
+	assert.Contains(t, dialog, "selected agent version")
 }

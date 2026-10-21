@@ -19,9 +19,9 @@ test('loop inspector preserves YAML safely and marks active versions', async () 
   const { renderLoopDetail } = await modulePromise;
   const html = renderLoopDetail({
     loop: { id: 'loop', name: 'Notes', description: 'Summarize', criteria: '<b>accurate</b>', example: 'fix', activeVersion: 'v1' },
-    versions: [{ id: 'v1', number: 1, yaml: 'instruction: </code><script>bad</script>', rationale: 'First', createdAt: '2026-10-20T00:00:00Z' }],
+    versions: [{ id: 'v1', mode: 'project', number: 1, yaml: 'instruction: </code><script>bad</script>', rationale: 'First', createdAt: '2026-10-20T00:00:00Z' }],
   }, 'v1', '', 'agent');
-  assert.match(html, /v1 · active/);
+  assert.match(html, /v1 · next run/);
   assert.match(html, /&lt;\/code&gt;&lt;script&gt;/);
   assert.match(html, /versions\/v1\/export/);
 });
@@ -67,7 +67,7 @@ test('experiments never offer promotion for failing candidates', async () => {
 
 test('active version remains the default when unpromoted candidates arrive', async () => {
   const { selectedLoopVersion } = await modulePromise;
-  const detail = { loop: { activeVersion: 'v1' }, versions: [{id:'v3'},{id:'v2'},{id:'v1'}] };
+  const detail = { loop: { activeVersion: 'v1' }, versions: [{id:'v3',mode:'project'},{id:'v2',mode:'project'},{id:'v1',mode:'project'}] };
   assert.equal(selectedLoopVersion(detail, '').id, 'v1');
   assert.equal(selectedLoopVersion(detail, 'v2').id, 'v2');
   assert.equal(selectedLoopVersion(detail, 'removed').id, 'v1');
@@ -156,7 +156,7 @@ function inspectorHarness() {
 function inspectorFixture() {
   return {
     loop:{id:'loop',name:'Notes',description:'Summarize',criteria:'Accurate',example:'input'},
-    versions:[{id:'v1',number:1,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'}],
+    versions:[{id:'v1',mode:'project',number:1,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'}],
     jobs:[{id:'j1',kind:'run',status:'running',output:'First',metrics:{}}],
   };
 }
@@ -214,11 +214,11 @@ test('live refresh restores the exact experiment control instead of a matching v
   const detail=inspectorFixture();
   const candidate={versionId:'v1',label:'Baseline',trials:[]};
   detail.rounds=['first','second'].map((id)=>({id,baseline:'v1',status:'testing',inputs:['input'],repeats:1,candidates:[candidate]}));
-  updateLoopInspector(container,detail,'v1','','optimize');
+  updateLoopInspector(container,detail,'v1','','settings');
   assert.equal(state.buttons.length,2);
   doc.activeElement=state.buttons.find((button)=>button.dataset.focus==='inspect-second-v1');
   detail.jobs[0].output='Changed output';
-  updateLoopInspector(container,detail,'v1','','optimize');
+  updateLoopInspector(container,detail,'v1','','settings');
   assert.equal(doc.activeElement,state.buttons.find((button)=>button.dataset.focus==='inspect-second-v1'));
   assert.equal(doc.activeElement.dataset.focus,'inspect-second-v1');
 });
@@ -229,8 +229,8 @@ function loopAppHarness(overrides = {}) {
   const handlers = new Map();
   const calls = [];
   const fixture = (id) => ({loop:{id,name:id,description:'Task',criteria:'Good',example:'Input',projectId:'project-first'},versions:[
-    {id:`${id}-v2`,number:2,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'},
-    {id:`${id}-v1`,number:1,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'},
+    {id:`${id}-v2`,mode:'project',number:2,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'},
+    {id:`${id}-v1`,mode:'project',number:1,yaml:'agents: {}',createdAt:'2026-10-20T00:00:00Z'},
   ]});
   const document = {activeElement:null};
   const element = (id) => {
@@ -249,7 +249,7 @@ function loopAppHarness(overrides = {}) {
   const context = vm.createContext({
     document:Object.assign(document,{getElementById:element,body:element('body'),querySelectorAll:()=>[]}),
     window:{addEventListener:(name,callback)=>handlers.set(name,callback),confirm:()=>true},
-    location:{hash:'#board'},crypto:require('node:crypto').webcrypto,setTimeout,clearTimeout,console, ...markdownModule,
+    location:{hash:'#board'},crypto:require('node:crypto').webcrypto,setTimeout:overrides.setTimeout||setTimeout,clearTimeout,console, ...markdownModule,
   });
   const api=async(path,options)=>{
     calls.push({path,options});
@@ -341,7 +341,7 @@ test('loop creation sends the first-run project instead of example text', async 
  h.element('loop-mode').value='analysis';h.element('loop-name').value='Review';h.element('loop-task').value='Review code';h.element('loop-criteria').value='Precise';h.element('loop-first-project').value='project-first';
  await h.submit('loop-new-form');
  const request=h.calls.find((call)=>call.path==='/loops' && call.options?.method==='POST');
- assert.deepEqual(JSON.parse(request.options.body),{name:'Review',description:'Review code',criteria:'Precise',projectId:'project-first',mode:'analysis'});
+ assert.deepEqual(JSON.parse(request.options.body),{name:'Review',description:'Review code',criteria:'Precise',projectId:'project-first',mode:'project'});
 });
 
 test('newly created loop clearly shows automatic agent creation without another generate action', async () => {
@@ -373,10 +373,10 @@ test('failed generation offers retry while a ready agent offers a run', async ()
   assert.match(renderLoopDetail(detail,''),/Agent creation failed/);
   assert.match(renderLoopDetail(detail,''),/Retry creation/);
   detail.jobs[0].status='succeeded';
-  detail.versions=[{id:'v1',number:1,yaml:'agents: {}'}];
+  detail.versions=[{id:'v1',mode:'project',number:1,yaml:'agents: {}'}];
   const html=renderLoopDetail(detail,'v1');
-  assert.match(html,/data-action="run"/);
-  assert.match(html,/data-action="run"/);
+  assert.match(html,/data-action="project-task"/);
+  assert.match(html,/data-action="project-task"/);
   assert.doesNotMatch(html,/Retry creation/);
 });
 
@@ -392,9 +392,9 @@ test('selected loop sidebar reflects its current running activity', async () => 
 test('imported agents remain runnable after automatic generation fails or stops', async () => {
  const { renderLoopDetail }=await modulePromise;
  for(const status of ['failed','canceled']) {
-  const detail={loop:{id:'l',name:'Loop',description:'Task',criteria:'Good'},versions:[{id:'import',number:1,yaml:'agents: {}'}],jobs:[{id:'g',kind:'generate',status,error:'Stopped',metrics:{}}]};
+  const detail={loop:{id:'l',name:'Loop',description:'Task',criteria:'Good'},versions:[{id:'import',mode:'project',number:1,yaml:'agents: {}'}],jobs:[{id:'g',kind:'generate',status,error:'Stopped',metrics:{}}]};
   const html=renderLoopDetail(detail,'import');
-  assert.match(html,/data-action="run"/);
+  assert.match(html,/data-action="project-task"/);
   assert.doesNotMatch(html,/data-action="generate"/);
  }
 });
@@ -403,7 +403,7 @@ test('explicit version inspection reveals configuration instead of only changing
  const h=loopAppHarness();
  await h.navigate('first');
  await h.selectVersion('first-v2');
- assert.match(h.element('loop-detail').innerHTML,/Workflow instruction|Agent configuration/);
+ assert.match(h.element('loop-detail').innerHTML,/Agent instruction/);
  assert.match(h.element('loop-detail').innerHTML,/data-version="first-v2"/);
 });
 
@@ -470,10 +470,8 @@ test('loop status is concise without hiding failures or primary actions', async 
  assert.equal(loopActivity(detail).title,'Ready');
  assert.equal(loopActivity(detail).note,'');
  const ready=renderLoopDetail(detail,'v1');
- assert.match(ready,/data-action="run"/);
- const optimize=renderLoopDetail(detail,'v1','','optimize');
- assert.match(optimize,/data-action="optimize"/);
- assert.match(optimize,/uses provider credits/);
+ assert.match(ready,/data-action="project-task"/);
+ assert.doesNotMatch(ready,/data-loop-panel="optimize"|data-mode=/);
  assert.doesNotMatch(ready,/whenever you’re ready|Improve this agent|immutable snapshots|REUSABLE INTELLIGENCE/);
  detail.jobs=[{id:'g',kind:'generate',status:'failed',error:'Provider unavailable',metrics:{}}];
  detail.loadedJob=detail.jobs[0];
@@ -578,11 +576,11 @@ test('iterative candidates need confirmation and only the winner is offered for 
  candidate.confirmation=[{...trial,jobId:'confirm',judgeId:'confirm-judge'}];
  jobs.push({...jobs[0],id:'confirm'},{...jobs[1],id:'confirm-judge'});
  assert.equal(summarizeCandidate(round,candidate,jobs).qualified,true);
- const html=renderRound(round,jobs,[{id:'v2',number:2}],'');
+ const html=renderRound(round,jobs,[{id:'v2',mode:'project',number:2}],'');
  assert.match(html,/Recommended: v2/);
  assert.match(html,/Confirmation · input 1/);
  round.winner='other';
- assert.match(renderRound(round,jobs,[{id:'v2',number:2}],''),/data-promote="v2"[^>]*disabled/);
+ assert.match(renderRound(round,jobs,[{id:'v2',mode:'project',number:2}],''),/data-promote="v2"[^>]*disabled/);
 });
 
 test('custom model settings preserve blank choices without substituting auto', async () => {
@@ -618,11 +616,11 @@ test('idle Board task status never claims verified success', async () => {
  assert.match(html,/data-task-terminal="c"/);
 });
 
-test('project execution is separate from read-only analysis and optimization', async () => {
+test('Run always starts actual project execution', async () => {
  const {renderLoopDetail}=await modulePromise;
  const detail=inspectorFixture();detail.jobs=[];
  const html=renderLoopDetail(detail,'v1');
- assert.match(html,/Analysis · read-only/);
+ assert.match(html,/Next run:/);
  detail.loop.mode='project';detail.versions[0].mode='project';
  assert.match(renderLoopDetail(detail,'v1'),/data-action="project-task"/);
 });
@@ -664,7 +662,7 @@ test('workflow selection uses only matching execution type', async () => {
  assert.match(html,/data-action="project-task"/);
  assert.doesNotMatch(html,/data-action="run"/);
  const optimization=renderLoopDetail(detail,'p','','optimize');
- assert.match(optimization,/Project optimization is not yet available/);
+ assert.doesNotMatch(optimization,/Project optimization is not yet available/);
  assert.doesNotMatch(optimization,/data-action="optimize"/);
 });
 
@@ -691,13 +689,13 @@ test('Runs view is focused while advanced controls remain in their tabs', async 
  assert.match(agent,/<pre class="loop-code"/);
  assert.match(agent,/Generate new version/);
  const settings=renderLoopDetail(detail,'v1','','settings');
- assert.match(settings,/data-mode="project"/);
- assert.match(settings,/Import analysis agent/);
+ assert.doesNotMatch(settings,/data-mode=/);
+ assert.match(settings,/Import instruction/);
 });
 
 test('slow selected-result requests are coalesced across refreshes', async () => {
  let resolve;const pending=new Promise(r=>resolve=r);
- const summary={loop:{id:'first',name:'first',mode:'analysis'},versions:[{id:'first-v1',number:1}],jobs:[{id:'run',kind:'run',status:'succeeded',outputSize:10,createdAt:'now'}],rounds:[],feedback:[]};
+ const summary={loop:{id:'first',name:'first',mode:'analysis'},versions:[{id:'first-v1',mode:'project',number:1}],jobs:[{id:'run',kind:'run',status:'succeeded',outputSize:10,createdAt:'now'}],rounds:[],feedback:[]};
  const h=loopAppHarness({api:(path)=>path==='/loops/first/overview'?summary:path==='/loops/first/jobs/run'?pending:undefined});
  await h.navigate('first');await h.refresh();await h.refresh();
  assert.equal(h.calls.filter(c=>c.path==='/loops/first/jobs/run').length,1);
@@ -706,7 +704,7 @@ test('slow selected-result requests are coalesced across refreshes', async () =>
 });
 
 test('technical-job selection does not replace Runs selection', async () => {
- const summary={loop:{id:'first',name:'first'},versions:[{id:'first-v1',number:1}],jobs:[{id:'run',kind:'run',status:'succeeded',outputSize:3},{id:'design',kind:'generate',status:'succeeded',outputSize:3}],rounds:[],feedback:[]};
+ const summary={loop:{id:'first',name:'first'},versions:[{id:'first-v1',mode:'project',number:1}],jobs:[{id:'run',kind:'run',status:'succeeded',outputSize:3},{id:'design',kind:'generate',status:'succeeded',outputSize:3}],rounds:[],feedback:[]};
  const h=loopAppHarness({api:(path)=>path==='/loops/first/overview'?summary:path==='/loops/first/jobs/run'?{...summary.jobs[0],output:'Run answer'}:path==='/loops/first/jobs/design'?{...summary.jobs[1],output:'Design answer'}:undefined});
  await h.navigate('first');
  await h.click('[data-loop-panel]',{loopPanel:'settings'});
@@ -717,7 +715,7 @@ test('technical-job selection does not replace Runs selection', async () => {
 });
 
 test('newly submitted run becomes the selected result', async () => {
- const summary={loop:{id:'first',name:'first'},versions:[{id:'first-v1',number:1}],jobs:[{id:'old',kind:'run',status:'succeeded',outputSize:3}],rounds:[],feedback:[]};
+ const summary={loop:{id:'first',name:'first'},versions:[{id:'first-v1',mode:'project',number:1}],jobs:[{id:'old',kind:'run',status:'succeeded',outputSize:3}],rounds:[],feedback:[]};
  const h=loopAppHarness({api:(path,opts)=>{
   if(path==='/loops/first/overview')return summary;
   if(path==='/loops/first/runs'&&opts?.method==='POST'){summary.jobs.unshift({id:'new',kind:'run',status:'succeeded',outputSize:3});return{id:'new'};}
@@ -730,7 +728,7 @@ test('newly submitted run becomes the selected result', async () => {
 
 test('returning to a pending result renders its response without requiring another refresh', async () => {
  let resolve;const pending=new Promise(r=>resolve=r);
- const summary={loop:{id:'first',name:'first'},versions:[{id:'first-v1',number:1}],jobs:[{id:'a',kind:'run',status:'succeeded',outputSize:3},{id:'b',kind:'run',status:'succeeded',outputSize:3}],rounds:[]};
+ const summary={loop:{id:'first',name:'first'},versions:[{id:'first-v1',mode:'project',number:1}],jobs:[{id:'a',kind:'run',status:'succeeded',outputSize:3},{id:'b',kind:'run',status:'succeeded',outputSize:3}],rounds:[]};
  const h=loopAppHarness({api:(path)=>path==='/loops/first/overview'?summary:path==='/loops/first/jobs/a'?pending:path==='/loops/first/jobs/b'?{...summary.jobs[1],output:'B answer'}:undefined});
  await h.navigate('first');
  await h.click('[data-select-run], [data-select-job]',{selectRun:'b'});
@@ -739,23 +737,23 @@ test('returning to a pending result renders its response without requiring anoth
  assert.match(h.element('loop-detail').innerHTML,/A answer/);
 });
 
-test('a mode change completing after navigation leaves the other loop selection intact', async () => {
+test('legacy conversion completing after navigation leaves the other loop selection intact', async () => {
  let resolve;const pending=new Promise(r=>resolve=r);
  const h=loopAppHarness({api:(path,opts)=>path==='/loops/first/mode'&&opts?.method==='PUT'?pending:undefined});
  await h.navigate('first');
- const changing=h.click('[data-mode]',{mode:'project'});
+ const changing=h.action('generate');
  await new Promise(setImmediate);
  await h.navigate('second');await h.selectVersion('second-v2');
  resolve({mode:'project'});await changing;
  assert.match(h.element('loop-detail').innerHTML,/btn-primary" data-version="second-v2"/);
 });
 
-test('blocked analysis preserves context retry and offers explicit mode choice', async () => {
+test('legacy blocked assessments do not show obsolete mode controls', async () => {
  const {renderLoopDetail}=await modulePromise;const detail=inspectorFixture();detail.jobs=[];
  detail.rounds=[{status:'blocked',outcome:'capability_blocked',error:'Needs file writes',inputs:[],candidates:[]}];
  const html=renderLoopDetail(detail,'v1');
- assert.match(html,/Last optimization was blocked/);
- assert.match(html,/data-mode="project"/);
+ assert.doesNotMatch(html,/Last optimization was blocked/);
+ assert.doesNotMatch(html,/data-mode=/);
  assert.doesNotMatch(html,/data-action="run" disabled/);
 });
 
@@ -764,4 +762,96 @@ test('old blocked assessments do not override newer completed experiments', asyn
  detail.rounds=[{status:'completed',outcome:'unchanged'},{status:'blocked',outcome:'capability_blocked',error:'Missing file'}];
  const html=renderLoopDetail(detail,'v1');assert.doesNotMatch(html,/Last optimization was blocked/);
  assert.match(html,/<nav class="loop-tabs" aria-label="Loop views">/);
+});
+
+test('actual runs are chronological and show frozen metrics, judge and untested next version', async () => {
+ const {renderLoopDetail}=await modulePromise;
+ const detail=inspectorFixture();detail.loop.activeVersion='v2';detail.versions.unshift({id:'v2',mode:'project',number:2});
+ detail.jobs=[{id:'design',kind:'run_revision',status:'succeeded',metrics:{cost:99}}];
+ detail.projectTasks=[{id:'later',createdAt:'2026-10-21T12:00:00Z',versionId:'v2',projectName:'Repo two',status:'launched',review:{state:'processing',cost:null,durationMs:null,outcome:'normal'}},
+ {id:'earlier',createdAt:'2026-10-21T11:00:00Z',versionId:'v1',projectName:'Repo one',status:'closed',card:{status:'closed',cost:200},review:{state:'ready',cost:.12,durationMs:65000,outcome:'normal',nextVersion:'v2',assessment:{quality:'failed',efficiency:'inefficient',changeImpact:'hurt',summary:'Tests missing',improvements:[]}}}];
+ const html=renderLoopDetail(detail,'v2');
+ assert.ok(html.indexOf('data-select-run="earlier"')<html.indexOf('data-select-run="later"'));
+ assert.match(html,/\$0\.1200/);assert.match(html,/1m 5s/);assert.match(html,/failed · inefficient · hurt/);
+ assert.match(html,/v2 · run recorded/);assert.match(html,/Repo one/);assert.match(html,/Repo two/);
+ assert.doesNotMatch(html,/data-select-run="design"|\$200|\$99/);
+});
+
+test('automatic preparation follows the next pointer unless an old version was explicitly selected', async () => {
+ const summary={loop:{id:'first',name:'first',mode:'project',activeVersion:'v1'},versions:[{id:'v1',mode:'project',number:1}],jobs:[],rounds:[]};
+ const h=loopAppHarness({api:(path)=>path==='/loops/first/overview'?summary:undefined});
+ await h.navigate('first');
+ summary.versions.unshift({id:'v2',mode:'project',number:2});summary.loop.activeVersion='v2';
+ await h.refresh();assert.match(h.element('loop-detail').innerHTML,/Next run: v2/);
+ await h.selectVersion('v1');
+ summary.versions.unshift({id:'v3',mode:'project',number:3});summary.loop.activeVersion='v3';
+ await h.refresh();assert.match(h.element('loop-detail').innerHTML,/Next run: v1/);
+});
+
+test('idle task keeps polling while automatic review is pending', async () => {
+ let scheduled=0;
+ const h=loopAppHarness({setTimeout:()=>{scheduled++;return 1;},api:(path)=>path==='/loops/first/tasks'?[{id:'t',card:{status:'waiting'},review:{state:'processing',lastSeq:10}}]:path.endsWith('/evidence')?{events:[]}:undefined});
+ await h.navigate('first');assert.ok(scheduled>0);
+ assert.match(h.element('loop-detail').innerHTML,/Judging and preparing next version/);
+});
+
+test('preparation retry never calls the task execution endpoint', async () => {
+ const h=loopAppHarness();await h.navigate('first');
+ await h.click('[data-retry-learning]',{retryLearning:'run-one'});
+ const requests=h.calls.filter(c=>c.options?.method==='POST');
+ assert.deepEqual(requests.map(c=>c.path),['/loops/first/tasks/run-one/prepare']);
+});
+
+test('legacy snapshot agents remain inspectable but cannot be launched as task agents', async () => {
+ const {renderLoopDetail}=await modulePromise;
+ const detail={loop:{id:'l',name:'Old',mode:'analysis'},versions:[{id:'old',mode:'analysis',number:1,yaml:'instruction: report'}]};
+ const html=renderLoopDetail(detail);
+ assert.match(html,/Create a task agent/);assert.match(html,/data-action="generate"/);
+ assert.doesNotMatch(html,/data-action="project-task"|data-mode=|data-loop-panel="optimize"/);
+ assert.match(renderLoopDetail(detail,'','','settings'),/Legacy agent versions/);
+ assert.match(renderLoopDetail(detail,'','','settings'),/instruction: report/);
+});
+
+test('project run evidence renders safe Markdown with source and copy', async () => {
+ const {renderProjectTask}=await modulePromise;
+ const task={id:'task',loopId:'loop',projectName:'Repo',status:'closed',review:{state:'failed',finishedAt:'now',complete:false,error:'<error>'}};
+ const evidence={taskID:'task',events:[{type:'agent_choice',content:'# Done\n\n**Result** <script>bad</script>'}]};
+ const html=renderProjectTask(task,[],evidence);
+ assert.match(html,/<h1>Done<\/h1>/);assert.match(html,/<strong>Result<\/strong>/);
+ assert.doesNotMatch(html,/<script>/);assert.match(html,/data-copy-result="task"/);assert.match(html,/data-source="task"/);
+ assert.match(html,/Evidence incomplete/);assert.match(html,/Retry preparation/);
+ assert.match(renderProjectTask(task,[],evidence,true),/loop-source-text/);
+});
+
+test('a delayed active-run response triggers a fresh read after final preparation', async () => {
+ let resolve;const pending=new Promise(r=>resolve=r);let requests=0;
+ const task={id:'t',loopId:'first',status:'launched',card:{status:'waiting'},review:{state:'observing',lastSeq:3}};
+ const h=loopAppHarness({api:(path)=>path==='/loops/first/tasks'?[task]:path.endsWith('/tasks/t/evidence')?(++requests===1?pending:{events:[{type:'agent_choice',content:'Final output'}]}):undefined});
+ await h.navigate('first');task.review={state:'ready',lastSeq:8};await h.refresh();
+ assert.equal(requests,1);
+ resolve({events:[{type:'agent_choice',content:'Partial output'}]});await new Promise(setImmediate);await new Promise(setImmediate);
+ assert.equal(requests,2);assert.match(h.element('loop-detail').innerHTML,/Final output/);assert.doesNotMatch(h.element('loop-detail').innerHTML,/Partial output/);
+});
+
+test('recorded result contains only the final root message with its chunks combined', async () => {
+ const {renderProjectTask}=await modulePromise;
+ const task={id:'t',status:'closed'};
+ const evidence={taskID:'t',events:[{type:'stream_started',session_id:'root'},
+ {type:'agent_choice',session_id:'root',message_id:'plan',content:'I will inspect.'},
+ {type:'agent_choice',session_id:'child',message_id:'child',content:'Child report'},
+ {type:'agent_choice',session_id:'root',message_id:'answer',content:'# Final'},
+ {type:'agent_choice',session_id:'child',message_id:'child',content:' unrelated'},
+ {type:'agent_choice',session_id:'root',message_id:'answer',content:' answer'}]};
+ const html=renderProjectTask(task,[],evidence);
+ assert.match(html,/<h1>Final answer<\/h1>/);assert.doesNotMatch(html,/I will inspect|Child report|unrelated/);
+});
+
+test('late project evidence cannot replace the selected technical job', async () => {
+ let resolve;const pending=new Promise(r=>resolve=r);
+ const summary={loop:{id:'first',name:'first',mode:'project'},versions:[{id:'v1',mode:'project',number:1}],jobs:[{id:'judge',kind:'run_judge',status:'succeeded',outputSize:12}],rounds:[]};
+ const h=loopAppHarness({api:(path)=>path==='/loops/first/overview'?summary:path==='/loops/first/tasks'?[{id:'t',status:'closed',review:{state:'ready',lastSeq:4}}]:path.endsWith('/tasks/t/evidence')?pending:path.endsWith('/jobs/judge')?{...summary.jobs[0],output:'Selected technical result'}:undefined});
+ await h.navigate('first');await h.click('[data-loop-panel]',{loopPanel:'settings'});await h.click('[data-select-run], [data-select-job]',{selectJob:'judge'});
+ assert.match(h.element('loop-detail').innerHTML,/Selected technical result/);
+ resolve({events:[]});await new Promise(setImmediate);
+ assert.match(h.element('loop-detail').innerHTML,/Selected technical result/);
 });

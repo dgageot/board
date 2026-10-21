@@ -109,7 +109,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, fmt.Errorf("%w: choose a project for the first run", ErrInvalid))
 		return
 	}
-	loop, err := h.service.Create(r.Context(), Loop{Name: input.Name, Description: input.Description, Criteria: input.Criteria, Example: input.Example, ProjectID: input.ProjectID, Mode: input.Mode})
+	loop, err := h.service.Create(r.Context(), Loop{Name: input.Name, Description: input.Description, Criteria: input.Criteria, Example: input.Example, ProjectID: input.ProjectID, Mode: ModeProject})
 	if err != nil {
 		fail(w, err)
 		return
@@ -151,11 +151,29 @@ func (h *Handler) addVersion(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		YAML      string `json:"yaml"`
 		Rationale string `json:"rationale"`
+		Project   bool   `json:"project"`
 	}
 	if !decode(w, r, &input) {
 		return
 	}
-	version, err := h.store.AddVersion(r.Context(), r.PathValue("id"), input.YAML, input.Rationale)
+	mode := ModeAnalysis
+	if input.Project {
+		detail, err := h.store.Get(r.Context(), r.PathValue("id"))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		if detail.Loop.Mode != ModeProject {
+			fail(w, fmt.Errorf("%w: create a task agent before importing instructions", ErrConflict))
+			return
+		}
+		if _, err := ProjectInstruction(Version{YAML: input.YAML}); err != nil {
+			fail(w, err)
+			return
+		}
+		mode = ModeProject
+	}
+	version, err := h.store.addVersion(r.Context(), r.PathValue("id"), input.YAML, input.Rationale, mode)
 	if err != nil {
 		fail(w, err)
 		return

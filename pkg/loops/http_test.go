@@ -62,3 +62,22 @@ func TestCreateLoopRequiresFirstProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, all)
 }
+
+func TestProjectInstructionImportIsRunnableButRejectsTools(t *testing.T) {
+	store := testStore(t)
+	loop := testLoop(t, store)
+	require.NoError(t, store.SetMode(t.Context(), loop.ID, ModeProject))
+	mux := http.NewServeMux()
+	Register(mux, store, func() {})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/loops/"+loop.ID+"/versions", strings.NewReader(`{"project":true,"yaml":"agents:\n  root:\n    model: auto\n    instruction: Implement and verify the task.\n"}`)))
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var version Version
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &version))
+	assert.Equal(t, ModeProject, version.Mode)
+	_, err := ProjectInstruction(version)
+	require.NoError(t, err)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/loops/"+loop.ID+"/versions", strings.NewReader(`{"project":true,"yaml":"agents:\n  root:\n    model: auto\n    instruction: Work\n    toolsets: [{type: shell}]\n"}`)))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
