@@ -3,11 +3,10 @@ package board
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"math"
-	"slices"
-	"strings"
 	"time"
+
+	"github.com/dgageot/board/pkg/loops"
 )
 
 // RunReview separates observed execution from the untested next-version proposal.
@@ -30,17 +29,14 @@ type RunReview struct {
 	Usage          map[string]float64 `json:"usage,omitempty"`
 	Events         []json.RawMessage  `json:"events,omitempty"`
 	EventBytes     int                `json:"eventBytes,omitempty"`
+	Unpriced       bool               `json:"unpriced,omitempty"`
+	JudgeJobs      []string           `json:"judgeJobs,omitempty"`
+	JudgeJob       string             `json:"judgeJob,omitempty"`
+	RevisionJobs   []string           `json:"revisionJobs,omitempty"`
 	Truncated      bool               `json:"truncated,omitempty"`
 }
 
-// RunAssessment is a judge opinion, not a substitute for observed tests or CI.
-type RunAssessment struct {
-	Quality      string   `json:"quality"`
-	Efficiency   string   `json:"efficiency"`
-	ChangeImpact string   `json:"changeImpact"`
-	Summary      string   `json:"summary"`
-	Improvements []string `json:"improvements"`
-}
+type RunAssessment = loops.RunAssessment
 
 func (r *RunReview) observe(root string, seq uint64, raw []byte) error {
 	if r.FinishedAt != "" {
@@ -52,7 +48,10 @@ func (r *RunReview) observe(root string, seq uint64, raw []byte) error {
 		Timestamp time.Time `json:"timestamp"`
 		Reason    string    `json:"reason"`
 		Running   bool      `json:"running"`
-		Usage     *struct {
+		Budgets   []struct {
+			Unpriced bool `json:"unpriced"`
+		} `json:"budgets"`
+		Usage *struct {
 			Cost float64 `json:"cost"`
 		} `json:"usage"`
 	}
@@ -94,6 +93,11 @@ func (r *RunReview) observe(root string, seq uint64, raw []byte) error {
 			r.Background[event.SessionID] = true
 		} else {
 			delete(r.Background, event.SessionID)
+		}
+	}
+	if event.Type == "budget_usage" {
+		for _, budget := range event.Budgets {
+			r.Unpriced = r.Unpriced || budget.Unpriced
 		}
 	}
 	if event.Type == "token_usage" && event.Usage != nil && event.SessionID != "" {
@@ -145,7 +149,7 @@ func (r *RunReview) finish(reason string, at time.Time) {
 		r.Complete = false
 	}
 	var cost float64
-	priced := len(r.Usage) > 0 && r.Complete
+	priced := len(r.Usage) > 0 && r.Complete && !r.Unpriced
 	for session := range r.SeenSessions {
 		if _, ok := r.Usage[session]; !ok {
 			priced = false
@@ -163,23 +167,11 @@ func (r *RunReview) finish(reason string, at time.Time) {
 
 func relevantRunEvent(kind string) bool {
 	switch kind {
-	case "stream_started", "stream_stopped", "background_agent_status", "agent_choice", "tool_call", "tool_call_response", "token_usage", "error", "budget_exceeded", "warning":
+	case "stream_started", "stream_stopped", "background_agent_status", "agent_choice", "tool_call", "tool_call_response", "token_usage", "budget_usage", "error", "budget_exceeded", "warning":
 		return true
 	default:
 		return false
 	}
 }
 
-func validAssessment(a RunAssessment) error {
-	if !containsValue(a.Quality, "satisfied", "failed", "unknown") || !containsValue(a.Efficiency, "efficient", "mixed", "inefficient", "unknown") || !containsValue(a.ChangeImpact, "helped", "hurt", "inconclusive") || strings.TrimSpace(a.Summary) == "" || len(a.Summary) > 8000 || len(a.Improvements) > 8 {
-		return errors.New("invalid run assessment")
-	}
-	for _, item := range a.Improvements {
-		if len(item) > 2000 {
-			return errors.New("assessment suggestion too long")
-		}
-	}
-	return nil
-}
-
-func containsValue(value string, values ...string) bool { return slices.Contains(values, value) }
+func validAssessment(a RunAssessment) error { return a.Validate() }

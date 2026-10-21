@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -85,4 +86,34 @@ func (c *Controller) observeTaskRun(card *Card, seq uint64, raw []byte) {
 	if err := store.ObserveRun(card.ID, card.AgentSession, seq, raw); err != nil {
 		log.Printf("record run %s: %v", card.ID, err)
 	}
+}
+
+func (s *SQLiteStore) interruptRunReview(cardID, reason string) error {
+	task, err := s.ProjectTaskForCard(cardID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	review, err := s.RunReview(task.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if review.State != "observing" {
+		return nil
+	}
+	review.State = "pending"
+	review.Complete = false
+	review.Outcome = reason
+	review.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	data, err := json.Marshal(review)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE loop_run_reviews SET state='pending',data=? WHERE task_id=? AND state='observing'`, string(data), task.ID)
+	return err
 }

@@ -98,6 +98,8 @@ func Run() error {
 		return err
 	}
 	defer func() { cancel(); b.loopService.Close() }()
+	stopLearning := b.startRunLearning(ctx)
+	defer stopLearning()
 
 	handler, err := buildMux(b)
 	if err != nil {
@@ -154,6 +156,8 @@ func buildMux(b *Board) (http.Handler, error) {
 	mux.HandleFunc("GET /api/loops/{id}/tasks", b.handleLoopProjectTasks)
 	mux.HandleFunc("POST /api/loops/{id}/tasks", b.handleRunLoopProjectTask)
 	mux.HandleFunc("POST /api/loops/{id}/tasks/{task}/close", b.handleCloseLoopProjectTask)
+	mux.HandleFunc("POST /api/loops/{id}/tasks/{task}/prepare", b.handleRetryRunLearning)
+	mux.HandleFunc("GET /api/loops/{id}/tasks/{task}/evidence", b.handleRunEvidence)
 
 	// API routes
 	mux.HandleFunc("GET /api/projects", b.handleListProjects)

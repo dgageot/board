@@ -642,6 +642,9 @@ func (c *Controller) SendPrompt(card *Card, prompt string) error {
 func (c *Controller) relaunch(card *Card, prompt string) error {
 	if store, ok := c.store.(projectTaskStore); ok {
 		if _, err := store.ProjectTaskForCard(card.ID); err == nil {
+			if reviews, ok := c.store.(*SQLiteStore); ok {
+				_ = reviews.interruptRunReview(card.ID, "interrupted")
+			}
 			c.setStatus(card.ID, StatusError)
 			return errors.New("project-task sessions are not automatically relaunched; inspect the worktree and create a new task explicitly")
 		} else if !errors.Is(err, sql.ErrNoRows) {

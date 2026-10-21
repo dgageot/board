@@ -21,6 +21,11 @@ func (c *Controller) finishTaskClose(store projectTaskStore, task *ProjectTask) 
 			return fmt.Errorf("stop project task session: %w", err)
 		}
 	}
+	if reviewStore, ok := c.store.(*SQLiteStore); ok {
+		if err := reviewStore.interruptRunReview(card.ID, "canceled"); err != nil {
+			return err
+		}
+	}
 	if err := c.store.UpdateCardStatus(card.ID, StatusClosed); err != nil {
 		return err
 	}

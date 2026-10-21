@@ -58,7 +58,8 @@ func (b *Board) handleLoopProjectTasks(w http.ResponseWriter, r *http.Request) {
 	type response struct {
 		ProjectTask
 
-		Card *Card `json:"card,omitempty"`
+		Card   *Card      `json:"card,omitempty"`
+		Review *RunReview `json:"review,omitempty"`
 	}
 	result := []response{}
 	for _, task := range tasks {
@@ -67,7 +68,21 @@ func (b *Board) handleLoopProjectTasks(w http.ResponseWriter, r *http.Request) {
 			writeError(w, err)
 			return
 		}
-		result = append(result, response{ProjectTask: task, Card: card})
+		var review *RunReview
+		if reviews, ok := b.store.(reviewStore); ok {
+			if saved, err := reviews.RunReview(task.ID); err == nil {
+				saved.Events = nil
+				saved.Usage = nil
+				saved.OpenStreams = nil
+				saved.SeenSessions = nil
+				saved.Background = nil
+				review = &saved
+			} else if !errors.Is(err, sql.ErrNoRows) {
+				writeError(w, err)
+				return
+			}
+		}
+		result = append(result, response{ProjectTask: task, Card: card, Review: review})
 	}
 	writeJSON(w, result)
 }
