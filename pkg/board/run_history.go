@@ -36,7 +36,7 @@ func (b *Board) handleRetryRunLearning(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "preparation is not retryable", http.StatusConflict)
 		return
 	}
-	result, err := store.db.Exec(`UPDATE loop_run_reviews SET state='pending' WHERE task_id=? AND state IN ('failed','interrupted','revision_failed')`, task.ID)
+	result, err := store.db.Exec(`UPDATE loop_run_reviews SET state='pending' WHERE task_id=? AND state IN ('failed','interrupted','revision_failed') AND task_id IN (SELECT t.id FROM loop_project_tasks t JOIN loops l ON l.id=t.loop_id WHERE l.deleting=0)`, task.ID)
 	if err != nil {
 		writeError(w, err)
 		return

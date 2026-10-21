@@ -115,7 +115,7 @@ func (s *Store) createGenerating(ctx context.Context, loop Loop) (Loop, Job, err
 
 // List returns the newest loops first.
 func (s *Store) List(ctx context.Context) ([]Loop, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at,project_id,mode FROM loops ORDER BY created_at DESC,id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at,project_id,mode,deleting FROM loops ORDER BY created_at DESC,id`)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (s *Store) List(ctx context.Context) ([]Loop, error) {
 	loops := []Loop{}
 	for rows.Next() {
 		var loop Loop
-		if err := rows.Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt, &loop.ProjectID, &loop.Mode); err != nil {
+		if err := rows.Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt, &loop.ProjectID, &loop.Mode, &loop.Deleting); err != nil {
 			return nil, err
 		}
 		loops = append(loops, loop)
@@ -135,8 +135,8 @@ func (s *Store) List(ctx context.Context) ([]Loop, error) {
 func (s *Store) Get(ctx context.Context, id string) (Detail, error) {
 	detail := Detail{Versions: []Version{}}
 	loop := &detail.Loop
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at,project_id,mode FROM loops WHERE id=?`, id).
-		Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt, &loop.ProjectID, &loop.Mode)
+	err := s.db.QueryRowContext(ctx, `SELECT id,name,description,criteria,example,active_version,created_at,project_id,mode,deleting FROM loops WHERE id=?`, id).
+		Scan(&loop.ID, &loop.Name, &loop.Description, &loop.Criteria, &loop.Example, &loop.ActiveVersion, &loop.CreatedAt, &loop.ProjectID, &loop.Mode, &loop.Deleting)
 	if err != nil {
 		return Detail{}, notFound(err)
 	}
@@ -175,7 +175,7 @@ func (s *Store) addVersion(ctx context.Context, loopID, config, rationale, mode 
 	version := Version{ID: newID(), LoopID: loopID, YAML: config, Rationale: strings.TrimSpace(rationale), CreatedAt: now(), Mode: mode}
 	// A single statement allocates the number and checks ownership atomically.
 	err := s.db.QueryRowContext(ctx, `INSERT INTO loop_versions (id,loop_id,number,yaml,rationale,created_at,mode)
-		SELECT ?,id,(SELECT COALESCE(MAX(number),0)+1 FROM loop_versions WHERE loop_id=?),?,?,?,? FROM loops WHERE id=? RETURNING number`,
+		SELECT ?,id,(SELECT COALESCE(MAX(number),0)+1 FROM loop_versions WHERE loop_id=?),?,?,?,? FROM loops WHERE id=? AND deleting=0 RETURNING number`,
 		version.ID, loopID, config, version.Rationale, version.CreatedAt, mode, loopID).Scan(&version.Number)
 	return version, notFound(err)
 }

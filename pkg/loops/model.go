@@ -12,6 +12,7 @@ var (
 // Loop is a task contract, independent of any particular agent version.
 type Loop struct {
 	ID            string `json:"id"`
+	Deleting      bool   `json:"deleting,omitempty"`
 	Name          string `json:"name"`
 	Description   string `json:"description"`
 	Criteria      string `json:"criteria"`

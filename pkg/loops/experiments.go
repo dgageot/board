@@ -85,7 +85,14 @@ func (s *Store) AddFeedback(ctx context.Context, loopID, jobID, rating, note str
 		return Feedback{}, fmt.Errorf("%w: feedback is too long", ErrInvalid)
 	}
 	feedback := Feedback{ID: newID(), LoopID: loopID, JobID: jobID, Rating: rating, Note: note, CreatedAt: now()}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO loop_feedback (id,loop_id,job_id,rating,note,created_at) VALUES (?,?,?,?,?,?)`, feedback.ID, loopID, jobID, rating, note, feedback.CreatedAt)
+	result, err := s.db.ExecContext(ctx, `INSERT INTO loop_feedback (id,loop_id,job_id,rating,note,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM loops WHERE id=? AND deleting=0)`, feedback.ID, loopID, jobID, rating, note, feedback.CreatedAt, loopID)
+	if err == nil {
+		var n int64
+		n, err = result.RowsAffected()
+		if err == nil && n == 0 {
+			err = ErrConflict
+		}
+	}
 	return feedback, err
 }
 
@@ -112,7 +119,7 @@ func (s *Store) saveRound(ctx context.Context, round Round) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO loop_rounds (id,loop_id,status,data) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,data=excluded.data`, round.ID, round.LoopID, round.Status, string(data))
+	_, err = s.db.ExecContext(ctx, `INSERT INTO loop_rounds (id,loop_id,status,data) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM loops WHERE id=? AND deleting=0) ON CONFLICT(id) DO UPDATE SET status=excluded.status,data=excluded.data`, round.ID, round.LoopID, round.Status, string(data), round.LoopID)
 	return err
 }
 
@@ -177,7 +184,7 @@ func (s *Store) Promote(ctx context.Context, loopID, versionID, expectedActive s
 	if !qualified {
 		return fmt.Errorf("%w: run and inspect the initial version, or complete a passing experiment before promotion", ErrConflict)
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE loops SET active_version=? WHERE id=? AND active_version=? AND mode='analysis'`, versionID, loopID, expectedActive)
+	result, err := s.db.ExecContext(ctx, `UPDATE loops SET active_version=? WHERE id=? AND active_version=? AND mode='analysis' AND deleting=0`, versionID, loopID, expectedActive)
 	if err != nil {
 		return err
 	}
@@ -267,7 +274,7 @@ func (s *Store) admitRound(ctx context.Context, round Round) error {
 	if err != nil {
 		return err
 	}
-	result, err := s.db.ExecContext(ctx, `INSERT INTO loop_rounds(id,loop_id,status,data) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM loops WHERE id=? AND mode='analysis')`, round.ID, round.LoopID, round.Status, string(data), round.LoopID)
+	result, err := s.db.ExecContext(ctx, `INSERT INTO loop_rounds(id,loop_id,status,data) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM loops WHERE id=? AND mode='analysis' AND deleting=0)`, round.ID, round.LoopID, round.Status, string(data), round.LoopID)
 	if err != nil {
 		return err
 	}

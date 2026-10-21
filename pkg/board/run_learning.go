@@ -60,14 +60,14 @@ func (b *Board) startRunLearning(ctx context.Context) func() {
 
 func (w *runLearningWorker) processNext(ctx context.Context) error {
 	var taskID string
-	err := w.store.db.GetContext(ctx, &taskID, `SELECT task_id FROM loop_run_reviews WHERE state='pending' ORDER BY rowid LIMIT 1`)
+	err := w.store.db.GetContext(ctx, &taskID, `SELECT task_id FROM loop_run_reviews WHERE state='pending' AND task_id IN (SELECT t.id FROM loop_project_tasks t JOIN loops l ON l.id=t.loop_id WHERE l.deleting=0) ORDER BY rowid LIMIT 1`)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	result, err := w.store.db.ExecContext(ctx, `UPDATE loop_run_reviews SET state='processing' WHERE task_id=? AND state='pending'`, taskID)
+	result, err := w.store.db.ExecContext(ctx, `UPDATE loop_run_reviews SET state='processing' WHERE task_id=? AND state='pending' AND task_id IN (SELECT t.id FROM loop_project_tasks t JOIN loops l ON l.id=t.loop_id WHERE l.deleting=0)`, taskID)
 	if err != nil {
 		return err
 	}
@@ -252,7 +252,7 @@ func (w *runLearningWorker) publish(ctx context.Context, task ProjectTask, revie
 		if state != "processing" {
 			return errors.New("run learning was superseded")
 		}
-		if err := tx.GetContext(ctx, &active, `SELECT active_version FROM loops WHERE id=?`, task.LoopID); err != nil {
+		if err := tx.GetContext(ctx, &active, `SELECT active_version FROM loops WHERE id=? AND deleting=0`, task.LoopID); err != nil {
 			return err
 		}
 		if err := tx.GetContext(ctx, &mode, `SELECT mode FROM loops WHERE id=?`, task.LoopID); err != nil {

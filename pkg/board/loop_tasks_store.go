@@ -31,6 +31,13 @@ func (s *SQLiteStore) ProjectTaskForCard(cardID string) (*ProjectTask, error) {
 // ReserveProjectTask commits the card and its authorization before launching any agent.
 func (s *SQLiteStore) ReserveProjectTask(task *ProjectTask, card *Card) error {
 	return runInTx(s.db, func(tx *sqlx.Tx) error {
+		var available bool
+		if err := tx.Get(&available, `SELECT EXISTS(SELECT 1 FROM loops WHERE id=? AND deleting=0)`, task.LoopID); err != nil {
+			return err
+		}
+		if !available {
+			return fmt.Errorf("%w: loop is deleting or missing", errBadInput)
+		}
 		if task.VersionID != "" {
 			var valid bool
 			if err := tx.Get(&valid, `SELECT EXISTS(SELECT 1 FROM loops JOIN loop_versions ON loop_versions.loop_id=loops.id WHERE loops.id=? AND loops.mode='project' AND loop_versions.id=? AND loop_versions.mode='project')`, task.LoopID, task.VersionID); err != nil {

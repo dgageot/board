@@ -93,13 +93,21 @@ func (s *Service) Optimize(ctx context.Context, loopID string, input OptimizeReq
 	}
 	roundCtx, cancel := context.WithTimeout(s.ctx, 20*time.Minute)
 	s.cancel[round.ID] = cancel
+	done := make(chan struct{})
+	s.running[round.ID] = done
 	workerRound := round
 	workerRound.Candidates = slices.Clone(round.Candidates)
 	workerRound.Inputs = slices.Clone(round.Inputs)
 	models := slices.Clone(input.Models)
 	s.wg.Go(func() {
 		defer cancel()
-		defer func() { s.mu.Lock(); delete(s.cancel, round.ID); s.mu.Unlock() }()
+		defer func() {
+			s.mu.Lock()
+			delete(s.cancel, round.ID)
+			delete(s.running, round.ID)
+			close(done)
+			s.mu.Unlock()
+		}()
 		s.optimize(roundCtx, workerRound, detail.Loop, evidence, models)
 	})
 	s.changed()
@@ -131,9 +139,11 @@ func (s *Service) experimentJob(ctx context.Context, loopID, versionID, kind, in
 	// Publication and registration share Cancel's lock.
 	jobCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	s.cancel[job.ID] = cancel
+	done := make(chan struct{})
+	s.running[job.ID] = done
 	s.mu.Unlock()
 	defer cancel()
-	defer func() { s.mu.Lock(); delete(s.cancel, job.ID); s.mu.Unlock() }()
+	defer func() { s.mu.Lock(); delete(s.cancel, job.ID); delete(s.running, job.ID); close(done); s.mu.Unlock() }()
 	return s.execute(jobCtx, job, config)
 }
 

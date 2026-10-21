@@ -15,7 +15,7 @@ func (s *Store) SetMode(ctx context.Context, id, mode string) error {
 	if mode != ModeAnalysis && mode != ModeProject {
 		return fmt.Errorf("%w: choose analysis or project execution", ErrInvalid)
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE loops SET active_version=CASE WHEN mode=? THEN active_version ELSE '' END,mode=? WHERE id=? AND NOT EXISTS(SELECT 1 FROM loop_jobs WHERE loop_id=? AND status IN ('queued','running')) AND NOT EXISTS(SELECT 1 FROM loop_rounds WHERE loop_id=? AND status IN ('designing','testing'))`, mode, mode, id, id, id)
+	result, err := s.db.ExecContext(ctx, `UPDATE loops SET active_version=CASE WHEN mode=? THEN active_version ELSE '' END,mode=? WHERE id=? AND deleting=0 AND NOT EXISTS(SELECT 1 FROM loop_jobs WHERE loop_id=? AND status IN ('queued','running')) AND NOT EXISTS(SELECT 1 FROM loop_rounds WHERE loop_id=? AND status IN ('designing','testing'))`, mode, mode, id, id, id)
 	if err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func ProjectInstruction(version Version) (string, error) {
 
 // ActivateProjectVersion selects a reviewed workflow, not a claim of benchmark quality.
 func (s *Store) ActivateProjectVersion(ctx context.Context, id, versionID, expected string) error {
-	result, err := s.db.ExecContext(ctx, `UPDATE loops SET active_version=? WHERE id=? AND mode='project' AND active_version=? AND EXISTS(SELECT 1 FROM loop_versions WHERE id=? AND loop_id=? AND mode='project')`, versionID, id, expected, versionID, id)
+	result, err := s.db.ExecContext(ctx, `UPDATE loops SET active_version=? WHERE id=? AND deleting=0 AND mode='project' AND active_version=? AND EXISTS(SELECT 1 FROM loop_versions WHERE id=? AND loop_id=? AND mode='project')`, versionID, id, expected, versionID, id)
 	if err != nil {
 		return err
 	}
