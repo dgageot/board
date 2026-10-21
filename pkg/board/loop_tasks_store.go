@@ -50,7 +50,10 @@ func (s *SQLiteStore) ReserveProjectTask(task *ProjectTask, card *Card) error {
 			return err
 		}
 		_, err := tx.NamedExec(`INSERT INTO loop_project_tasks (`+projectTaskColumns+`) VALUES (:id,:loop_id,:project_id,:project_name,:repo_path,:agent,:task,:criteria,:prompt,:card_id,:base,:status,:error,:created_at,:version_id)`, task)
-		return err
+		if err != nil {
+			return err
+		}
+		return reserveReview(tx, task)
 	})
 }
 

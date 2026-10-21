@@ -379,6 +379,7 @@ func (c *Controller) watch(ctx context.Context, cardID string, state *cardActivi
 
 		exited := false
 		_ = client.StreamEvents(streamCtx, 0, func(ev agent.Event) bool {
+			c.observeTaskRun(card, ev.Seq, ev.Raw)
 			if replaying && (ev.Seq == 0 || ev.Seq > snap.LastEventSeq) {
 				flushReplay() // past the snapshot: this event is live
 			}

@@ -76,8 +76,9 @@ const errCodeUnknownSession = "unknown_session"
 
 // Event is the subset of a runtime event the board cares about.
 type Event struct {
-	Type  string `json:"type"`
-	Title string `json:"title"`
+	Type  string          `json:"type"`
+	Raw   json.RawMessage `json:"-"`
+	Title string          `json:"title"`
 	// SessionID identifies the session the event belongs to: the watched
 	// root session, or a sub-agent/skill sub-session whose events are
 	// forwarded onto the root's stream stamped with their own id. Empty on
@@ -476,6 +477,7 @@ func (c *Client) StreamEvents(ctx context.Context, since uint64, onEvent func(Ev
 		if json.Unmarshal([]byte(strings.TrimSpace(data)), &ev) != nil {
 			continue
 		}
+		ev.Raw = append(json.RawMessage(nil), []byte(strings.TrimSpace(data))...)
 		ev.Seq = seq
 		seq = 0
 		if !onEvent(ev) {
