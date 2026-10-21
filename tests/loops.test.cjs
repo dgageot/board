@@ -750,11 +750,18 @@ test('a mode change completing after navigation leaves the other loop selection 
  assert.match(h.element('loop-detail').innerHTML,/btn-primary" data-version="second-v2"/);
 });
 
-test('blocked analysis offers a recovery path instead of another impossible run', async () => {
+test('blocked analysis preserves context retry and offers explicit mode choice', async () => {
  const {renderLoopDetail}=await modulePromise;const detail=inspectorFixture();detail.jobs=[];
  detail.rounds=[{status:'blocked',outcome:'capability_blocked',error:'Needs file writes',inputs:[],candidates:[]}];
  const html=renderLoopDetail(detail,'v1');
- assert.match(html,/This task needs project work/);
+ assert.match(html,/Last optimization was blocked/);
  assert.match(html,/data-mode="project"/);
- assert.match(html,/data-action="run" disabled/);
+ assert.doesNotMatch(html,/data-action="run" disabled/);
+});
+
+test('old blocked assessments do not override newer completed experiments', async () => {
+ const {renderLoopDetail}=await modulePromise;const detail=inspectorFixture();detail.jobs=[];
+ detail.rounds=[{status:'completed',outcome:'unchanged'},{status:'blocked',outcome:'capability_blocked',error:'Missing file'}];
+ const html=renderLoopDetail(detail,'v1');assert.doesNotMatch(html,/Last optimization was blocked/);
+ assert.match(html,/<nav class="loop-tabs" aria-label="Loop views">/);
 });
