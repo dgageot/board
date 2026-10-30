@@ -1,8 +1,10 @@
 package board
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,6 +28,79 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	version, err := currentVersion(db)
 	require.NoError(t, err)
 	assert.Equal(t, 14, version)
+}
+
+func TestMigrateRepairsMissingDiffBaseAtVersion13(t *testing.T) {
+	store := openTestStore(t)
+	_, err := store.db.Exec(`
+		ALTER TABLE cards DROP COLUMN diff_base;
+		ALTER TABLE loop_project_tasks ADD COLUMN agent_config TEXT NOT NULL DEFAULT '';
+		DROP TABLE task_templates;
+		UPDATE schema_version SET version = 13;
+	`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrate(store.db))
+	require.NoError(t, migrate(store.db))
+	cards, err := store.ListCards()
+	require.NoError(t, err)
+	assert.Empty(t, cards)
+	assert.True(t, tableExists(store.db, "task_templates"))
+	version, err := currentVersion(store.db)
+	require.NoError(t, err)
+	assert.Equal(t, 14, version)
+}
+
+func TestMigrateRepairsMissingDiffBaseAtVersion14(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "board.db")
+	db, err := sqlx.Open("sqlite", path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, migrate(db))
+	store := &SQLiteStore{db: db}
+	card := &Card{
+		ID: "loop-card", Title: "Existing task", Prompt: "Do the task", Column: "dev",
+		Status: StatusRunning, Agent: "agent", RepoPath: "/repo", Branch: "branch",
+		Worktree: "/worktree", Session: "session", AgentSession: "conversation", Cost: 1.25,
+	}
+	require.NoError(t, store.InsertCard(card))
+	ordinary := &Card{ID: "ordinary", Title: "Normal task", Column: "dev", Status: StatusWaiting}
+	require.NoError(t, store.InsertCard(ordinary))
+	template := &TaskTemplate{ID: "template", Name: "Template", Prompt: "Existing prompt"}
+	require.NoError(t, store.InsertTaskTemplate(template))
+	_, err = store.db.Exec(`
+		INSERT INTO loop_project_tasks
+		(id, loop_id, project_id, project_name, repo_path, agent, task, criteria, prompt, card_id, base, status, created_at)
+		VALUES ('task', 'loop', 'project', 'Project', '/repo', 'agent', 'Do the task', 'Tests pass', 'Do the task', 'loop-card', 'base', 'launched', '2026-10-01');
+		ALTER TABLE cards DROP COLUMN diff_base;
+		ALTER TABLE loop_project_tasks ADD COLUMN agent_config TEXT NOT NULL DEFAULT '';
+	`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrate(store.db))
+	card.Status = StatusClosed
+	card.DiffBase = "base"
+	cards, err := store.ListCards()
+	require.NoError(t, err)
+	assert.Equal(t, []*Card{card, ordinary}, cards)
+	templates, err := store.ListTaskTemplates()
+	require.NoError(t, err)
+	assert.Equal(t, []*TaskTemplate{template}, templates)
+	version, err := currentVersion(store.db)
+	require.NoError(t, err)
+	assert.Equal(t, 14, version)
+
+	require.NoError(t, store.UpdateCardStatus(card.ID, StatusWaiting))
+	require.NoError(t, store.Close())
+	reopened, err := sqlx.Open("sqlite", path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = reopened.Close() })
+	require.NoError(t, migrate(reopened))
+	store = &SQLiteStore{db: reopened}
+	got, err := store.GetCard(card.ID)
+	require.NoError(t, err)
+	card.Status = StatusWaiting
+	assert.Equal(t, card, got, "restart must not archive the card again")
 }
 
 func TestMigrationVersion(t *testing.T) {
@@ -67,6 +142,7 @@ func TestInsertAndGetCard(t *testing.T) {
 		Branch:   "board/fix-bug-abc123",
 		Worktree: "/path/to/worktree",
 		Session:  "board-abc123",
+		DiffBase: "base-commit",
 	}
 	require.NoError(t, store.InsertCard(card))
 

@@ -131,7 +131,8 @@ func migrate(db *sqlx.DB) error {
 	}
 
 	for _, m := range migrations {
-		if m.version <= current {
+		// A legacy migration also used version 13, without adding diff_base.
+		if m.version <= current && m.version != 13 {
 			continue
 		}
 
@@ -140,17 +141,30 @@ func migrate(db *sqlx.DB) error {
 			return fmt.Errorf("read %s: %w", m.name, err)
 		}
 
+		needed := m.version > current
 		err = runInTx(db, func(tx *sqlx.Tx) error {
+			if !needed {
+				var hasDiffBase bool
+				if err := tx.Get(&hasDiffBase, `SELECT EXISTS(SELECT 1 FROM pragma_table_info('cards') WHERE name = 'diff_base')`); err != nil {
+					return fmt.Errorf("check diff_base column: %w", err)
+				}
+				needed = !hasDiffBase
+			}
+			if !needed {
+				return nil
+			}
 			if _, err := tx.Exec(string(data)); err != nil {
 				return err
 			}
-			return setVersion(tx, m.version)
+			return setVersion(tx, max(current, m.version))
 		})
 		if err != nil {
 			return fmt.Errorf("migration %d: %w", m.version, err)
 		}
 
-		log.Printf("applied migration %d", m.version)
+		if needed {
+			log.Printf("applied migration %d", m.version)
+		}
 	}
 
 	return nil
