@@ -88,3 +88,46 @@ func TestCommitRoutesMissingWorktree(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.JSONEq(t, "[]", rec.Body.String())
 }
+
+func TestArchivedTaskKeepsOriginalDiffBase(t *testing.T) {
+	repo := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+		return strings.TrimSpace(string(out))
+	}
+	run("init")
+	run("-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Base")
+	base := run("rev-parse", "HEAD")
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "file.txt"), []byte("archived work\n"), 0o600))
+	run("add", ".")
+	run("-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "-m", "Task")
+	hash := run("rev-parse", "HEAD")
+
+	b, store := newTestBoard(t)
+	require.NoError(t, store.InsertCard(&Card{ID: "archived", Status: StatusClosed, Worktree: repo, DiffBase: base}))
+	handler, err := buildMux(b)
+	require.NoError(t, err)
+	for _, state := range []string{"local-only", "upstream-advanced"} {
+		t.Run(state, func(t *testing.T) {
+			if state == "upstream-advanced" {
+				run("update-ref", "refs/remotes/origin/main", "HEAD")
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/cards/archived/commits", http.NoBody))
+			require.Equal(t, http.StatusOK, rec.Code)
+			var commits []git.Commit
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &commits))
+			assert.Equal(t, []git.Commit{{Hash: hash, Subject: "Task"}}, commits)
+			for _, path := range []string{"/api/cards/archived/diff", "/api/cards/archived/diff?commit=" + hash} {
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, http.NoBody))
+				require.Equal(t, http.StatusOK, rec.Code)
+				assert.Contains(t, rec.Body.String(), "+archived work")
+			}
+		})
+	}
+}

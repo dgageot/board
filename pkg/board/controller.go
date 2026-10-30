@@ -108,12 +108,12 @@ func (c *Controller) ReconcileAll() error {
 		return fmt.Errorf("list cards: %w", err)
 	}
 	for _, card := range cards {
-		closed, err := c.reconcileTaskClose(card)
-		if err != nil {
-			log.Printf("card %s: close cleanup pending: %v", card.ID, err)
-			continue
-		}
-		if closed {
+		if card.Status == StatusClosed {
+			for _, name := range []string{card.Session, coachSessionName(card.ID)} {
+				if err := c.sessions.KillSession(name); err != nil {
+					return fmt.Errorf("stop archived task %s: %w", card.ID, err)
+				}
+			}
 			continue
 		}
 		c.Start(card)
@@ -126,20 +126,6 @@ func (c *Controller) Start(card *Card) {
 	if card.Status == StatusClosed {
 		return
 	}
-	if store, ok := c.store.(projectTaskStore); ok {
-		task, err := store.ProjectTaskForCard(card.ID)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return
-		}
-		if err == nil && (task.Status == "closing" || task.Status == "closed") {
-			return
-		}
-	}
-	c.startWatcher(card)
-}
-
-// startWatcher also accepts a freshly reserved task while its launch lock is held.
-func (c *Controller) startWatcher(card *Card) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, ok := c.watchers[card.ID]; ok {
@@ -384,7 +370,6 @@ func (c *Controller) watch(ctx context.Context, cardID string, state *cardActivi
 
 		exited := false
 		_ = client.StreamEvents(streamCtx, 0, func(ev agent.Event) bool {
-			c.observeTaskRun(card, ev.Seq, ev.Raw)
 			if replaying && (ev.Seq == 0 || ev.Seq > snap.LastEventSeq) {
 				flushReplay() // past the snapshot: this event is live
 			}
@@ -613,14 +598,8 @@ func (c *Controller) MoveCardToColumn(card *Card, column string, requireIdle boo
 // message; any other failure (busy, queue full, timeout) is surfaced rather
 // than destroying a live session.
 func (c *Controller) SendPrompt(card *Card, prompt string) error {
-	if store, ok := c.store.(projectTaskStore); ok {
-		task, err := store.ProjectTaskForCard(card.ID)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if err == nil && (task.Status == "closing" || task.Status == "closed") {
-			return fmt.Errorf("%w: project task is closed", errBadInput)
-		}
+	if card.Status == StatusClosed {
+		return fmt.Errorf("%w: task is closed", errBadInput)
 	}
 	if prompt == "" {
 		return nil
@@ -645,18 +624,6 @@ func (c *Controller) SendPrompt(card *Card, prompt string) error {
 // message. Launching from the worktree keeps the agent isolated even if
 // docker-agent's own worktree reattachment does not happen.
 func (c *Controller) relaunch(card *Card, prompt string) error {
-	if store, ok := c.store.(projectTaskStore); ok {
-		if _, err := store.ProjectTaskForCard(card.ID); err == nil {
-			if reviews, ok := c.store.(*SQLiteStore); ok {
-				_ = reviews.interruptRunReview(card.ID, "interrupted")
-			}
-			c.setStatus(card.ID, StatusError)
-			return errors.New("project-task sessions are not automatically relaunched; inspect the worktree and create a new task explicitly")
-		} else if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-	}
-
 	log.Printf("card %s: relaunching agent (tmux session %s, agent session %s)", card.ID, card.Session, card.AgentSession)
 	_ = c.sessions.KillSession(card.Session)
 	socket := socketPath(card.AgentSession)

@@ -3,7 +3,6 @@ package board
 import (
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -89,59 +88,24 @@ func TestCSRFProtectAllowsCrossOriginReads(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestLoopCreationDoesNotAskForExample(t *testing.T) {
+func TestLoopsFeatureRemoved(t *testing.T) {
 	handler := testHandler(t)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.NotContains(t, rec.Body.String(), `id="loop-example"`)
-	assert.NotContains(t, rec.Body.String(), "An example input")
-}
+	assert.Contains(t, rec.Body.String(), `id="board"`)
+	assert.NotContains(t, rec.Body.String(), "loops")
+	assert.NotContains(t, rec.Body.String(), "loop-")
 
-func TestNewLoopFieldsDisablePasswordCompletion(t *testing.T) {
-	handler := testHandler(t)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
-	require.Equal(t, http.StatusOK, rec.Code)
-	_, dialog, found := strings.Cut(rec.Body.String(), `<dialog id="loop-new-dialog"`)
-	require.True(t, found)
-	dialog, _, found = strings.Cut(dialog, "</dialog>")
-	require.True(t, found)
-	fields := regexp.MustCompile(`<(?:input|select|textarea)\b[^>]*>`).FindAllString(dialog, -1)
-	require.Len(t, fields, 4)
-	for _, field := range fields {
-		assert.Contains(t, field, `autocomplete="off"`)
-		assert.Contains(t, field, `data-1p-ignore`)
+	for _, path := range []string{
+		"/loops.js", "/loops.css", "/result-markdown.js",
+		"/api/loops", "/api/loops/old", "/api/loops/old/tasks",
+		"/api/loops/old/overview", "/api/loops/old/tasks/task/evidence",
+	} {
+		t.Run(path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, http.NoBody))
+			assert.Equal(t, http.StatusNotFound, rec.Code)
+		})
 	}
-}
-
-func TestLoopsCopyKeepsOperationalGuidanceWithoutSlogans(t *testing.T) {
-	handler := testHandler(t)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
-	require.Equal(t, http.StatusOK, rec.Code)
-	page := rec.Body.String()
-	assert.NotContains(t, page, "Great agents aren't a lucky prompt")
-	assert.NotContains(t, page, "BUILD. MEASURE. EVOLVE.")
-	assert.NotContains(t, page, "Two new agents. One baseline.")
-	assert.Contains(t, page, "Creates the first agent version and runs the task once on the selected project.")
-	assert.Contains(t, page, "Sends selected committed files to your model provider")
-	assert.Contains(t, page, "Promotion is manual.")
-}
-
-func TestProjectTaskRunNeedsNoExtraAuthorization(t *testing.T) {
-	handler := testHandler(t)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
-	require.Equal(t, http.StatusOK, rec.Code)
-	_, dialog, found := strings.Cut(rec.Body.String(), `<dialog id="loop-project-task-dialog"`)
-	require.True(t, found)
-	dialog, _, found = strings.Cut(dialog, "</dialog>")
-	require.True(t, found)
-	assert.NotContains(t, dialog, `type="checkbox"`)
-	assert.NotContains(t, dialog, "I authorize")
-	assert.NotContains(t, dialog, `class="loop-job-error"`)
-	assert.Contains(t, dialog, "project’s configured agent and tools")
-	assert.Contains(t, dialog, "fresh worktree")
-	assert.Contains(t, dialog, `type="submit" class="btn btn-primary">Run task</button>`)
 }

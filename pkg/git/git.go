@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -126,14 +125,6 @@ func runGitEnv(dir string, env []string, args ...string) (string, error) {
 func IsRepo(path string) bool {
 	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
 	cmd.Dir = path
-	return cmd.Run() == nil
-}
-
-// IsRepoContext checks a repository without outliving the launch request.
-func IsRepoContext(ctx context.Context, path string) bool {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--is-inside-work-tree")
-	cmd.Dir = path
-	cmd.WaitDelay = time.Second
 	return cmd.Run() == nil
 }
 
@@ -497,44 +488,4 @@ func ciStatus(checks []prCheck) string {
 	default:
 		return PRStatusUnknown
 	}
-}
-
-// ExecutionBase pins a locally available commit, falling back to HEAD for local-only repositories.
-func ExecutionBase(ctx context.Context, dir string) (string, error) {
-	run := func(args ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, "git", args...)
-		cmd.Dir = dir
-		cmd.WaitDelay = time.Second
-		out, err := cmd.Output()
-		return strings.TrimSpace(string(out)), err
-	}
-	remote := "origin"
-	if out, err := run("remote"); err == nil && slices.Contains(strings.Fields(out), "upstream") {
-		remote = "upstream"
-	}
-	base := remote + "/main"
-	if ref, err := run("symbolic-ref", "--short", "refs/remotes/"+remote+"/HEAD"); err == nil && ref != "" {
-		base = ref
-	} else {
-		for _, branch := range []string{"main", "master"} {
-			ref := remote + "/" + branch
-			if _, err := run("rev-parse", "--verify", "--quiet", "refs/remotes/"+ref); err == nil {
-				base = ref
-				break
-			}
-		}
-	}
-	refs := []string{base, "HEAD"}
-	for _, ref := range refs {
-		cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", ref+"^{commit}")
-		cmd.Dir = dir
-		cmd.WaitDelay = time.Second
-		if out, err := cmd.Output(); err == nil {
-			return strings.TrimSpace(string(out)), nil
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	return "", errors.New("project requires an accessible Git commit")
 }

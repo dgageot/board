@@ -174,8 +174,8 @@ func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Board) handleMoveCard(w http.ResponseWriter, r *http.Request) {
-	b.taskLaunch.Lock()
-	defer b.taskLaunch.Unlock()
+	b.cardActions.Lock()
+	defer b.cardActions.Unlock()
 	var req struct {
 		Column string `json:"column"`
 	}
@@ -237,7 +237,7 @@ func (b *Board) handleJumpCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if card.Status == StatusClosed {
-		writeError(w, fmt.Errorf("%w: project task is closed; its diff remains available", errBadInput))
+		writeError(w, fmt.Errorf("%w: task is closed; its diff remains available", errBadInput))
 		return
 	}
 
@@ -264,16 +264,12 @@ func (b *Board) handleDiffCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base, err := b.taskBase(card.ID)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
 	var diff string
+	var err error
 	if hash := r.URL.Query().Get("commit"); hash != "" {
-		diff, err = git.CommitDiff(card.Worktree, hash, base)
+		diff, err = git.CommitDiff(card.Worktree, hash, card.DiffBase)
 	} else {
-		diff, err = git.Diff(card.Worktree, base)
+		diff, err = git.Diff(card.Worktree, card.DiffBase)
 	}
 	if errors.Is(err, git.ErrCommitNotFound) {
 		writeError(w, fmt.Errorf("%w: commit", errNotFound))
@@ -293,12 +289,7 @@ func (b *Board) handleCardCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base, err := b.taskBase(card.ID)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	commits, err := git.Commits(card.Worktree, base)
+	commits, err := git.Commits(card.Worktree, card.DiffBase)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -337,8 +328,8 @@ func (b *Board) deleteCardResources(card *Card) {
 }
 
 func (b *Board) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
-	b.taskLaunch.Lock()
-	defer b.taskLaunch.Unlock()
+	b.cardActions.Lock()
+	defer b.cardActions.Unlock()
 	card, ok := b.getCard(w, r)
 	if !ok {
 		return
@@ -395,8 +386,8 @@ func (b *Board) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Board) handleClearColumn(w http.ResponseWriter, r *http.Request) {
-	b.taskLaunch.Lock()
-	defer b.taskLaunch.Unlock()
+	b.cardActions.Lock()
+	defer b.cardActions.Unlock()
 	column := r.PathValue("column")
 
 	cards, err := b.store.ListCardsByColumn(column)
@@ -421,51 +412,10 @@ func (b *Board) handleClearColumn(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Linked project runs must stop successfully before their recovery record disappears.
 func (b *Board) deleteCard(card *Card) error {
-	if err := b.stopLinkedTask(card); err != nil {
-		return err
-	}
 	if err := b.store.DeleteCard(card.ID); err != nil {
 		return fmt.Errorf("delete card: %w", err)
 	}
 	b.deleteCardResources(card)
 	return nil
-}
-
-func (b *Board) stopLinkedTask(card *Card) error {
-	store, ok := b.store.(projectTaskStore)
-	if !ok {
-		return nil
-	}
-	task, err := store.ProjectTaskForCard(card.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if task.Status == "closed" {
-		return nil
-	}
-	if err := store.UpdateProjectTask(task.ID, "closing", task.Error); err != nil {
-		return err
-	}
-	b.controller.Stop(card.ID)
-	return b.controller.finishTaskClose(store, task)
-}
-
-func (b *Board) taskBase(cardID string) (string, error) {
-	store, ok := b.store.(projectTaskStore)
-	if !ok {
-		return "", nil
-	}
-	task, err := store.ProjectTaskForCard(cardID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return task.Base, nil
 }

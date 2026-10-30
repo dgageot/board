@@ -1,7 +1,6 @@
 package board
 
 import (
-	"cmp"
 	"context"
 	"embed"
 	"encoding/json"
@@ -19,7 +18,6 @@ import (
 	"time"
 
 	"github.com/dgageot/board/pkg/credentials"
-	"github.com/dgageot/board/pkg/loops"
 	"github.com/dgageot/board/pkg/tmux"
 )
 
@@ -89,18 +87,6 @@ func Run() error {
 		return err
 	}
 
-	loopDir, err := os.UserConfigDir()
-	if err != nil {
-		return err
-	}
-	b.loopService, err = loops.NewService(ctx, b.loops, &loops.ProcessRunner{Directory: filepath.Join(loopDir, "board", "loops", "attempts")}, cmp.Or(os.Getenv("BOARD_LOOPS_MODEL"), "auto"), b.broadcast)
-	if err != nil {
-		return err
-	}
-	defer func() { cancel(); b.loopService.Close() }()
-	stopLearning := b.startRunLearning(ctx)
-	defer stopLearning()
-
 	handler, err := buildMux(b)
 	if err != nil {
 		return err
@@ -118,8 +104,6 @@ func Run() error {
 	if err != nil {
 		return err
 	}
-	stopInitialRuns := b.startInitialRuns(ctx)
-	defer stopInitialRuns()
 	fmt.Printf("Board running at http://%s\n", cfg.ListenAddr)
 
 	return serve(ctx, srv, ln)
@@ -153,14 +137,6 @@ func serve(ctx context.Context, srv *http.Server, ln net.Listener) error {
 // buildMux registers all routes for the board.
 func buildMux(b *Board) (http.Handler, error) {
 	mux := http.NewServeMux()
-
-	loops.Register(mux, b.loops, b.broadcast, b.loopService)
-	mux.HandleFunc("DELETE /api/loops/{id}", b.handleDeleteLoop)
-	mux.HandleFunc("GET /api/loops/{id}/tasks", b.handleLoopProjectTasks)
-	mux.HandleFunc("POST /api/loops/{id}/tasks", b.handleRunLoopProjectTask)
-	mux.HandleFunc("POST /api/loops/{id}/tasks/{task}/close", b.handleCloseLoopProjectTask)
-	mux.HandleFunc("POST /api/loops/{id}/tasks/{task}/prepare", b.handleRetryRunLearning)
-	mux.HandleFunc("GET /api/loops/{id}/tasks/{task}/evidence", b.handleRunEvidence)
 
 	// API routes
 	mux.HandleFunc("GET /api/projects", b.handleListProjects)

@@ -6,7 +6,6 @@
   <title>Docker Agent Board</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="loops.css">
   <script type="importmap">
     {
       "imports": {
@@ -44,7 +43,6 @@
       <span class="brand-mark" aria-hidden="true"><svg class="icon" width="16" height="16"><use href="#i-kanban"/></svg></span>
       <h1>Board <span class="brand-sub">Docker Agent</span></h1>
     </div>
-    <nav class="workspace-nav" aria-label="Workspace"><a id="workspace-board" href="#board" aria-current="page">Board</a><a id="workspace-loops" href="#loops">↻ Loops</a></nav>
     <div id="board-summary" class="board-summary" aria-live="polite"></div>
     <div class="header-actions">
       <button id="btn-new-task" class="btn btn-primary" title="New task (N)"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-plus"/></svg><span class="btn-label">New task</span></button>
@@ -57,84 +55,6 @@
   </header>
 
   <main id="board" aria-label="Task board"></main>
-
-  <main id="loops-workspace" aria-label="AI loops" hidden>
-    <div class="loops-toolbar"><h2>Loops</h2><span id="loops-count"></span><button class="btn btn-primary" data-new-loop>+ New loop</button></div>
-    <div id="loops-notice" role="status" aria-live="polite"></div>
-    <div class="loops-layout"><aside id="loops-list" aria-label="Your loops"></aside>
-      <section id="loops-welcome">
-        <h2 id="loops-welcome-title">No loops yet</h2>
-        <button class="btn btn-primary" data-new-loop>New loop</button>
-      </section><section id="loop-detail" aria-label="Loop details" hidden></section>
-    </div>
-  </main>
-  <dialog id="loop-new-dialog" class="dialog-large" aria-labelledby="loop-new-title">
-    <div class="dialog-header"><span id="loop-new-title">New loop</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
-    <form id="loop-new-form" class="dialog-body" autocomplete="off" data-1p-ignore>
-      <label>Name<input autocomplete="off" data-1p-ignore id="loop-name" required maxlength="160" placeholder="Release notes"></label>
-      <label>First project<select autocomplete="off" data-1p-ignore id="loop-first-project" required><option value="">Choose a project…</option></select></label>
-      <p id="loop-first-project-status" class="loop-form-help" role="note"></p>
-      <label>Task<textarea autocomplete="off" data-1p-ignore id="loop-task" required rows="3" maxlength="16000" placeholder="Turn a list of commits into concise, user-facing release notes."></textarea></label>
-      <label>Success criteria<textarea autocomplete="off" data-1p-ignore id="loop-criteria" required rows="3" maxlength="16000" placeholder="Group changes by feature, fix and maintenance. Never invent details. Omit internal refactors."></textarea></label>
-      <p class="loop-form-help">Creates the first agent version and runs the task once on the selected project. After each run, a judge reviews the result and prepares the next version. Uses provider credits.</p>
-      <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Create</button></div>
-    </form>
-  </dialog>
-  <dialog id="loop-import-dialog" class="dialog-large" aria-labelledby="loop-import-title">
-    <div class="dialog-header"><span id="loop-import-title">Import instruction</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
-    <form id="loop-import-form" class="dialog-body" autocomplete="off">
-      <p class="loop-form-help">Imports the root instruction only. Execution uses the selected project’s configured agent and tools.</p>
-      <label>Agent YAML<textarea id="loop-yaml" required rows="14" maxlength="262144" spellcheck="false" placeholder="agents:
-  root:
-    model: auto
-    instruction: ..."></textarea></label>
-      <label>Change summary<textarea id="loop-rationale" rows="2" maxlength="16000" placeholder="What changed and why"></textarea></label>
-      <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Save version</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="loop-run-dialog" class="dialog-large" aria-labelledby="loop-run-title">
-    <div class="dialog-header"><span id="loop-run-title">Read-only analysis</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
-    <form id="loop-run-form" class="dialog-body" autocomplete="off">
-      <label>Project<select id="loop-run-project" required><option value="">Choose a project…</option></select></label>
-      <p id="loop-run-project-status" class="loop-form-help" role="note"></p>
-      <label>Instructions (optional)<textarea id="loop-run-input" rows="5" maxlength="65536" placeholder="Leave blank to use the task."></textarea></label>
-      <p class="loop-form-help">Read-only. Sends selected committed files to your model provider; excludes uncommitted changes and skips large, binary and common secret files. 5-minute limit.</p>
-      <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Run</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="loop-project-task-dialog" class="dialog-large" aria-labelledby="loop-project-task-title">
-    <div class="dialog-header"><span id="loop-project-task-title">Run task</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
-    <form id="loop-project-task-form" class="dialog-body" autocomplete="off" data-1p-ignore>
-      <label>Project<select id="loop-task-project" required autocomplete="off" data-1p-ignore><option value="">Choose a project…</option></select></label>
-      <p id="loop-task-project-status" class="loop-form-help" role="note"></p>
-      <p id="loop-task-agent" class="loop-project-context"></p>
-      <p class="loop-form-help">Runs the selected version with the project’s configured agent and tools in a fresh worktree. The result is judged and the next version is prepared automatically; only a later run can validate an improvement.</p>
-      <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Run task</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="loop-feedback-dialog" class="dialog-large" aria-labelledby="loop-feedback-title">
-    <div class="dialog-header"><span id="loop-feedback-title">Feedback</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
-    <form id="loop-feedback-form" class="dialog-body"><label>Result<select id="loop-rating"><option value="good">Good</option><option value="bad">Needs work</option></select></label>
-    <label>Notes<textarea id="loop-feedback-note" rows="5" maxlength="16000" placeholder="What should stay or change?"></textarea></label>
-    <p class="loop-form-help">Used in future optimizations. Does not change the active version.</p>
-    <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Save feedback</button></div></form>
-  </dialog>
-  <dialog id="loop-optimize-dialog" class="dialog-large" aria-labelledby="loop-optimize-title">
-    <div class="dialog-header"><span id="loop-optimize-title">Optimization settings</span><button class="icon-btn dialog-close" data-close aria-label="Close">×</button></div>
-    <form id="loop-optimize-form" class="dialog-body">
-      <label>Project<select id="loop-test-project" required><option value="">Choose a project…</option></select></label>
-      <p id="loop-test-project-status" class="loop-form-help" role="note"></p>
-      <label>Test cases<textarea id="loop-test-inputs" rows="7" required maxlength="65536"></textarea></label>
-      <p class="loop-form-help">Separate cases with a line containing ---. Up to 8 cases, all using the same committed snapshot.</p>
-      <label>Repetitions<select id="loop-test-repeats"><option value="2">2</option><option value="3">3</option><option value="1">1</option></select></label>
-      <div class="loop-contract"><label>Candidate 1 model<input id="loop-model-one" value="" placeholder="Keep current model"></label><label>Candidate 2 model<input id="loop-model-two" value="" placeholder="Keep current model"></label></div>
-      <p class="loop-form-help">Uses provider credits. Baseline check, then up to 4 passes of small edits; 4 concurrent calls, 20-minute limit. Leave both model fields blank to keep the current model. Promotion is manual.</p>
-      <p class="loop-form-error" role="status"></p><div class="dialog-actions"><button type="submit" class="btn btn-primary">Optimize</button></div>
-    </form>
-  </dialog>
 
   <dialog id="terminal-dialog" class="dialog-terminal" aria-labelledby="terminal-title">
     <div class="dialog-header">

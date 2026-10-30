@@ -1,4 +1,3 @@
-import { initLoops } from './loops.js';
 import { init, Terminal as GhosttyTerminal, FitAddon } from 'ghostty-web';
 
 // Initialize ghostty-web WASM (must complete before creating terminals)
@@ -191,7 +190,6 @@ async function refresh() {
   renderTerminalCardMeta();
   renderBoard();
   scheduleCoachRefresh();
-  window.dispatchEvent(new Event("board-refresh"));
 }
 
 // Replace the home directory prefix with "~" for display.
@@ -1728,7 +1726,6 @@ function prLabel(url) {
 document.getElementById("btn-new-task").addEventListener("click", openNewTaskDialog);
 
 document.addEventListener("keydown", (e) => {
-  if (location.hash.startsWith("#loops")) return;
   if (e.key !== "n" && e.key !== "N") return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target.matches("input, textarea, select")) return;
@@ -1745,11 +1742,3 @@ API.browse().then((d) => { homeDir = d.path; }).catch(() => {});
 
 refresh();
 connectSSE();
-
-initLoops(api, {
-  async openAgent(card) {
-    const info = await API.jumpCard(card.id);
-    await openTerminal(info.session, card.title, card.id);
-  },
-  openDiff(card) { return openDiffDialog(card.id, card.title); },
-});

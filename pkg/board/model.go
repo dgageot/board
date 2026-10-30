@@ -39,7 +39,8 @@ const (
 	StatusPaused CardStatus = "paused"
 	// StatusError marks a card whose last turn failed. It is sticky: the
 	// watcher keeps it until the next turn starts (stream_started).
-	StatusError  CardStatus = "error"
+	StatusError CardStatus = "error"
+	// StatusClosed preserves archived tasks without relaunching their agents.
 	StatusClosed CardStatus = "closed"
 )
 
@@ -73,6 +74,8 @@ type Card struct {
 	// discovered once the Push column's turn finishes. Empty until a PR
 	// exists; the frontend renders it as a link on the card.
 	PRURL string `db:"pr_url" json:"prUrl"`
+	// DiffBase preserves the original comparison point for archived tasks.
+	DiffBase string `db:"diff_base" json:"-"`
 	// CoachRan records durably that a coach has run for the card. Live coach
 	// activity is process-local (see cardResponse.CoachRunning).
 	CoachRan bool `db:"coach_ran" json:"-"`

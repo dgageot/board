@@ -1,7 +1,6 @@
 package board
 
 import (
-	"context"
 	"database/sql"
 	"embed"
 	"errors"
@@ -15,8 +14,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
-
-	"github.com/dgageot/board/pkg/loops"
 )
 
 //go:embed migrations/*.sql
@@ -162,11 +159,7 @@ func migrate(db *sqlx.DB) error {
 // runInTx runs fn inside a transaction, committing on success and rolling
 // back on error.
 func runInTx(db *sqlx.DB, fn func(*sqlx.Tx) error) error {
-	return runInTxContext(context.Background(), db, fn)
-}
-
-func runInTxContext(ctx context.Context, db *sqlx.DB, fn func(*sqlx.Tx) error) error {
-	tx, err := db.BeginTxx(ctx, nil)
+	tx, err := db.Beginx()
 	if err != nil {
 		return err
 	}
@@ -202,8 +195,8 @@ func tableExists(db *sqlx.DB, name string) bool {
 // --- Cards ---
 
 const (
-	cardColumns     = "id, title, prompt, title_generated, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost, pr_url, coach_ran"
-	cardNamedValues = ":id, :title, :prompt, :title_generated, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost, :pr_url, :coach_ran"
+	cardColumns     = "id, title, prompt, title_generated, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost, pr_url, coach_ran, diff_base"
+	cardNamedValues = ":id, :title, :prompt, :title_generated, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost, :pr_url, :coach_ran, :diff_base"
 	insertCardSQL   = "INSERT INTO cards (" + cardColumns + ") VALUES (" + cardNamedValues + ")"
 )
 
@@ -478,9 +471,4 @@ func (s *SQLiteStore) ReplaceColumns(cols []Column) error {
 		}
 		return nil
 	})
-}
-
-// LoopStore initializes the independent loop workspace tables.
-func (s *SQLiteStore) LoopStore(ctx context.Context) (*loops.Store, error) {
-	return loops.NewStore(ctx, s.db.DB)
 }

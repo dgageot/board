@@ -1145,3 +1145,40 @@ func TestSleepReportsCancellation(t *testing.T) {
 	assert.True(t, sleep(ctx))
 	assert.False(t, sleep(t.Context()))
 }
+
+func TestReconcileArchivedTasksStopsSessionsWithoutRelaunch(t *testing.T) {
+	store := openTestStore(t)
+	card := devCard()
+	card.Status = StatusClosed
+	require.NoError(t, store.InsertCard(card))
+	sessions := newFakeSessionManager()
+	controller := newTestController(t, store, sessions, &fakeClient{})
+	require.NoError(t, controller.ReconcileAll())
+	assert.Equal(t, []string{card.Session, coachSessionName(card.ID)}, sessions.killed)
+	assert.Empty(t, sessions.calls())
+	assert.Empty(t, controller.watchers)
+	got, err := store.GetCard(card.ID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusClosed, got.Status)
+}
+
+type failingArchiveSessions struct {
+	noopSessionManager
+}
+
+func (failingArchiveSessions) KillSession(string) error {
+	return errors.New("cannot stop session")
+}
+
+func TestReconcileArchivedTasksReportsStopFailure(t *testing.T) {
+	store := openTestStore(t)
+	card := devCard()
+	card.Status = StatusClosed
+	require.NoError(t, store.InsertCard(card))
+	controller := newTestController(t, store, failingArchiveSessions{}, &fakeClient{})
+	require.ErrorContains(t, controller.ReconcileAll(), "cannot stop session")
+	assert.Empty(t, controller.watchers)
+	got, err := store.GetCard(card.ID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusClosed, got.Status)
+}

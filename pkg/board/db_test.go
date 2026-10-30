@@ -24,7 +24,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 	version, err := currentVersion(db)
 	require.NoError(t, err)
-	assert.Equal(t, 12, version)
+	assert.Equal(t, 13, version)
 }
 
 func TestMigrationVersion(t *testing.T) {
@@ -441,7 +441,7 @@ func TestMigrateRemovesPersistedUnknownStatus(t *testing.T) {
 	for _, status := range []CardStatus{"unknown", StatusRunning, StatusWaiting, StatusPaused, StatusError, StatusStarting} {
 		require.NoError(t, store.InsertCard(&Card{ID: string(status), Title: "Keep title", Status: status}))
 	}
-	_, err := store.db.Exec("ALTER TABLE loop_project_tasks DROP COLUMN version_id; UPDATE schema_version SET version = 8")
+	_, err := store.db.Exec("ALTER TABLE cards DROP COLUMN diff_base; ALTER TABLE loop_project_tasks DROP COLUMN version_id; UPDATE schema_version SET version = 8")
 	require.NoError(t, err)
 	require.NoError(t, migrate(store.db))
 	cards, err := store.ListCards()
@@ -454,4 +454,60 @@ func TestMigrateRemovesPersistedUnknownStatus(t *testing.T) {
 		assert.Equal(t, want, card.Status)
 		assert.Equal(t, "Keep title", card.Title)
 	}
+}
+
+func TestMigrateArchivesLoopCardsWithoutDeletingData(t *testing.T) {
+	store := openTestStore(t)
+	columns := []Column{{ID: "dev", Name: "Dev", Emoji: "🔨", Prompt: ""}}
+	require.NoError(t, store.SeedColumns(columns))
+	project := &Project{ID: "project", Name: "Project", Agent: "agent", RepoPath: "/repo"}
+	require.NoError(t, store.InsertProject(project))
+
+	card := &Card{
+		ID: "loop-card", Title: "Existing task", Prompt: "Do the task", Column: "dev",
+		Status: StatusRunning, Project: project.Name, Agent: project.Agent, RepoPath: project.RepoPath,
+		Worktree: "/worktree", Branch: "worktree-branch", Session: "session", AgentSession: "conversation", Cost: 1.25,
+	}
+	require.NoError(t, store.InsertCard(card))
+	ordinary := &Card{ID: "ordinary", Title: "Normal task", Column: "dev", Status: StatusWaiting}
+	require.NoError(t, store.InsertCard(ordinary))
+	_, err := store.db.Exec(`
+		INSERT INTO loop_project_tasks
+		(id, loop_id, project_id, project_name, repo_path, agent, task, criteria, prompt, card_id, base, status, created_at)
+		VALUES ('task', 'loop', 'project', 'Project', '/repo', 'agent', 'Do the task', 'Tests pass', 'Do the task', 'loop-card', 'base', 'launched', '2026-10-01');
+		INSERT INTO loop_run_reviews(task_id, state, data) VALUES ('task', 'pending', '{"outcome":"normal"}');
+		ALTER TABLE cards DROP COLUMN diff_base;
+		UPDATE schema_version SET version = 12;
+	`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrate(store.db))
+	require.NoError(t, migrate(store.db))
+	got, err := store.GetCard(card.ID)
+	require.NoError(t, err)
+	card.Status = StatusClosed
+	card.DiffBase = "base"
+	assert.Equal(t, card, got)
+	got, err = store.GetCard(ordinary.ID)
+	require.NoError(t, err)
+	assert.Equal(t, ordinary, got)
+	gotProject, err := store.GetProject(project.ID)
+	require.NoError(t, err)
+	assert.Equal(t, project, gotProject)
+	gotColumns, err := store.ListColumns()
+	require.NoError(t, err)
+	assert.Equal(t, columns, gotColumns)
+	var data string
+	require.NoError(t, store.db.Get(&data, "SELECT data FROM loop_run_reviews WHERE task_id = 'task'"))
+	assert.JSONEq(t, `{"outcome":"normal"}`, data)
+	var taskCount int
+	require.NoError(t, store.db.Get(&taskCount, "SELECT COUNT(*) FROM loop_project_tasks"))
+	assert.Equal(t, 1, taskCount)
+
+	controller := newController(t.Context(), store, noopSessionManager{}, func() {})
+	controller.Start(card)
+	assert.Empty(t, controller.watchers, "archived tasks must not be relaunched")
+	require.ErrorIs(t, controller.SendPrompt(card, "Continue"), errBadInput)
+	_, err = store.MoveCard(card.ID, "dev", true)
+	require.ErrorIs(t, err, errBadInput)
 }
