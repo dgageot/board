@@ -89,6 +89,13 @@ type Card struct {
 	Cost float64 `db:"cost" json:"cost"`
 }
 
+// TaskTemplate is a saved, reusable prompt. Placeholders are expanded by the frontend.
+type TaskTemplate struct {
+	ID     string `db:"id"     json:"id"`
+	Name   string `db:"name"   json:"name"`
+	Prompt string `db:"prompt" json:"prompt"`
+}
+
 // Project represents a saved project config.
 type Project struct {
 	ID       string `db:"id"        json:"id"`

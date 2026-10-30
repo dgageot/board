@@ -27,7 +27,7 @@ tasks:
   # Run browser-logic regression tests
   test-js:
     cmd: node --test tests/*.test.cjs
-    sources: [pkg/board/static/app.js, tests/*.test.cjs]
+    sources: [pkg/board/static/*.js, tests/*.test.cjs]
 
   # Run linter
   lint:

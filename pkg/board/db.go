@@ -407,6 +407,39 @@ func (s *SQLiteStore) ReorderProjects(ids []string) error {
 	})
 }
 
+// --- Task templates ---
+
+const taskTemplateColumns = "id, name, prompt"
+
+func (s *SQLiteStore) ListTaskTemplates() ([]*TaskTemplate, error) {
+	templates := []*TaskTemplate{}
+	if err := s.db.Select(&templates, "SELECT "+taskTemplateColumns+" FROM task_templates ORDER BY rowid"); err != nil {
+		return nil, err
+	}
+	return templates, nil
+}
+
+func (s *SQLiteStore) InsertTaskTemplate(t *TaskTemplate) error {
+	_, err := s.db.NamedExec("INSERT INTO task_templates ("+taskTemplateColumns+") VALUES (:id, :name, :prompt)", t)
+	return err
+}
+
+func (s *SQLiteStore) UpdateTaskTemplate(t *TaskTemplate) (*TaskTemplate, error) {
+	var template TaskTemplate
+	if err := s.db.Get(&template,
+		"UPDATE task_templates SET name = ?, prompt = ? WHERE id = ? RETURNING "+taskTemplateColumns,
+		t.Name, t.Prompt, t.ID,
+	); err != nil {
+		return nil, err
+	}
+	return &template, nil
+}
+
+func (s *SQLiteStore) DeleteTaskTemplate(id string) error {
+	var deletedID string
+	return s.db.Get(&deletedID, "DELETE FROM task_templates WHERE id = ? RETURNING id", id)
+}
+
 // --- Columns ---
 
 const columnColumns = "id, name, emoji, prompt"

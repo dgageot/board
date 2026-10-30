@@ -48,6 +48,7 @@
       <button id="btn-new-task" class="btn btn-primary" title="New task (N)"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-plus"/></svg><span class="btn-label">New task</span></button>
       <span class="header-divider" aria-hidden="true"></span>
       <button id="btn-projects" class="btn btn-ghost" title="Manage projects"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-folder"/></svg><span class="btn-label">Projects</span></button>
+      <button id="btn-tasks" class="btn btn-ghost" title="Manage predefined tasks"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-check"/></svg><span class="btn-label">Tasks</span></button>
       <button id="btn-columns" class="btn btn-ghost" title="Configure columns"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-columns"/></svg><span class="btn-label">Columns</span></button>
       <button id="btn-sound" class="btn btn-ghost btn-icon" title="Play a sound when a card becomes ready" aria-label="Sound notifications" aria-pressed="false"></button>
       <button id="btn-theme" class="btn btn-ghost btn-icon" title="Toggle theme" aria-label="Toggle theme"></button>
@@ -98,17 +99,22 @@
   </dialog>
 
 
-  <dialog id="new-task-dialog" class="dialog-large">
+  <dialog id="new-task-dialog" class="dialog-large" aria-labelledby="new-task-title">
     <div class="dialog-header">
-      <span>New task</span>
+      <span id="new-task-title">New task</span>
       <button class="icon-btn dialog-close" data-close title="Close" aria-label="Close"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button>
     </div>
     <form method="dialog" autocomplete="off" class="dialog-body">
       <p class="dialog-subtitle">Create a new task for an agent to work on</p>
       <label>Project
-        <select id="task-project"></select>
+        <select id="task-project" required></select>
       </label>
-      <label>Prompt
+      <label>Task
+        <select id="task-template"><option value="">Custom task</option></select>
+      </label>
+      <p id="task-template-status" class="template-help" role="status"></p>
+      <div id="task-arguments"></div>
+      <label><span id="task-prompt-label">Prompt</span>
         <textarea id="task-prompt" rows="10" placeholder="Describe in detail what the agent should do..." required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
       </label>
       <div class="dialog-actions">
@@ -157,6 +163,31 @@
         </div>
       </div>
     </div>
+  </dialog>
+
+  <dialog id="tasks-dialog" class="dialog-large" aria-labelledby="tasks-title">
+    <div class="dialog-header">
+      <span id="tasks-title">Tasks</span>
+      <button class="icon-btn dialog-close" data-close title="Close" aria-label="Close"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
+    <form id="template-form" class="dialog-body" autocomplete="off">
+      <p class="dialog-subtitle">Save reusable tasks for any project. Changes only affect future tasks.</p>
+      <fieldset id="template-fields">
+        <div class="template-toolbar">
+          <label>Predefined task<select id="template-list"><option value="">New predefined task…</option></select></label>
+          <button id="template-new" type="button" class="btn">New task</button>
+        </div>
+        <label>Name<input id="template-name" required placeholder="Review a pull request" autocomplete="off"></label>
+        <label>Task text<textarea id="template-prompt" rows="8" required placeholder="Review pull request {{url}} and focus on {{focus}}." spellcheck="false"></textarea></label>
+        <p id="template-arguments" class="template-help" aria-live="polite"></p>
+        <p class="template-help">Use <code>{{argument}}</code> placeholders to ask for values when starting a task. Names can contain letters, numbers, underscores and hyphens, and must start with a letter or underscore. Repeated placeholders share one value.</p>
+        <div class="dialog-actions">
+          <button id="template-delete" type="button" class="btn btn-danger" disabled>Delete task</button>
+          <button id="template-submit" type="submit" class="btn btn-primary">Add task</button>
+        </div>
+      </fieldset>
+      <p id="template-status" class="template-help" role="status" aria-live="polite"></p>
+    </form>
   </dialog>
 
   <dialog id="columns-dialog" class="dialog-large">

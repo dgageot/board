@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const staticDir = path.join(__dirname, '../pkg/board/static');
 const html = fs.readFileSync(path.join(staticDir, 'index.html'), 'utf8');
 const source = fs.readFileSync(path.join(staticDir, 'app.js'), 'utf8');
+const templatesSource = fs.readFileSync(path.join(staticDir, 'task-templates.js'), 'utf8');
 
 function harness(hash = '') {
   class Element {
@@ -35,10 +36,13 @@ function harness(hash = '') {
     replaceChildren() { this.children = []; this.innerHTML = ''; }
     appendChild(child) { this.children.push(child); }
     querySelector(selector) {
-      if (selector.startsWith('.') && !this.innerHTML.includes(selector.slice(1))) return null;
+      // Static children (e.g. the submit button's .btn-label) exist in the real
+      // HTML; only content rendered by the app can be checked for a class.
+      if (selector.startsWith('.') && this.innerHTML && !this.innerHTML.includes(selector.slice(1))) return null;
       if (!this.queries.has(selector)) this.queries.set(selector, new Element());
       return this.queries.get(selector);
     }
+    querySelectorAll() { return []; }
     showModal() { this.open = true; }
     close() { this.open = false; this.fire('close'); }
     focus() { this.focused = true; }
@@ -65,6 +69,7 @@ function harness(hash = '') {
     '/api/cards': [],
     '/api/projects': [{ id: 'project', name: 'Example', repoPath: '/repo', agent: '/agent.yaml' }],
     '/api/columns': [{ id: 'todo', name: 'To do' }],
+    '/api/task-templates': [],
   };
   const context = vm.createContext({
     document, window: { matchMedia: () => ({ matches: false }) }, location: { hash },
@@ -78,10 +83,14 @@ function harness(hash = '') {
     EventSource: class { constructor(url) { this.url = url; events.push(this); } },
     clearTimeout() {}, requestAnimationFrame() {},
   });
-  // Only the terminal library is mocked; execute all board startup and event wiring.
-  const terminalImport = /^import \{ init, Terminal as GhosttyTerminal, FitAddon \} from 'ghostty-web';\n/;
+  // Only the terminal library is mocked; the task templates module is loaded
+  // for real, then all board startup and event wiring executes.
+  const terminalImport = /^import \{ init, Terminal as GhosttyTerminal, FitAddon \} from 'ghostty-web';\n/m;
+  const templatesImport = /^import \{ initTaskTemplates \} from '\.\/task-templates\.js';\n/m;
   assert.match(source, terminalImport);
-  vm.runInContext(source.replace(terminalImport, ''), context);
+  assert.match(source, templatesImport);
+  vm.runInContext(templatesSource.replaceAll('export function ', 'function '), context);
+  vm.runInContext(source.replace(terminalImport, '').replace(templatesImport, ''), context);
   return { context, document, get, requests, events, responses };
 }
 
@@ -115,6 +124,10 @@ for (const hash of ['', '#board', '#loops/old-bookmark']) {
     assert.equal(h.get('new-task-dialog').open, true);
     assert.match(h.get('task-project').innerHTML, /Example/);
     assert.equal(h.get('task-prompt').focused, true);
+    await flush();
+    assert.equal(h.requests.at(-1), '/api/task-templates');
+    assert.match(h.get('task-template').innerHTML, /Custom task/);
+    assert.equal(h.get('task-template').disabled, false);
   });
 }
 

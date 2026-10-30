@@ -1799,3 +1799,60 @@ details[open] > .diff-file-header {
     overflow: visible;
   }
 }
+
+/* Predefined tasks and their argument form. */
+#new-task-dialog[open],
+#tasks-dialog[open] {
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+
+  & .dialog-body {
+    overflow-y: auto;
+    min-height: 0;
+  }
+}
+
+#template-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.template-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 14px;
+
+  & label {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+  }
+
+  & button {
+    flex-shrink: 0;
+  }
+}
+
+.template-help {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 14px;
+  overflow-wrap: anywhere;
+
+  &:empty {
+    display: none;
+  }
+}
+
+#task-prompt[readonly] {
+  color: var(--text-muted);
+}
+
+#template-delete {
+  margin-right: auto;
+}

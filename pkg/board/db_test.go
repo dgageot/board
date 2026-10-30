@@ -14,6 +14,7 @@ func TestMigrate(t *testing.T) {
 	assert.True(t, tableExists(db, "projects"))
 	assert.True(t, tableExists(db, "columns"))
 	assert.True(t, tableExists(db, "schema_version"))
+	assert.True(t, tableExists(db, "task_templates"))
 }
 
 func TestMigrateIsIdempotent(t *testing.T) {
@@ -24,7 +25,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 	version, err := currentVersion(db)
 	require.NoError(t, err)
-	assert.Equal(t, 13, version)
+	assert.Equal(t, 14, version)
 }
 
 func TestMigrationVersion(t *testing.T) {

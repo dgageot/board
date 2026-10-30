@@ -48,6 +48,14 @@ type Store interface {
 	DeleteProject(id string) error
 	ReorderProjects(ids []string) error
 
+	// Task templates
+	ListTaskTemplates() ([]*TaskTemplate, error)
+	InsertTaskTemplate(t *TaskTemplate) error
+	// UpdateTaskTemplate returns the stored template, or sql.ErrNoRows if missing.
+	UpdateTaskTemplate(t *TaskTemplate) (*TaskTemplate, error)
+	// DeleteTaskTemplate returns sql.ErrNoRows if the template is missing.
+	DeleteTaskTemplate(id string) error
+
 	// Columns
 	ListColumns() ([]Column, error)
 	SeedColumns(cols []Column) error

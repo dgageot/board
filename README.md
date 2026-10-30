@@ -22,6 +22,25 @@ lists the worktree's commits, oldest first; select a commit or use **Previous**/
 review them individually. **All changes** returns to the combined diff,
 including uncommitted work.
 
+## Predefined tasks
+
+Use **Tasks**, next to **Projects**, to add, edit or delete reusable tasks. Give
+each task a name and prompt, then choose it from the **Task** list when creating
+a **New task**. Choose **Custom task** to write a one-off prompt instead.
+
+Prompts can include named arguments, for example:
+
+```text
+Review pull request {{url}} and focus on {{focus}}.
+```
+
+Each distinct placeholder becomes a required input, with a live preview of the
+prompt that will be sent to the agent. Repeated placeholders use the same value;
+values are inserted literally, not evaluated or expanded again. Argument names
+must start with a letter or underscore and may contain letters, numbers,
+underscores and hyphens. Saved tasks persist across restarts and can be used with
+any project. Editing or deleting one does not change existing cards.
+
 ## Harness coach
 
 When a card is done, the **🎓 Coach** button at the top of its terminal view asks a

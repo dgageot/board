@@ -1,3 +1,4 @@
+import { initTaskTemplates } from './task-templates.js';
 import { init, Terminal as GhosttyTerminal, FitAddon } from 'ghostty-web';
 
 // Initialize ghostty-web WASM (must complete before creating terminals)
@@ -878,11 +879,27 @@ document.querySelectorAll("dialog").forEach((d) => {
 // --- Dialogs ---
 
 // New task dialog
+const taskTemplates = initTaskTemplates({ api, esc });
+// Each opening of the dialog is a generation: a creation started in an
+// earlier opening must not close, reset or re-enable the current one.
+let taskDialogGeneration = 0;
+let taskSubmittingGeneration = -1;
+
 async function openNewTaskDialog() {
+  taskDialogGeneration++;
   const select = document.getElementById("task-project");
   select.innerHTML = projects.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  resetNewTaskSubmit();
   document.getElementById("new-task-dialog").showModal();
-  document.getElementById("task-prompt").focus();
+  taskTemplates.focus();
+  await taskTemplates.loadPicker();
+}
+
+function resetNewTaskSubmit() {
+  const submitBtn = document.getElementById("new-task-dialog").querySelector("button[type=submit]");
+  submitBtn.disabled = false;
+  submitBtn.classList.remove("btn-loading");
+  submitBtn.querySelector(".btn-label").textContent = "Create task";
 }
 
 document.getElementById("new-task-dialog").querySelector("form").addEventListener("submit", submitNewTask);
@@ -896,7 +913,9 @@ document.getElementById("new-task-dialog").addEventListener("keydown", (e) => {
 
 async function submitNewTask(e) {
   e.preventDefault();
-  const prompt = document.getElementById("task-prompt").value.trim();
+  const generation = taskDialogGeneration;
+  if (taskSubmittingGeneration === generation) return;
+  const prompt = taskTemplates.getPrompt();
   const projectId = document.getElementById("task-project").value;
 
   if (!prompt) return;
@@ -905,27 +924,32 @@ async function submitNewTask(e) {
   const submitBtn = dialog.querySelector("button[type=submit]");
   const label = submitBtn.querySelector(".btn-label");
   const originalLabel = label.textContent;
+  taskSubmittingGeneration = generation;
   submitBtn.disabled = true;
   submitBtn.classList.add("btn-loading");
   label.textContent = "Creating…";
 
   try {
     await API.createCard({ prompt, projectId });
+    if (generation !== taskDialogGeneration) return;
     dialog.close();
-    document.getElementById("task-prompt").value = "";
+    taskTemplates.resetPicker();
   } catch (err) {
     alert(err.message);
+    if (generation !== taskDialogGeneration) return;
     submitBtn.disabled = false;
     submitBtn.classList.remove("btn-loading");
     label.textContent = originalLabel;
+  } finally {
+    if (taskSubmittingGeneration === generation) taskSubmittingGeneration = -1;
   }
 }
 
 document.getElementById("new-task-dialog").addEventListener("close", () => {
-  const submitBtn = document.getElementById("new-task-dialog").querySelector("button[type=submit]");
-  submitBtn.disabled = false;
-  submitBtn.classList.remove("btn-loading");
-  submitBtn.querySelector(".btn-label").textContent = "Create Task";
+  // close events are queued: one for a previous opening may arrive after
+  // the dialog has already been reopened, and must not touch it.
+  if (document.getElementById("new-task-dialog").open) return;
+  resetNewTaskSubmit();
 });
 
 // Projects dialog
