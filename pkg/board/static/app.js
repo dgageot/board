@@ -541,7 +541,7 @@ async function handleCardAction(e) {
       try {
         info = await API.jumpCard(id);
       } catch (err) {
-        // 503 while the docker agent is still coming up: tell the user instead
+        // 503 while the docker-agent is still coming up: tell the user instead
         // of attaching a terminal to the bare launch command.
         alert("The agent is still starting. Try again in a moment.");
         return;

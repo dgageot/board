@@ -94,7 +94,7 @@ func applyServerDefaults() {
 	}
 }
 
-// agentCommand builds the docker agent invocation for a session. The board
+// agentCommand builds the docker-agent invocation for a session. The board
 // owns sessionID and passes it via --session: the first run creates that
 // session, later runs resume it.
 //
@@ -104,7 +104,7 @@ func applyServerDefaults() {
 //
 // On the first run, worktreeName is non-empty: --worktree creates an isolated
 // git worktree (branched from worktreeBase) and every tool runs inside it. On
-// resume, worktreeName is empty and --worktree is omitted: docker agent
+// resume, worktreeName is empty and --worktree is omitted: docker-agent
 // reattaches the session to its original worktree automatically, so passing
 // --worktree again (which would fail, the worktree already exists) is avoided.
 //
@@ -113,7 +113,7 @@ func applyServerDefaults() {
 // typed into an interactive shell (see NewSession), where no amount of
 // escaping is fully safe for arbitrary user text.
 func agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile string) string {
-	cmd := fmt.Sprintf("docker agent run %s --yolo --session %s --listen %s",
+	cmd := fmt.Sprintf("docker-agent run %s --yolo --session %s --listen %s",
 		quoteAgent(agent), shellescape.Quote(sessionID), shellescape.Quote("unix://"+listenSocket))
 	if worktreeName != "" {
 		cmd += fmt.Sprintf(" --worktree=%s --worktree-base %s",
@@ -142,7 +142,7 @@ func promptFilePath(sessionID string) string {
 	return filepath.Join(os.TempDir(), "board-prompt-"+sessionID)
 }
 
-// NewSession creates a tmux session and runs docker agent in it. The agent is
+// NewSession creates a tmux session and runs docker-agent in it. The agent is
 // exec'd into the pane (replacing the shell) so that, when it exits, the pane
 // becomes a dead pane instead of dropping back to a shell. Combined with
 // remain-on-exit, the tmux session outlives a dead agent: the user can still

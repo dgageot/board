@@ -1,6 +1,6 @@
-# 🐳 Kanban for Docker Agent
+# 🐳 Kanban for docker-agent
 
-A Kanban board for orchestrating Docker Agents.
+A Kanban board for orchestrating docker-agent sessions.
 
 <img width="1624" height="1061" alt="kanban" src="https://github.com/user-attachments/assets/961f3e14-b54d-43c3-a527-222432bd1992" />
 
@@ -110,7 +110,7 @@ commands. The helper's directory and sockets are restricted to your OS user;
 **this is not isolation from other processes running as that user**. The proxy
 accepts only public-key listing and Git-namespace SSH signatures, not general
 SSH authentication or key-management requests. Credential-bearing child
-processes retain their environment after Board exits. Docker Agent may itself
+processes retain their environment after Board exits. docker-agent may itself
 stage MCP credentials in temporary files; Board does not change that behavior.
 
 Board must stay running to sign. Stable socket paths let already-configured

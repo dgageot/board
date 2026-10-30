@@ -50,21 +50,21 @@ func TestAgentCommand(t *testing.T) {
 
 	// Resume (no worktree name): omit --worktree so the session reattaches to
 	// its existing worktree; no prompt means wait for input.
-	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock",
+	assert.Equal(t, "docker-agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock",
 		agentCommand("my-agent", "abc123", sock, "", "", ""))
 
 	// Resume with a prompt: deliver it via stdin from the prompt file. The
 	// prompt text itself never appears on the command line.
-	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock - < /tmp/board-prompt-abc123",
+	assert.Equal(t, "docker-agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock - < /tmp/board-prompt-abc123",
 		agentCommand("my-agent", "abc123", sock, "", "", "/tmp/board-prompt-abc123"))
 
 	// First launch (worktree name set): create the isolated worktree branched
 	// from the given base and deliver the first prompt via stdin.
-	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base origin/main - < /tmp/board-prompt-abc123",
+	assert.Equal(t, "docker-agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base origin/main - < /tmp/board-prompt-abc123",
 		agentCommand("my-agent", "abc123", sock, "board-xyz", "origin/main", "/tmp/board-prompt-abc123"))
 
 	// The worktree base is not assumed: a non-origin upstream flows through.
-	assert.Equal(t, "docker agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base upstream/master - < /tmp/board-prompt-abc123",
+	assert.Equal(t, "docker-agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base upstream/master - < /tmp/board-prompt-abc123",
 		agentCommand("my-agent", "abc123", sock, "board-xyz", "upstream/master", "/tmp/board-prompt-abc123"))
 }
 
@@ -81,6 +81,9 @@ func TestPromptFilePath(t *testing.T) {
 func TestAgentCommandPreservesAgentArgument(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	bin := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "docker-agent"), []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0o700))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	for _, agent := range []string{
 		"/tmp/My Agent.yaml", "/tmp/a'quoted.yaml", "/tmp/$(printf INJECTED).yaml",
 		"/tmp/$HOME.yaml", "/tmp/agent; printf INJECTED", "docker.io/org/agent:latest",
@@ -93,11 +96,10 @@ func TestAgentCommandPreservesAgentArgument(t *testing.T) {
 					want = home + "/" + rest
 				}
 			}
-			// Capture argv without starting Docker. Metacharacters must stay literal.
-			script := `docker() { printf '%s\n' "$@"; }; ` + agentCommand(agent, "session", "/tmp/sock", "", "", "")
-			out, err := exec.Command("sh", "-c", script).CombinedOutput()
+			// Capture argv without starting docker-agent. Metacharacters must stay literal.
+			out, err := exec.Command("sh", "-c", agentCommand(agent, "session", "/tmp/sock", "", "", "")).CombinedOutput()
 			require.NoError(t, err, "%s", out)
-			require.Equal(t, []string{"agent", "run", want, "--yolo", "--session", "session", "--listen", "unix:///tmp/sock"}, strings.Split(strings.TrimSuffix(string(out), "\n"), "\n"))
+			require.Equal(t, []string{"run", want, "--yolo", "--session", "session", "--listen", "unix:///tmp/sock"}, strings.Split(strings.TrimSuffix(string(out), "\n"), "\n"))
 		})
 	}
 }
@@ -111,11 +113,11 @@ func TestDefaultTmuxMemoized(t *testing.T) {
 func TestLaunchCommandUsesCredentialHelper(t *testing.T) {
 	s := Sessions{Executable: "/tmp/Board's app", CredentialSocket: "/tmp/helper socket"}
 	command := s.launchCommand("agent", "session", "/tmp/control", "", "", "")
-	// Capture argv to verify escaping, without running Board or Docker.
+	// Capture argv to verify escaping, without running Board or docker-agent.
 	script := "capture() { printf '%s\\n' \"$@\"; }; " + strings.Replace(command, shellescape.Quote(s.Executable), "capture", 1)
 	out, err := exec.Command("sh", "-c", script).CombinedOutput()
 	require.NoError(t, err, "%s", out)
-	assert.Equal(t, []string{"credential-exec", s.CredentialSocket, "docker", "agent", "run", "agent", "--yolo", "--session", "session", "--listen", "unix:///tmp/control"}, strings.Split(strings.TrimSpace(string(out)), "\n"))
+	assert.Equal(t, []string{"credential-exec", s.CredentialSocket, "docker-agent", "run", "agent", "--yolo", "--session", "session", "--listen", "unix:///tmp/control"}, strings.Split(strings.TrimSpace(string(out)), "\n"))
 	assert.Equal(t, agentCommand("agent", "session", "/tmp/control", "", "", ""), Sessions{}.launchCommand("agent", "session", "/tmp/control", "", "", ""))
 }
 

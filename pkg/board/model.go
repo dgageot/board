@@ -80,7 +80,7 @@ type Card struct {
 	// activity is process-local (see cardResponse.CoachRunning).
 	CoachRan bool `db:"coach_ran" json:"-"`
 	// AgentSession is the docker-agent conversation ID the card owns. It is
-	// passed to `docker agent run --session` on every launch, so a session
+	// passed to `docker-agent run --session` on every launch, so a session
 	// recreated after the agent (or tmux) dies resumes the same conversation
 	// instead of starting over.
 	AgentSession string `db:"agent_session" json:"agentSession"`

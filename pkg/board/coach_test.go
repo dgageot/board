@@ -82,7 +82,7 @@ func TestStartCoachLaunchesSessionInTheWorktree(t *testing.T) {
 	assert.JSONEq(t, `{"messages":[{"message":{"role":"user"}}]}`, string(staged))
 }
 
-// The embedded coach config is staged on disk so `docker agent run` can load
+// The embedded coach config is staged on disk so `docker-agent run` can load
 // it: a board that ships its own coach must not depend on a user file.
 func TestCoachIndicatorStopsWhenTurnFinishes(t *testing.T) {
 	ct := newCoachTest(t)

@@ -77,7 +77,7 @@ agents:
       - `sub_agents` — adds a `transfer_task` tool; `handoffs` — hands the
         conversation over.
       - `commands` — named prompt shortcuts used as `/name` in the TUI or
-        `docker agent run agent.yaml /name`.
+        `docker-agent run agent.yaml /name`.
       - `skills` — `true`, `false`, or a list of sources/names. SKILL.md files
         (frontmatter: `name`, `description`, optional `allowed-tools`,
         `context: fork` to run in an isolated sub-agent) discovered from
@@ -100,7 +100,7 @@ agents:
       `--model [agent=]provider/model`, `--prompt-file`, `--hook-*`,
       `--session <id>` / `--session -1`, `--exec`, `--yolo` /
       `--safety strict|balanced|restricted|autonomous`, `--worktree`,
-      `--sandbox`, `--record` / `--fake`, `docker agent serve mcp|api|a2a`.
+      `--sandbox`, `--record` / `--fake`, `docker-agent serve mcp|api|a2a`.
       TUI: `/compact [hint]`, `/model`, `/agent`, `/fork`, `/export`, plus the
       agent's own commands and skills.
 

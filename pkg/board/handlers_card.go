@@ -73,7 +73,7 @@ func (b *Board) resolveProject(projectID string) (name, agent, repoPath string, 
 	return project.Name, project.Agent, project.RepoPath, nil
 }
 
-// createCard creates a new card and launches its agent session. docker agent
+// createCard creates a new card and launches its agent session. docker-agent
 // creates the isolated git worktree (named after the card) on first launch and
 // exposes its control plane on a per-card unix socket; the board records where
 // the worktree lives and starts watching the session. The title is left as a

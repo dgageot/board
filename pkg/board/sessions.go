@@ -5,10 +5,10 @@ package board
 // observes/drives it through its control plane (see [Controller]); these are
 // the few tmux operations that remain.
 type SessionManager interface {
-	// NewSession creates a tmux session running the docker agent for the given
+	// NewSession creates a tmux session running the docker-agent for the given
 	// docker-agent session ID, from workDir. The agent exposes its control
 	// plane on listenSocket (--listen unix://). A non-empty worktreeName marks
-	// the first run: docker agent creates an isolated worktree of that name,
+	// the first run: docker-agent creates an isolated worktree of that name,
 	// branched from worktreeBase, and workDir is the repository. On resume,
 	// worktreeName is empty and workDir is the worktree directory. A non-empty
 	// prompt is sent as the first message. The agent is the pane's process and
