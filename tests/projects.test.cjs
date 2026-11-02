@@ -5,6 +5,12 @@ const { test } = require('node:test');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../pkg/board/static/app.js'), 'utf8');
+const markup = fs.readFileSync(path.join(__dirname, '../pkg/board/static/index.html'), 'utf8');
+const styles = fs.readFileSync(path.join(__dirname, '../pkg/board/static/style.css'), 'utf8');
+const controlTags = new Map([...markup.matchAll(/<(input|select|textarea|button)\b[^>]*\bid="([^"]+)"/g)]
+  .map((match) => [match[2], match[1]]));
+controlTags.set('proj-edit', 'button');
+controlTags.set('proj-delete', 'button');
 const start = source.indexOf('// Projects dialog');
 const end = source.indexOf('// --- Folder picker ---', start);
 assert.ok(start >= 0 && end > start);
@@ -29,7 +35,9 @@ function harness(projects = [], api = {}) {
     document: {
       getElementById: element,
       querySelector: () => element('form'),
-      querySelectorAll: (selector) => selector.includes('input,') ? [...elements.values()] : buttons,
+      querySelectorAll: (selector) => selector.startsWith('#projects-dialog')
+        ? [...elements].filter(([id]) => selector.includes(`#projects-dialog ${controlTags.get(id)}`)).map(([, control]) => control)
+        : buttons,
     },
     API: {
       listAgents: async () => ['/agents/default.yaml'],
@@ -103,9 +111,11 @@ test('new project focuses the creator and selecting a project preserves the draf
   assert.equal(h.element('form').hidden, false);
   assert.equal(h.element('proj-name').focused, true);
   h.element('proj-name').value = 'Draft';
+  h.element('proj-instructions').value = '  Draft guidance\n\nKeep spaces.  ';
   h.select('a');
   h.element('proj-new').listeners.click();
   assert.equal(h.element('proj-name').value, 'Draft');
+  assert.equal(h.element('proj-instructions').value, '  Draft guidance\n\nKeep spaces.  ');
 });
 
 test('creating a project selects its inspector and clears the creator', async () => {
@@ -114,12 +124,18 @@ test('creating a project selects its inspector and clears the creator', async ()
   h.element('proj-name').value = ' New project ';
   h.element('proj-repo').value = ' /repo ';
   h.element('proj-agent').value = '/agents/default.yaml';
+  const instructions = '\n  Keep indentation.\n\n\tUse tests.  \n';
+  h.element('proj-instructions').value = instructions;
   await h.element('form').listeners.submit({ preventDefault() {} });
-  assert.equal(JSON.stringify(h.calls), JSON.stringify([{ name: 'New project', repoPath: '/repo', agent: '/agents/default.yaml' }]));
+  assert.equal(JSON.stringify(h.calls), JSON.stringify([{ name: 'New project', repoPath: '/repo', agent: '/agents/default.yaml', instructions }]));
+  assert.ok(h.element('project-inspector').innerHTML.includes(instructions));
   assert.equal(h.element('projects-count').textContent, '1 project');
   assert.match(h.element('project-inspector').innerHTML, /New project/);
   assert.equal(h.element('form').hidden, true);
   assert.equal(h.element('proj-name').value, '');
+  assert.equal(h.element('proj-instructions').value, '');
+  h.element('proj-new').listeners.click();
+  assert.equal(h.element('proj-instructions').value, '');
 });
 
 test('deleting the selected project selects the next or shows the empty creator', async () => {
@@ -145,13 +161,14 @@ test('project names and paths are escaped in list and inspector', async () => {
 });
 
 test('editing pre-fills the project and saves changes without creating a duplicate', async () => {
-  const h = harness([project('a'), project('b')]);
+  const h = harness([project('a'), { ...project('b'), instructions: 'Original\n  guidance.' }]);
   await h.open();
   h.select('b');
   h.element('proj-edit').listeners.click();
   assert.equal(h.element('proj-name').value, 'Project b');
   assert.equal(h.element('proj-repo').value, '/home/test/b');
   assert.equal(h.element('proj-agent').value, '/agents/default.yaml');
+  assert.equal(h.element('proj-instructions').value, 'Original\n  guidance.');
   assert.equal(h.element('form').hidden, false);
   assert.equal(h.element('project-inspector').hidden, true);
   assert.equal(h.element('proj-cancel').hidden, false);
@@ -160,8 +177,11 @@ test('editing pre-fills the project and saves changes without creating a duplica
   h.element('proj-name').value = ' Renamed ';
   h.element('proj-repo').value = ' /new/repo ';
   h.element('proj-agent').value = '/new/agent.yaml';
+  const instructions = '  Updated guidance.\n\n\tKeep whitespace.\n';
+  h.element('proj-instructions').value = instructions;
   await h.element('form').listeners.submit({ preventDefault() {} });
-  assert.equal(JSON.stringify(h.updates), JSON.stringify([{ id: 'b', name: 'Renamed', repoPath: '/new/repo', agent: '/new/agent.yaml' }]));
+  assert.equal(JSON.stringify(h.updates), JSON.stringify([{ id: 'b', name: 'Renamed', repoPath: '/new/repo', agent: '/new/agent.yaml', instructions }]));
+  assert.ok(h.element('project-inspector').innerHTML.includes(instructions));
   assert.equal(h.calls.length, 0);
   assert.equal(h.element('projects-count').textContent, '2 projects');
   assert.match(h.element('project-inspector').innerHTML, /Renamed/);
@@ -170,20 +190,26 @@ test('editing pre-fills the project and saves changes without creating a duplica
 });
 
 test('canceling an edit restores the new-project draft and leaves the project unchanged', async () => {
-  const h = harness([project('a')]);
+  const saved = { ...project('a'), instructions: 'Saved instructions' };
+  const h = harness([saved]);
   await h.open();
   h.element('proj-new').listeners.click();
   h.element('proj-name').value = 'Draft';
   h.element('proj-repo').value = '/draft/repo';
+  h.element('proj-instructions').value = '  Draft\n\tinstructions.\n';
   h.select('a');
   h.element('proj-edit').listeners.click();
   h.element('proj-name').value = 'Unsaved';
+  h.element('proj-instructions').value = 'Unsaved instructions';
   h.element('proj-cancel').listeners.click();
   assert.match(h.element('project-inspector').innerHTML, /Project a/);
   assert.equal(h.updates.length, 0);
+  assert.equal(saved.instructions, 'Saved instructions');
+  assert.match(h.element('project-inspector').innerHTML, /Saved instructions/);
   h.element('proj-new').listeners.click();
   assert.equal(h.element('proj-name').value, 'Draft');
   assert.equal(h.element('proj-repo').value, '/draft/repo');
+  assert.equal(h.element('proj-instructions').value, '  Draft\n\tinstructions.\n');
   assert.equal(h.element('proj-submit').textContent, 'Add project');
 });
 
@@ -220,11 +246,14 @@ test('failed edits retain the entered values and re-enable saving', async () => 
   h.element('proj-edit').listeners.click();
   h.element('proj-name').value = 'Edited';
   h.element('proj-repo').value = '/invalid';
+  h.element('proj-instructions').value = '\n Unsaved\n\tinstructions.  ';
   await h.element('form').listeners.submit({ preventDefault() {} });
   assert.deepEqual(h.alerts, ['Invalid repository']);
   assert.equal(h.element('form').hidden, false);
   assert.equal(h.element('proj-name').value, 'Edited');
   assert.equal(h.element('proj-repo').value, '/invalid');
+  assert.equal(h.element('proj-instructions').value, '\n Unsaved\n\tinstructions.  ');
+  assert.equal(h.element('proj-instructions').disabled, false);
   assert.equal(h.element('proj-submit').disabled, false);
 });
 
@@ -238,6 +267,7 @@ test('an in-flight save blocks duplicate submits and switching the edited projec
   h.element('proj-edit').listeners.click();
   const saving = h.element('form').listeners.submit({ preventDefault() {} });
   assert.equal(h.element('proj-submit').disabled, true);
+  assert.equal(h.element('proj-instructions').disabled, true);
   await h.element('form').listeners.submit({ preventDefault() {} });
   h.select('b');
   h.element('proj-new').listeners.click();
@@ -247,6 +277,7 @@ test('an in-flight save blocks duplicate submits and switching the edited projec
   resolve(project('a'));
   await saving;
   assert.equal(h.element('proj-submit').disabled, false);
+  assert.equal(h.element('proj-instructions').disabled, false);
   assert.match(h.element('project-inspector').innerHTML, /Project a/);
 });
 
@@ -290,4 +321,127 @@ test('deletion blocks editing while pending and leaves a working creator', async
   await h.element('form').listeners.submit({ preventDefault() {} });
   assert.equal(h.calls.length, 1);
   assert.equal(h.updates.length, 0);
+});
+
+test('additional instructions are an optional multiline field with whitespace-preserving display', () => {
+  assert.match(markup, /<label>Additional instructions\s*<textarea\b[^>]*\bid="proj-instructions"/);
+  const textarea = markup.match(/<textarea\b[^>]*\bid="proj-instructions"[^>]*>/)?.[0];
+  assert.ok(textarea);
+  assert.ok(!textarea.includes('required'));
+  assert.match(textarea, /rows="[2-9]\d*"/);
+  assert.match(styles, /\.project-instructions\s*\{[^}]*white-space:\s*pre-wrap/);
+});
+
+test('instruction markup is escaped and multiline whitespace is preserved in the inspector', async () => {
+  const instructions = '\n  <script>alert("x")</script>\n\n<img src=x onerror=alert(1)> & \'quoted\'\n';
+  const h = harness([{ ...project('a'), instructions }]);
+  await h.open();
+  const html = h.element('project-inspector').innerHTML;
+  assert.match(html, /<dt>Additional instructions<\/dt>/);
+  assert.ok(html.includes('<dd class="project-instructions">\n  &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;\n\n&lt;img src=x onerror=alert(1)&gt; &amp; &#39;quoted&#39;\n</dd>'));
+  assert.ok(!html.includes('<script>') && !html.includes('<img'));
+  h.element('proj-edit').listeners.click();
+  assert.equal(h.element('proj-instructions').value, instructions);
+});
+
+test('legacy and empty projects show an empty state and edit with no instructions', async () => {
+  const h = harness([project('legacy'), { ...project('empty'), instructions: '' }]);
+  await h.open();
+  for (const id of ['legacy', 'empty']) {
+    h.select(id);
+    assert.match(h.element('project-inspector').innerHTML, /<dd class="project-instructions">No additional instructions\.<\/dd>/);
+    assert.doesNotMatch(h.element('project-inspector').innerHTML, /undefined|null/);
+    h.element('proj-edit').listeners.click();
+    assert.equal(h.element('proj-instructions').value, '');
+    await h.element('form').listeners.submit({ preventDefault() {} });
+    assert.equal(h.updates.at(-1).instructions, '');
+  }
+});
+
+test('instructions can be explicitly cleared and stay empty when reopening the editor', async () => {
+  const h = harness([{ ...project('a'), instructions: 'Old\ninstructions' }]);
+  await h.open();
+  h.element('proj-edit').listeners.click();
+  h.element('proj-instructions').value = '';
+  await h.element('form').listeners.submit({ preventDefault() {} });
+  assert.equal(h.updates[0].instructions, '');
+  assert.match(h.element('project-inspector').innerHTML, /No additional instructions\./);
+  assert.doesNotMatch(h.element('project-inspector').innerHTML, /Old\ninstructions/);
+  h.element('proj-edit').listeners.click();
+  assert.equal(h.element('proj-instructions').value, '');
+});
+
+test('new projects send empty and whitespace-only instructions verbatim', async () => {
+  const h = harness();
+  await h.open();
+  for (const instructions of ['', ' \n\t  \n']) {
+    h.element('proj-new').listeners.click();
+    h.element('proj-name').value = 'New project';
+    h.element('proj-instructions').value = instructions;
+    await h.element('form').listeners.submit({ preventDefault() {} });
+    assert.equal(h.calls.at(-1).instructions, instructions);
+    if (instructions) {
+      assert.ok(h.element('project-inspector').innerHTML.includes(`<dd class="project-instructions">${instructions}</dd>`));
+    }
+  }
+});
+
+test('saving an edit preserves the separate new-project instructions draft', async () => {
+  const h = harness([{ ...project('a'), instructions: 'Original' }]);
+  await h.open();
+  h.element('proj-new').listeners.click();
+  h.element('proj-instructions').value = '\n  New project draft\n';
+  h.select('a');
+  h.element('proj-edit').listeners.click();
+  h.element('proj-instructions').value = 'Saved edit';
+  await h.element('form').listeners.submit({ preventDefault() {} });
+  assert.equal(h.updates[0].instructions, 'Saved edit');
+  h.element('proj-new').listeners.click();
+  assert.equal(h.element('proj-instructions').value, '\n  New project draft\n');
+});
+
+test('switching projects discards unsaved instructions without leaking them into another editor', async () => {
+  const h = harness([{ ...project('a'), instructions: 'Project a instructions' }, project('b')]);
+  await h.open();
+  h.element('proj-edit').listeners.click();
+  h.element('proj-instructions').value = 'Unsaved instructions';
+  h.select('b');
+  h.element('proj-edit').listeners.click();
+  assert.equal(h.element('proj-instructions').value, '');
+  h.element('proj-instructions').value = 'Another unsaved edit';
+  h.element('proj-new').listeners.click();
+  assert.equal(h.element('proj-instructions').value, '');
+  h.select('a');
+  assert.match(h.element('project-inspector').innerHTML, /Project a instructions/);
+  assert.equal(h.updates.length, 0);
+});
+
+test('a failed create preserves instructions and a retry saves them without duplicate submissions', async () => {
+  let reject, attempts = 0;
+  const submitted = [];
+  const h = harness([], { createProject: (data) => {
+    submitted.push(data);
+    if (++attempts === 1) return new Promise((_, fail) => { reject = fail; });
+    return Promise.resolve({ id: 'new', ...data });
+  } });
+  await h.open();
+  const instructions = '\n  Keep this draft.\n\n';
+  h.element('proj-name').value = 'New project';
+  h.element('proj-instructions').value = instructions;
+  const saving = h.element('form').listeners.submit({ preventDefault() {} });
+  assert.equal(h.element('proj-instructions').disabled, true);
+  await h.element('form').listeners.submit({ preventDefault() {} });
+  assert.equal(attempts, 1);
+  reject(new Error('Create failed'));
+  await saving;
+  assert.deepEqual(h.alerts, ['Create failed']);
+  assert.equal(h.element('form').hidden, false);
+  assert.equal(h.element('proj-instructions').value, instructions);
+  assert.equal(h.element('proj-instructions').disabled, false);
+  await h.element('form').listeners.submit({ preventDefault() {} });
+  assert.equal(attempts, 2);
+  assert.ok(submitted.every((data) => data.instructions === instructions));
+  assert.ok(h.element('project-inspector').innerHTML.includes(instructions));
+  assert.equal(h.element('proj-instructions').value, '');
+  assert.equal(h.element('proj-instructions').disabled, false);
 });

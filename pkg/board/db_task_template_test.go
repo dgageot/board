@@ -111,15 +111,19 @@ func TestTaskTemplateMigrationAndPersistence(t *testing.T) {
 		Branch: "branch", Worktree: "worktree", Session: "session", AgentSession: "agent-session",
 		Cost: 1.5, PRURL: "https://example.com/pull/1", CoachRan: true,
 	}
-	require.NoError(t, store.InsertCard(card))
+	_, err = db.NamedExec(`INSERT INTO cards
+		(id, title, prompt, title_generated, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost, pr_url, coach_ran, diff_base)
+		VALUES (:id, :title, :prompt, :title_generated, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost, :pr_url, :coach_ran, :diff_base)`, card)
+	require.NoError(t, err)
 	project := &Project{ID: "project", Name: "Project", RepoPath: "/repo", Agent: "/agent"}
-	require.NoError(t, store.InsertProject(project))
+	_, err = db.NamedExec(`INSERT INTO projects (id, name, repo_path, agent, pos) VALUES (:id, :name, :repo_path, :agent, :pos)`, project)
+	require.NoError(t, err)
 	require.NoError(t, store.SeedColumns(defaultColumns))
 
 	require.NoError(t, migrate(db))
 	version, err := currentVersion(db)
 	require.NoError(t, err)
-	assert.Equal(t, 14, version)
+	assert.Equal(t, 15, version)
 	templates, err := store.ListTaskTemplates()
 	require.NoError(t, err)
 	assert.Equal(t, []*TaskTemplate{}, templates)

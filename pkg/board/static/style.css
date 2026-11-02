@@ -1194,6 +1194,10 @@ dialog.dialog-large {
     overflow-wrap: anywhere;
     margin-bottom: 18px;
   }
+
+  & .project-instructions {
+    white-space: pre-wrap;
+  }
 }
 
 #project-inspector,
@@ -1217,6 +1221,7 @@ dialog.dialog-large {
   }
 
   & label input,
+  & label textarea,
   & label select {
     margin-top: 0;
   }

@@ -27,7 +27,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 	version, err := currentVersion(db)
 	require.NoError(t, err)
-	assert.Equal(t, 14, version)
+	assert.Equal(t, 15, version)
 }
 
 func TestMigrateRepairsMissingDiffBaseAtVersion13(t *testing.T) {
@@ -36,6 +36,8 @@ func TestMigrateRepairsMissingDiffBaseAtVersion13(t *testing.T) {
 		ALTER TABLE cards DROP COLUMN diff_base;
 		ALTER TABLE loop_project_tasks ADD COLUMN agent_config TEXT NOT NULL DEFAULT '';
 		DROP TABLE task_templates;
+		ALTER TABLE cards DROP COLUMN instructions;
+		ALTER TABLE projects DROP COLUMN instructions;
 		UPDATE schema_version SET version = 13;
 	`)
 	require.NoError(t, err)
@@ -48,7 +50,7 @@ func TestMigrateRepairsMissingDiffBaseAtVersion13(t *testing.T) {
 	assert.True(t, tableExists(store.db, "task_templates"))
 	version, err := currentVersion(store.db)
 	require.NoError(t, err)
-	assert.Equal(t, 14, version)
+	assert.Equal(t, 15, version)
 }
 
 func TestMigrateRepairsMissingDiffBaseAtVersion14(t *testing.T) {
@@ -88,7 +90,7 @@ func TestMigrateRepairsMissingDiffBaseAtVersion14(t *testing.T) {
 	assert.Equal(t, []*TaskTemplate{template}, templates)
 	version, err := currentVersion(store.db)
 	require.NoError(t, err)
-	assert.Equal(t, 14, version)
+	assert.Equal(t, 15, version)
 
 	require.NoError(t, store.UpdateCardStatus(card.ID, StatusWaiting))
 	require.NoError(t, store.Close())
@@ -518,7 +520,7 @@ func TestMigrateRemovesPersistedUnknownStatus(t *testing.T) {
 	for _, status := range []CardStatus{"unknown", StatusRunning, StatusWaiting, StatusPaused, StatusError, StatusStarting} {
 		require.NoError(t, store.InsertCard(&Card{ID: string(status), Title: "Keep title", Status: status}))
 	}
-	_, err := store.db.Exec("ALTER TABLE cards DROP COLUMN diff_base; ALTER TABLE loop_project_tasks DROP COLUMN version_id; UPDATE schema_version SET version = 8")
+	_, err := store.db.Exec("ALTER TABLE cards DROP COLUMN diff_base; ALTER TABLE loop_project_tasks DROP COLUMN version_id; ALTER TABLE cards DROP COLUMN instructions; ALTER TABLE projects DROP COLUMN instructions; UPDATE schema_version SET version = 8")
 	require.NoError(t, err)
 	require.NoError(t, migrate(store.db))
 	cards, err := store.ListCards()
@@ -554,6 +556,8 @@ func TestMigrateArchivesLoopCardsWithoutDeletingData(t *testing.T) {
 		VALUES ('task', 'loop', 'project', 'Project', '/repo', 'agent', 'Do the task', 'Tests pass', 'Do the task', 'loop-card', 'base', 'launched', '2026-10-01');
 		INSERT INTO loop_run_reviews(task_id, state, data) VALUES ('task', 'pending', '{"outcome":"normal"}');
 		ALTER TABLE cards DROP COLUMN diff_base;
+		ALTER TABLE cards DROP COLUMN instructions;
+		ALTER TABLE projects DROP COLUMN instructions;
 		UPDATE schema_version SET version = 12;
 	`)
 	require.NoError(t, err)

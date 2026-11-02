@@ -633,7 +633,7 @@ func (c *Controller) relaunch(card *Card, prompt string) error {
 	_ = os.Remove(socket)
 	err := c.sessions.NewSession(
 		card.Session, card.Worktree, card.Agent, card.AgentSession,
-		socket, "", "", prompt,
+		socket, "", "", prompt, card.Instructions,
 	)
 	if err != nil {
 		log.Printf("card %s: relaunch failed: %v", card.ID, err)

@@ -112,12 +112,15 @@ func applyServerDefaults() {
 // (`- < file`). The prompt never appears on the command line: this command is
 // typed into an interactive shell (see NewSession), where no amount of
 // escaping is fully safe for arbitrary user text.
-func agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile string) string {
+func agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile, instructionsFile string) string {
 	cmd := fmt.Sprintf("docker-agent run %s --yolo --session %s --listen %s",
 		quoteAgent(agent), shellescape.Quote(sessionID), shellescape.Quote("unix://"+listenSocket))
 	if worktreeName != "" {
 		cmd += fmt.Sprintf(" --worktree=%s --worktree-base %s",
 			shellescape.Quote(worktreeName), shellescape.Quote(worktreeBase))
+	}
+	if instructionsFile != "" {
+		cmd += " --prompt-file " + shellescape.Quote(instructionsFile)
 	}
 	if promptFile != "" {
 		cmd += " - < " + shellescape.Quote(promptFile)
@@ -142,6 +145,45 @@ func promptFilePath(sessionID string) string {
 	return filepath.Join(os.TempDir(), "board-prompt-"+sessionID)
 }
 
+// instructionsDir is private to the session and lives outside its worktree.
+func instructionsDir(sessionName string) (string, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cache, "board", "instructions", sessionName), nil
+}
+
+// stageInstructions recreates the task snapshot on every launch, including resumes.
+func stageInstructions(sessionName, instructions string) (string, error) {
+	if instructions == "" {
+		return "", nil
+	}
+	dir, err := instructionsDir(sessionName)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	// Rename a private temporary file rather than following an existing symlink.
+	file, err := os.CreateTemp(dir, ".instructions-*")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = os.Remove(file.Name()) }()
+	_, writeErr := file.WriteString(instructions)
+	closeErr := file.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "instructions.md")
+	if err := os.Rename(file.Name(), path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 // NewSession creates a tmux session and runs docker-agent in it. The agent is
 // exec'd into the pane (replacing the shell) so that, when it exits, the pane
 // becomes a dead pane instead of dropping back to a shell. Combined with
@@ -152,7 +194,11 @@ func promptFilePath(sessionID string) string {
 // and --worktree branches a new worktree from it. On resume worktreeName is
 // empty and workDir is the existing worktree directory, so the agent stays
 // isolated there.
-func (s Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) error {
+func (s Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt, instructions string) error {
+	instructionsFile, err := stageInstructions(sessionName, instructions)
+	if err != nil {
+		return fmt.Errorf("stage instructions: %w", err)
+	}
 	tmux := defaultTmux()
 
 	session, err := tmux.NewSession(&gotmux.SessionOptions{
@@ -192,7 +238,7 @@ func (s Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocke
 
 	// exec replaces the shell with the agent so the agent becomes the pane's
 	// process: when it exits the pane goes dead (see remain-on-exit above).
-	cmd := s.launchCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile)
+	cmd := s.launchCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile, instructionsFile)
 	if err := panes[0].SendKeys("exec " + cmd); err != nil {
 		return fmt.Errorf("send keys: %w", err)
 	}
@@ -204,8 +250,8 @@ func (s Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocke
 }
 
 // launchCommand passes only the helper socket through the interactive shell.
-func (s Sessions) launchCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile string) string {
-	cmd := agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile)
+func (s Sessions) launchCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile, instructionsFile string) string {
+	cmd := agentCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile, instructionsFile)
 	if s.CredentialSocket != "" {
 		cmd = shellescape.Quote(s.Executable) + " credential-exec " + shellescape.Quote(s.CredentialSocket) + " " + cmd
 	}
@@ -223,7 +269,14 @@ func tmuxRun(args ...string) error {
 }
 
 // KillSession kills a tmux session.
-func (Sessions) KillSession(sessionName string) error {
+func (Sessions) KillSession(sessionName string) (err error) {
+	defer func() {
+		if err == nil {
+			if dir, dirErr := instructionsDir(sessionName); dirErr == nil {
+				err = os.RemoveAll(dir)
+			}
+		}
+	}()
 	conn, err := net.Dial("unix", SocketPath())
 	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
 		return nil

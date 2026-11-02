@@ -22,6 +22,17 @@ lists the worktree's commits, oldest first; select a commit or use **Previous**/
 review them individually. **All changes** returns to the combined diff,
 including uncommitted work.
 
+## Project instructions
+
+In **Projects**, add or edit a project and use **Additional instructions** for
+optional, multiline guidance specific to that project. Board passes this text
+verbatim via docker-agent's `--prompt-file` to complement the agent's existing
+instructions without modifying its YAML configuration.
+
+Each new task snapshots the project's instructions. Edits or clearing the field
+apply only to new tasks; existing tasks keep their snapshot, which is reapplied
+when their agent resumes.
+
 ## Predefined tasks
 
 Use **Tasks**, next to **Projects**, to add, edit or delete reusable tasks. Give

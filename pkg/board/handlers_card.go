@@ -55,22 +55,21 @@ type createCardRequest struct {
 	ProjectID string `json:"projectId,omitempty"`
 }
 
-// resolveProject returns the name, agent and repo path configured for the
-// given project. Cards are always created against a saved project, so a
+// resolveProject returns the settings configured for the given project. Cards are always created against a saved project, so a
 // missing or unknown project is a caller error; any other store failure is
 // internal and reported as such.
-func (b *Board) resolveProject(projectID string) (name, agent, repoPath string, err error) {
+func (b *Board) resolveProject(projectID string) (*Project, error) {
 	if projectID == "" {
-		return "", "", "", fmt.Errorf("%w: project required", errBadInput)
+		return nil, fmt.Errorf("%w: project required", errBadInput)
 	}
 	project, err := b.store.GetProject(projectID)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return "", "", "", fmt.Errorf("%w: unknown project %q", errBadInput, projectID)
+		return nil, fmt.Errorf("%w: unknown project %q", errBadInput, projectID)
 	case err != nil:
-		return "", "", "", fmt.Errorf("get project %q: %w", projectID, err)
+		return nil, fmt.Errorf("get project %q: %w", projectID, err)
 	}
-	return project.Name, project.Agent, project.RepoPath, nil
+	return project, nil
 }
 
 // createCard creates a new card and launches its agent session. docker-agent
@@ -80,7 +79,7 @@ func (b *Board) resolveProject(projectID string) (name, agent, repoPath string, 
 // placeholder derived from the prompt and replaced when the agent emits its
 // session_title event, so card creation is instant.
 func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
-	name, agent, repoPath, err := b.resolveProject(projectID)
+	project, err := b.resolveProject(projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,14 +104,14 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 	defer func() {
 		if err != nil {
 			_ = b.sessions.KillSession(sessionName)
-			git.RemoveWorktree(repoPath, wtPath, branch)
+			git.RemoveWorktree(project.RepoPath, wtPath, branch)
 		}
 	}()
 
 	// Launch from the repository: --worktree branches the new worktree from the
 	// repo's upstream base (detected, not assumed — see git.UpstreamBase).
-	worktreeBase := git.UpstreamBase(repoPath)
-	if err := b.sessions.NewSession(sessionName, repoPath, agent, agentSession, socketPath(agentSession), worktreeName, worktreeBase, prompt); err != nil {
+	worktreeBase := git.UpstreamBase(project.RepoPath)
+	if err := b.sessions.NewSession(sessionName, project.RepoPath, project.Agent, agentSession, socketPath(agentSession), worktreeName, worktreeBase, prompt, project.Instructions); err != nil {
 		return nil, fmt.Errorf("tmux session: %w", err)
 	}
 
@@ -120,10 +119,11 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 		ID:           newID(),
 		Title:        placeholderTitle(prompt),
 		Prompt:       prompt,
+		Instructions: project.Instructions,
 		Status:       StatusStarting,
-		Project:      name,
-		Agent:        agent,
-		RepoPath:     repoPath,
+		Project:      project.Name,
+		Agent:        project.Agent,
+		RepoPath:     project.RepoPath,
 		Branch:       branch,
 		Worktree:     wtPath,
 		Session:      sessionName,

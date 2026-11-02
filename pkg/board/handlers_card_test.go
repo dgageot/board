@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPlaceholderTitle(t *testing.T) {
@@ -28,4 +29,42 @@ func TestPlaceholderTitleNoMidWordCut(t *testing.T) {
 	got := placeholderTitle(strings.Repeat("x", 100))
 	assert.True(t, strings.HasSuffix(got, "…"))
 	assert.Len(t, []rune(got), 41)
+}
+
+func TestCreateCardSnapshotsProjectInstructions(t *testing.T) {
+	b, store := newTestBoard(t)
+	require.NoError(t, store.SeedColumns(defaultColumns))
+	sessions := newFakeSessionManager()
+	b.sessions = sessions
+	b.controller.sessions = sessions
+	project := &Project{ID: "project", Name: "Project", RepoPath: projectTestRepo(t), Agent: "/agent", Instructions: " \nAlways test.\n"}
+	require.NoError(t, store.InsertProject(project))
+
+	card, err := b.createCard("Do the work", project.ID)
+	require.NoError(t, err)
+	t.Cleanup(func() { b.controller.Stop(card.ID) })
+	assert.Equal(t, project.Instructions, card.Instructions)
+	assert.Equal(t, "Do the work", card.Prompt)
+	require.Len(t, sessions.calls(), 1)
+	assert.Equal(t, card.Instructions, sessions.calls()[0].instructions)
+	assert.Equal(t, card.Prompt, sessions.calls()[0].prompt)
+
+	project.Instructions = "New rules"
+	_, err = store.UpdateProject(project)
+	require.NoError(t, err)
+	stored, err := store.GetCard(card.ID)
+	require.NoError(t, err)
+	assert.Equal(t, card.Instructions, stored.Instructions)
+	future, err := b.createCard("Next task", project.ID)
+	require.NoError(t, err)
+	t.Cleanup(func() { b.controller.Stop(future.ID) })
+	assert.Equal(t, project.Instructions, future.Instructions)
+	assert.Equal(t, project.Instructions, sessions.calls()[1].instructions)
+	// Resume from the persisted snapshot, even if its project has been deleted.
+	require.NoError(t, store.DeleteProject(project.ID))
+	require.NoError(t, b.controller.relaunch(stored, "Next column"))
+	require.Len(t, sessions.calls(), 3)
+	assert.Equal(t, card.Instructions, sessions.calls()[2].instructions)
+	assert.Equal(t, "Next column", sessions.calls()[2].prompt)
+	assert.Empty(t, sessions.calls()[2].worktreeName)
 }

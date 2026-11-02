@@ -29,12 +29,12 @@ func projectTestRepo(t *testing.T) string {
 func TestHandleUpdateProject(t *testing.T) {
 	b, store := newTestBoard(t)
 	for _, id := range []string{"other", "target", "last"} {
-		require.NoError(t, store.InsertProject(&Project{ID: id, Name: id, RepoPath: "/old/repo", Agent: "/old/agent"}))
+		require.NoError(t, store.InsertProject(&Project{ID: id, Name: id, RepoPath: "/old/repo", Agent: "/old/agent", Instructions: "old rules"}))
 	}
 	require.NoError(t, store.ReorderProjects([]string{"last", "target", "other"}))
 	before, err := store.ListProjects()
 	require.NoError(t, err)
-	card := &Card{ID: "card-1", Project: "target", RepoPath: "/old/repo", Agent: "/old/agent"}
+	card := &Card{ID: "card-1", Project: "target", RepoPath: "/old/repo", Agent: "/old/agent", Instructions: "old rules"}
 	require.NoError(t, store.InsertCard(card))
 
 	updates := make(chan struct{}, 2)
@@ -42,7 +42,7 @@ func TestHandleUpdateProject(t *testing.T) {
 	defer b.removeClient(updates)
 	repo := projectTestRepo(t)
 	body, err := json.Marshal(Project{
-		ID: "other", Name: " \tNew project\n ", RepoPath: " \t" + repo + "\n ", Agent: " \t/new/agent\n ", Pos: 99,
+		ID: "other", Name: " \tNew project\n ", RepoPath: " \t" + repo + "\n ", Agent: " \t/new/agent\n ", Instructions: " \nNew rules\n ", Pos: 99,
 	})
 	require.NoError(t, err)
 	handler, err := buildMux(b)
@@ -54,7 +54,7 @@ func TestHandleUpdateProject(t *testing.T) {
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	var updated Project
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&updated))
-	want := &Project{ID: "target", Name: "New project", RepoPath: repo, Agent: "/new/agent", Pos: 1}
+	want := &Project{ID: "target", Name: "New project", RepoPath: repo, Agent: "/new/agent", Instructions: " \nNew rules\n ", Pos: 1}
 	assert.Equal(t, want, &updated)
 	projects, err := store.ListProjects()
 	require.NoError(t, err)
@@ -62,11 +62,9 @@ func TestHandleUpdateProject(t *testing.T) {
 	storedCard, err := store.GetCard(card.ID)
 	require.NoError(t, err)
 	assert.Equal(t, card, storedCard, "existing cards retain their project snapshots")
-	name, agent, repoPath, err := b.resolveProject("target")
+	project, err := b.resolveProject("target")
 	require.NoError(t, err)
-	assert.Equal(t, want.Name, name)
-	assert.Equal(t, want.Agent, agent)
-	assert.Equal(t, want.RepoPath, repoPath)
+	assert.Equal(t, want, project)
 	assert.Len(t, updates, 1, "a successful edit broadcasts once")
 }
 
@@ -94,7 +92,7 @@ func TestHandleUpdateProjectRejectsBadInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b, store := newTestBoard(t)
-			original := &Project{ID: "target", Name: "Old", RepoPath: "/old/repo", Agent: "/old/agent"}
+			original := &Project{ID: "target", Name: "Old", RepoPath: "/old/repo", Agent: "/old/agent", Instructions: "old rules"}
 			require.NoError(t, store.InsertProject(original))
 			updates := make(chan struct{}, 1)
 			b.addClient(updates)
@@ -142,7 +140,7 @@ func TestHandleUpdateProjectStoreErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b, store := newTestBoard(t)
-			original := &Project{ID: "target", Name: "Old", RepoPath: "/old/repo", Agent: "/old/agent"}
+			original := &Project{ID: "target", Name: "Old", RepoPath: "/old/repo", Agent: "/old/agent", Instructions: "old rules"}
 			if !tt.missing {
 				require.NoError(t, store.InsertProject(original))
 			}
@@ -195,4 +193,37 @@ func TestHandleReorderProjectsRoute(t *testing.T) {
 	require.Len(t, projects, 2)
 	assert.Equal(t, "second", projects[0].ID)
 	assert.Equal(t, "first", projects[1].ID)
+}
+
+func TestProjectInstructionsAPI(t *testing.T) {
+	b, store := newTestBoard(t)
+	handler, err := buildMux(b)
+	require.NoError(t, err)
+	instructions := " \nAlways test.\nKeep `quotes` and $variables verbatim.\t\n"
+	project := Project{Name: "Project", RepoPath: projectTestRepo(t), Agent: "/agent", Instructions: instructions}
+	body, err := json.Marshal(project)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/projects", bytes.NewReader(body)))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&project))
+	assert.Equal(t, instructions, project.Instructions)
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/projects", http.NoBody))
+	require.Equal(t, http.StatusOK, rec.Code)
+	var projects []Project
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&projects))
+	require.Len(t, projects, 1)
+	assert.Equal(t, project, projects[0])
+
+	project.Instructions = ""
+	body, err = json.Marshal(project)
+	require.NoError(t, err)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/projects/"+project.ID, bytes.NewReader(body)))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	stored, err := store.GetProject(project.ID)
+	require.NoError(t, err)
+	assert.Empty(t, stored.Instructions, "instructions can be cleared")
 }

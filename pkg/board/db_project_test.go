@@ -15,7 +15,7 @@ import (
 func TestUpdateProjectPreservesOrderAndCards(t *testing.T) {
 	store := openTestStore(t)
 	for _, id := range []string{"a", "b", "c"} {
-		require.NoError(t, store.InsertProject(&Project{ID: id, Name: id, RepoPath: "/old/repo", Agent: "/old/agent"}))
+		require.NoError(t, store.InsertProject(&Project{ID: id, Name: id, RepoPath: "/old/repo", Agent: "/old/agent", Instructions: "old rules"}))
 	}
 	require.NoError(t, store.ReorderProjects([]string{"c", "a", "b"}))
 	before, err := store.ListProjects()
@@ -25,13 +25,13 @@ func TestUpdateProjectPreservesOrderAndCards(t *testing.T) {
 		ID: "card-1", Title: "Existing card", Prompt: "Keep this prompt", TitleGenerated: true,
 		Column: "dev", Status: StatusRunning, Project: "a", Agent: "/old/agent", RepoPath: "/old/repo",
 		Branch: "branch", Worktree: "/worktree", Session: "session", AgentSession: "agent-session",
-		Cost: 1.5, PRURL: "https://example.com/pull/1", CoachRan: true,
+		Instructions: "old rules", Cost: 1.5, PRURL: "https://example.com/pull/1", CoachRan: true,
 	}
 	require.NoError(t, store.InsertCard(card))
 
-	updated, err := store.UpdateProject(&Project{ID: "a", Name: "Renamed", RepoPath: "/new/repo", Agent: "/new/agent", Pos: 99})
+	updated, err := store.UpdateProject(&Project{ID: "a", Name: "Renamed", RepoPath: "/new/repo", Agent: "/new/agent", Instructions: "new rules", Pos: 99})
 	require.NoError(t, err)
-	want := &Project{ID: "a", Name: "Renamed", RepoPath: "/new/repo", Agent: "/new/agent", Pos: 1}
+	want := &Project{ID: "a", Name: "Renamed", RepoPath: "/new/repo", Agent: "/new/agent", Instructions: "new rules", Pos: 1}
 	assert.Equal(t, want, updated)
 
 	stored, err := store.GetProject("a")
@@ -111,4 +111,57 @@ func checkConcurrentProjectPositions(t *testing.T, store *SQLiteStore) {
 	}
 	assert.Equal(t, 0, projects[0].Pos)
 	assert.Equal(t, n-1, projects[n-1].Pos)
+}
+
+func TestProjectInstructionsMigrationAndPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "board.db")
+	db, err := sqlx.Open("sqlite", path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	migrations, err := loadMigrations()
+	require.NoError(t, err)
+	for _, migration := range migrations {
+		if migration.version >= 15 {
+			break
+		}
+		data, err := migrationFiles.ReadFile("migrations/" + migration.name)
+		require.NoError(t, err)
+		_, err = db.Exec(string(data))
+		require.NoError(t, err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE schema_version (version INTEGER NOT NULL);
+		INSERT INTO schema_version VALUES (14);
+		INSERT INTO projects (id, name, repo_path, agent, pos) VALUES ('old-project', 'Old', '/repo', '/agent', 0);
+		INSERT INTO cards (id, title, col, status, agent, repo_path, branch, worktree, session)
+		VALUES ('old-card', 'Old task', 'dev', 'waiting', '/agent', '/repo', 'branch', '/worktree', 'session');
+	`)
+	require.NoError(t, err)
+	require.NoError(t, migrate(db))
+	require.NoError(t, migrate(db), "migration is idempotent")
+	store := &SQLiteStore{db: db}
+	oldProject, err := store.GetProject("old-project")
+	require.NoError(t, err)
+	assert.Empty(t, oldProject.Instructions)
+	oldCard, err := store.GetCard("old-card")
+	require.NoError(t, err)
+	assert.Empty(t, oldCard.Instructions)
+
+	instructions := " \nRun tests; preserve $variables, `backticks` and {{placeholders}}.\n"
+	project := &Project{ID: "project", Name: "Project", RepoPath: "/repo", Agent: "/agent", Instructions: instructions}
+	require.NoError(t, store.InsertProject(project))
+	card := &Card{ID: "card", Title: "Task", Instructions: instructions}
+	require.NoError(t, store.InsertCard(card))
+	require.NoError(t, store.Close())
+	reopened, err := sqlx.Open("sqlite", path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = reopened.Close() })
+	require.NoError(t, migrate(reopened))
+	store = &SQLiteStore{db: reopened}
+	projects, err := store.ListProjects()
+	require.NoError(t, err)
+	assert.Equal(t, []*Project{oldProject, project}, projects)
+	cards, err := store.ListCards()
+	require.NoError(t, err)
+	assert.Equal(t, []*Card{oldCard, card}, cards)
 }

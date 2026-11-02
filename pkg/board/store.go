@@ -42,7 +42,7 @@ type Store interface {
 	ListProjects() ([]*Project, error)
 	GetProject(id string) (*Project, error)
 	InsertProject(p *Project) error
-	// UpdateProject updates only name, repo path and agent, returning the stored
+	// UpdateProject updates name, repo path, agent and instructions, returning the stored
 	// project. It returns sql.ErrNoRows if the project no longer exists.
 	UpdateProject(p *Project) (*Project, error)
 	DeleteProject(id string) error

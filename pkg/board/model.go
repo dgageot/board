@@ -58,6 +58,8 @@ type Card struct {
 	// a placeholder truncated from it, so the prompt is kept verbatim (e.g.
 	// for copying the full text from the UI).
 	Prompt string `db:"prompt" json:"prompt"`
+	// Instructions snapshots the project rules so edits never change existing tasks.
+	Instructions string `db:"instructions" json:"instructions"`
 	// TitleGenerated reports whether the agent has produced a real title (via
 	// its session_title event). False while the title is still the
 	// placeholder derived from the prompt.
@@ -98,11 +100,12 @@ type TaskTemplate struct {
 
 // Project represents a saved project config.
 type Project struct {
-	ID       string `db:"id"        json:"id"`
-	Name     string `db:"name"      json:"name"`
-	RepoPath string `db:"repo_path" json:"repoPath"`
-	Agent    string `db:"agent"     json:"agent"`
-	Pos      int    `db:"pos"       json:"pos"`
+	ID           string `db:"id"           json:"id"`
+	Name         string `db:"name"         json:"name"`
+	RepoPath     string `db:"repo_path"    json:"repoPath"`
+	Agent        string `db:"agent"        json:"agent"`
+	Instructions string `db:"instructions" json:"instructions"`
+	Pos          int    `db:"pos"          json:"pos"`
 }
 
 // sessionPrefix is used for all tmux sessions created by the board.

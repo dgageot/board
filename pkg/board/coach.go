@@ -123,7 +123,7 @@ func (b *Board) startCoach(ctx context.Context, card *Card) (string, error) {
 
 	// No worktree arguments: the coach reviews the card's existing worktree,
 	// it does not branch one of its own.
-	if err := b.sessions.NewSession(name, card.Worktree, agentConfig, agentSession, socket, "", "", prompt); err != nil {
+	if err := b.sessions.NewSession(name, card.Worktree, agentConfig, agentSession, socket, "", "", prompt, ""); err != nil {
 		return "", fmt.Errorf("coach session: %w", err)
 	}
 	b.setCoachRunning(card.ID, true)

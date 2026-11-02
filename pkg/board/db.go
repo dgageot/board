@@ -209,8 +209,8 @@ func tableExists(db *sqlx.DB, name string) bool {
 // --- Cards ---
 
 const (
-	cardColumns     = "id, title, prompt, title_generated, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost, pr_url, coach_ran, diff_base"
-	cardNamedValues = ":id, :title, :prompt, :title_generated, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost, :pr_url, :coach_ran, :diff_base"
+	cardColumns     = "id, title, prompt, title_generated, col, status, project, agent, repo_path, branch, worktree, session, agent_session, cost, pr_url, coach_ran, diff_base, instructions"
+	cardNamedValues = ":id, :title, :prompt, :title_generated, :col, :status, :project, :agent, :repo_path, :branch, :worktree, :session, :agent_session, :cost, :pr_url, :coach_ran, :diff_base, :instructions"
 	insertCardSQL   = "INSERT INTO cards (" + cardColumns + ") VALUES (" + cardNamedValues + ")"
 )
 
@@ -360,8 +360,8 @@ func (s *SQLiteStore) MoveCard(id, column string, requireIdle bool) (*Card, erro
 // --- Projects ---
 
 const (
-	projectColumns   = "id, name, repo_path, agent, pos"
-	insertProjectSQL = "INSERT INTO projects (" + projectColumns + ") VALUES (:id, :name, :repo_path, :agent, :pos)"
+	projectColumns   = "id, name, repo_path, agent, pos, instructions"
+	insertProjectSQL = "INSERT INTO projects (" + projectColumns + ") VALUES (:id, :name, :repo_path, :agent, :pos, :instructions)"
 )
 
 func (s *SQLiteStore) ListProjects() ([]*Project, error) {
@@ -395,8 +395,8 @@ func (s *SQLiteStore) InsertProject(p *Project) error {
 func (s *SQLiteStore) UpdateProject(p *Project) (*Project, error) {
 	var project Project
 	if err := s.db.Get(&project,
-		"UPDATE projects SET name = ?, repo_path = ?, agent = ? WHERE id = ? RETURNING "+projectColumns,
-		p.Name, p.RepoPath, p.Agent, p.ID,
+		"UPDATE projects SET name = ?, repo_path = ?, agent = ?, instructions = ? WHERE id = ? RETURNING "+projectColumns,
+		p.Name, p.RepoPath, p.Agent, p.Instructions, p.ID,
 	); err != nil {
 		return nil, err
 	}

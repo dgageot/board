@@ -1,0 +1,2 @@
+ALTER TABLE projects ADD COLUMN instructions TEXT NOT NULL DEFAULT '';
+ALTER TABLE cards ADD COLUMN instructions TEXT NOT NULL DEFAULT '';

@@ -51,21 +51,21 @@ func TestAgentCommand(t *testing.T) {
 	// Resume (no worktree name): omit --worktree so the session reattaches to
 	// its existing worktree; no prompt means wait for input.
 	assert.Equal(t, "docker-agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock",
-		agentCommand("my-agent", "abc123", sock, "", "", ""))
+		agentCommand("my-agent", "abc123", sock, "", "", "", ""))
 
 	// Resume with a prompt: deliver it via stdin from the prompt file. The
 	// prompt text itself never appears on the command line.
 	assert.Equal(t, "docker-agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock - < /tmp/board-prompt-abc123",
-		agentCommand("my-agent", "abc123", sock, "", "", "/tmp/board-prompt-abc123"))
+		agentCommand("my-agent", "abc123", sock, "", "", "/tmp/board-prompt-abc123", ""))
 
 	// First launch (worktree name set): create the isolated worktree branched
 	// from the given base and deliver the first prompt via stdin.
 	assert.Equal(t, "docker-agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base origin/main - < /tmp/board-prompt-abc123",
-		agentCommand("my-agent", "abc123", sock, "board-xyz", "origin/main", "/tmp/board-prompt-abc123"))
+		agentCommand("my-agent", "abc123", sock, "board-xyz", "origin/main", "/tmp/board-prompt-abc123", ""))
 
 	// The worktree base is not assumed: a non-origin upstream flows through.
 	assert.Equal(t, "docker-agent run my-agent --yolo --session abc123 --listen unix:///run/board-abc.sock --worktree=board-xyz --worktree-base upstream/master - < /tmp/board-prompt-abc123",
-		agentCommand("my-agent", "abc123", sock, "board-xyz", "upstream/master", "/tmp/board-prompt-abc123"))
+		agentCommand("my-agent", "abc123", sock, "board-xyz", "upstream/master", "/tmp/board-prompt-abc123", ""))
 }
 
 // The prompt is staged in a file read verbatim by the agent: quotes,
@@ -97,7 +97,7 @@ func TestAgentCommandPreservesAgentArgument(t *testing.T) {
 				}
 			}
 			// Capture argv without starting docker-agent. Metacharacters must stay literal.
-			out, err := exec.Command("sh", "-c", agentCommand(agent, "session", "/tmp/sock", "", "", "")).CombinedOutput()
+			out, err := exec.Command("sh", "-c", agentCommand(agent, "session", "/tmp/sock", "", "", "", "")).CombinedOutput()
 			require.NoError(t, err, "%s", out)
 			require.Equal(t, []string{"run", want, "--yolo", "--session", "session", "--listen", "unix:///tmp/sock"}, strings.Split(strings.TrimSuffix(string(out), "\n"), "\n"))
 		})
@@ -112,13 +112,13 @@ func TestDefaultTmuxMemoized(t *testing.T) {
 
 func TestLaunchCommandUsesCredentialHelper(t *testing.T) {
 	s := Sessions{Executable: "/tmp/Board's app", CredentialSocket: "/tmp/helper socket"}
-	command := s.launchCommand("agent", "session", "/tmp/control", "", "", "")
+	command := s.launchCommand("agent", "session", "/tmp/control", "", "", "", "")
 	// Capture argv to verify escaping, without running Board or docker-agent.
 	script := "capture() { printf '%s\\n' \"$@\"; }; " + strings.Replace(command, shellescape.Quote(s.Executable), "capture", 1)
 	out, err := exec.Command("sh", "-c", script).CombinedOutput()
 	require.NoError(t, err, "%s", out)
 	assert.Equal(t, []string{"credential-exec", s.CredentialSocket, "docker-agent", "run", "agent", "--yolo", "--session", "session", "--listen", "unix:///tmp/control"}, strings.Split(strings.TrimSpace(string(out)), "\n"))
-	assert.Equal(t, agentCommand("agent", "session", "/tmp/control", "", "", ""), Sessions{}.launchCommand("agent", "session", "/tmp/control", "", "", ""))
+	assert.Equal(t, agentCommand("agent", "session", "/tmp/control", "", "", "", ""), Sessions{}.launchCommand("agent", "session", "/tmp/control", "", "", "", ""))
 }
 
 func TestKillLookupFailure(t *testing.T) {
@@ -130,4 +130,96 @@ func TestKillLookupFailure(t *testing.T) {
 func TestKillNoServer(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	require.NoError(t, Sessions{}.KillSession("not-found"))
+}
+
+func TestStageInstructions(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	// os.UserCacheDir uses XDG_CACHE_HOME on Linux and HOME on macOS.
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	instructions := " \nNever push unsigned commits.\nKeep 'quotes', $variables, `backticks`, and {{placeholders}}.\t\n"
+	path, err := stageInstructions("board-one", instructions)
+	require.NoError(t, err)
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, instructions, string(data))
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	info, err = os.Stat(filepath.Dir(path))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+
+	other, err := stageInstructions("board-two", "Other rules")
+	require.NoError(t, err)
+	assert.NotEqual(t, path, other)
+	// A relaunch restores the snapshot even after cache cleanup or a changed file.
+	require.NoError(t, os.WriteFile(path, []byte("changed"), 0o600))
+	resumed, err := stageInstructions("board-one", instructions)
+	require.NoError(t, err)
+	assert.Equal(t, path, resumed)
+	data, err = os.ReadFile(resumed)
+	require.NoError(t, err)
+	assert.Equal(t, instructions, string(data))
+	require.NoError(t, os.RemoveAll(filepath.Dir(path)))
+	resumed, err = stageInstructions("board-one", instructions)
+	require.NoError(t, err)
+	assert.Equal(t, path, resumed)
+	data, err = os.ReadFile(resumed)
+	require.NoError(t, err)
+	assert.Equal(t, instructions, string(data))
+}
+
+func TestStageInstructionsEmptyAndErrors(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	path, err := stageInstructions("empty", "")
+	require.NoError(t, err)
+	assert.Empty(t, path)
+	dir, err := instructionsDir("empty")
+	require.NoError(t, err)
+	_, err = os.Stat(dir)
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	dir, err = instructionsDir("blocked")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(dir), 0o700))
+	require.NoError(t, os.WriteFile(dir, nil, 0o600))
+	_, err = stageInstructions("blocked", "Rules")
+	require.Error(t, err)
+	err = (Sessions{}).NewSession("blocked", "/repo", "agent", "id", "/socket", "", "", "", "Rules")
+	require.ErrorContains(t, err, "stage instructions")
+}
+
+func TestKillRules(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("TMPDIR", t.TempDir())
+	path, err := stageInstructions("board-cleanup", "Rules")
+	require.NoError(t, err)
+	require.NoError(t, Sessions{}.KillSession("board-cleanup"))
+	_, err = os.Stat(filepath.Dir(path))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestAgentCommandWithInstructions(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	path, err := stageInstructions("board 'quoted", "rules; $(echo BAD)\n`echo BAD`")
+	require.NoError(t, err)
+	promptPath := filepath.Join(t.TempDir(), "task prompt")
+	require.NoError(t, os.WriteFile(promptPath, []byte("User task"), 0o600))
+	for _, worktree := range []string{"board-new", ""} {
+		s := Sessions{Executable: "/tmp/Board's app", CredentialSocket: "/tmp/helper socket"}
+		command := s.launchCommand("agent", "session", "/tmp/control", worktree, "origin/main", promptPath, path)
+		assert.NotContains(t, command, "echo BAD", "instruction text never enters the shell")
+		script := "capture() { printf '%s\\n' \"$@\"; cat; }; " + strings.Replace(command, shellescape.Quote(s.Executable), "capture", 1)
+		out, err := exec.Command("sh", "-c", script).CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		want := []string{"credential-exec", s.CredentialSocket, "docker-agent", "run", "agent", "--yolo", "--session", "session", "--listen", "unix:///tmp/control"}
+		if worktree != "" {
+			want = append(want, "--worktree="+worktree, "--worktree-base", "origin/main")
+		}
+		want = append(want, "--prompt-file", path, "-", "User task")
+		assert.Equal(t, want, strings.Split(strings.TrimSuffix(string(out), "\n"), "\n"))
+	}
 }

@@ -27,17 +27,17 @@ type fakeSessionManager struct {
 }
 
 type newSessionCall struct {
-	name, workDir, agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt string
+	name, workDir, agent, sessionID, listenSocket, worktreeName, worktreeBase, prompt, instructions string
 }
 
 func newFakeSessionManager() *fakeSessionManager {
 	return &fakeSessionManager{alive: true}
 }
 
-func (f *fakeSessionManager) NewSession(name, workDir, agentConfig, sessionID, listenSocket, worktreeName, worktreeBase, prompt string) error {
+func (f *fakeSessionManager) NewSession(name, workDir, agentConfig, sessionID, listenSocket, worktreeName, worktreeBase, prompt, instructions string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.created = append(f.created, newSessionCall{name, workDir, agentConfig, sessionID, listenSocket, worktreeName, worktreeBase, prompt})
+	f.created = append(f.created, newSessionCall{name, workDir, agentConfig, sessionID, listenSocket, worktreeName, worktreeBase, prompt, instructions})
 	return nil
 }
 
@@ -750,13 +750,15 @@ func TestControllerUserMessageHealsDroppedStop(t *testing.T) {
 
 func TestControllerRelaunchesWhenSessionDead(t *testing.T) {
 	store := openTestStore(t)
-	require.NoError(t, store.InsertCard(devCard()))
+	card := devCard()
+	card.Instructions = "Keep these instructions"
+	require.NoError(t, store.InsertCard(card))
 
 	sessions := newFakeSessionManager()
 	sessions.alive = false // pane is dead: the watcher must relaunch
 	client := &fakeClient{snapErr: errors.New("connection refused")}
 	c := newTestController(t, store, sessions, client)
-	c.Start(devCard())
+	c.Start(card)
 
 	require.Eventually(t, func() bool { return len(sessions.calls()) > 0 }, time.Second, 5*time.Millisecond)
 
@@ -767,6 +769,7 @@ func TestControllerRelaunchesWhenSessionDead(t *testing.T) {
 	assert.Equal(t, "wt", call.workDir, "relaunch resumes from the worktree")
 	assert.Equal(t, socketPath("sess-1"), call.listenSocket, "relaunch reuses the same socket")
 	assert.Empty(t, call.prompt)
+	assert.Equal(t, card.Instructions, call.instructions)
 }
 
 // A killed agent leaves its control-plane socket file behind; a unix listener

@@ -1014,6 +1014,7 @@ function projectFormValues() {
     name: document.getElementById("proj-name").value,
     repoPath: document.getElementById("proj-repo").value,
     agent: document.getElementById("proj-agent").value,
+    instructions: document.getElementById("proj-instructions").value,
   };
 }
 
@@ -1022,6 +1023,7 @@ function fillProjectForm(project) {
   document.getElementById("proj-repo").value = project.repoPath;
   setProjectAgent(project.agent);
   document.getElementById("proj-agent").value = project.agent;
+  document.getElementById("proj-instructions").value = project.instructions ?? "";
 }
 
 function stopEditingProject() {
@@ -1040,7 +1042,7 @@ document.getElementById("proj-cancel").addEventListener("click", () => {
 
 function setProjectSavePending(pending) {
   projectSavePending = pending;
-  document.querySelectorAll("#projects-dialog input, #projects-dialog select, #projects-dialog button:not([data-close])").forEach((control) => {
+  document.querySelectorAll("#projects-dialog input, #projects-dialog textarea, #projects-dialog select, #projects-dialog button:not([data-close])").forEach((control) => {
     control.disabled = pending;
   });
 }
@@ -1051,19 +1053,20 @@ document.getElementById("projects-dialog").querySelector("form").addEventListene
   const name = document.getElementById("proj-name").value.trim();
   const repoPath = document.getElementById("proj-repo").value.trim();
   const agent = document.getElementById("proj-agent").value.trim();
+  const instructions = document.getElementById("proj-instructions").value;
 
   if (!name) return;
 
   setProjectSavePending(true);
   try {
-    const data = { name, repoPath, agent };
+    const data = { name, repoPath, agent, instructions };
     const project = editingProjectId
       ? await API.updateProject(editingProjectId, data)
       : await API.createProject(data);
     if (editingProjectId) {
       stopEditingProject();
     } else {
-      fillProjectForm({ name: "", repoPath: "", agent: "" });
+      fillProjectForm({ name: "", repoPath: "", agent: "", instructions: "" });
     }
     selectedProjectId = project.id;
     const index = projects.findIndex((p) => p.id === project.id);
@@ -1128,6 +1131,7 @@ function renderProjectSelection() {
     <dl class="project-details">
       <dt>Repository</dt><dd>${esc(project.repoPath)}</dd>
       <dt>Agent</dt><dd>${esc(project.agent)}</dd>
+      <dt>Additional instructions</dt><dd class="project-instructions">${esc(project.instructions || "No additional instructions.")}</dd>
     </dl>
     <div class="dialog-actions">
       <button type="button" id="proj-edit" class="btn btn-primary">Edit project</button>
