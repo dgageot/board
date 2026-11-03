@@ -195,10 +195,12 @@ func (s Sessions) NewSession(sessionName, workDir, agent, sessionID, listenSocke
 	// exec replaces the shell with the agent so the agent becomes the pane's
 	// process: when it exits the pane goes dead (see remain-on-exit above).
 	cmd := s.launchCommand(agent, sessionID, listenSocket, worktreeName, worktreeBase, promptFile)
-	if err := panes[0].SendKeys("exec " + cmd); err != nil {
+	// Use send-keys with -l flag to disable key name lookup and send keys literally.
+	// Without -l, special characters in the command would be misinterpreted.
+	if err := tmuxRun("send-keys", "-t", panes[0].Id, "-l", "exec "+cmd); err != nil {
 		return fmt.Errorf("send keys: %w", err)
 	}
-	if err := panes[0].SendKeys("Enter"); err != nil {
+	if err := tmuxRun("send-keys", "-t", panes[0].Id, "Enter"); err != nil {
 		return fmt.Errorf("send enter: %w", err)
 	}
 
