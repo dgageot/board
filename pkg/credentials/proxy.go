@@ -10,6 +10,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/ssh/agent"
 )
 
 const (
@@ -26,6 +28,7 @@ type signingProxy struct {
 	closed   bool
 	upstream net.Conn
 	clients  map[net.Conn]struct{}
+	keyring  agent.Agent
 }
 
 func (p *signingProxy) serve(ctx context.Context, listener net.Listener) {
@@ -109,7 +112,7 @@ func (p *signingProxy) exchangeOnce(ctx context.Context, request []byte) ([]byte
 	p.mu.Unlock()
 	if conn == nil {
 		var err error
-		conn, err = (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "unix", p.source)
+		conn, err = p.connect(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -140,6 +143,18 @@ func (p *signingProxy) exchangeOnce(ctx context.Context, request []byte) ([]byte
 	return response, err
 }
 
+func (p *signingProxy) connect(ctx context.Context) (net.Conn, error) {
+	if p.keyring == nil {
+		return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "unix", p.source)
+	}
+	client, server := net.Pipe()
+	go func() {
+		defer func() { _ = server.Close() }()
+		_ = agent.ServeAgent(p.keyring, server)
+	}()
+	return client, nil
+}
+
 func (p *signingProxy) close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -149,6 +164,9 @@ func (p *signingProxy) close() {
 	}
 	for conn := range p.clients {
 		_ = conn.Close()
+	}
+	if p.keyring != nil {
+		_ = p.keyring.RemoveAll()
 	}
 }
 

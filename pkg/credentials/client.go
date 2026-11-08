@@ -85,7 +85,7 @@ func commandEnvironment(current []string, shared environment) ([]string, error) 
 			// Never let stale tmux references trigger per-card lookups. Only
 			// Board's current, resolved references are injected below.
 			delete(values, key)
-			if !strings.HasPrefix(value, "op://") {
+			if key != sshKeyVariable && !strings.HasPrefix(value, "op://") {
 				values[key] = value
 			}
 		}
@@ -98,6 +98,7 @@ func commandEnvironment(current []string, shared environment) ([]string, error) 
 	}
 	// Resolved references (including empty failed lookups) take precedence.
 	maps.Copy(values, shared.Values)
+	delete(values, sshKeyVariable)
 	if shared.SSHSocket != "" {
 		// Append to Git's process-local config, preserving any existing entries.
 		// A plain environment variable cannot override global op-ssh-sign.

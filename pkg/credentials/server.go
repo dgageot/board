@@ -29,6 +29,7 @@ type Server struct {
 	http      *http.Server
 	lock      *os.File
 	cancel    context.CancelFunc
+	closeOnce sync.Once
 }
 
 type environment struct {
@@ -40,7 +41,7 @@ type environment struct {
 }
 
 // Start starts the shared helper. source is the original SSH_AUTH_SOCK.
-// Only op:// references from inherited are resolved and shared with cards.
+// BOARD_SSH_KEY is loaded at startup; other op:// references are shared with cards.
 func Start(ctx context.Context, dir, source string, inherited []string) (_ *Server, retErr error) {
 	lock, err := lockDirectory(dir)
 	if err != nil {
@@ -56,6 +57,24 @@ func Start(ctx context.Context, dir, source string, inherited []string) (_ *Serv
 
 	references := secretReferences(inherited)
 	literals := literalEnvironment(inherited)
+	keyReference := sshKeyReference(inherited)
+	if source != "" || keyReference != "" {
+		s.proxy = &signingProxy{source: source, requests: make(chan struct{}, 1), clients: make(map[net.Conn]struct{})}
+	}
+	if keyReference != "" {
+		keyField, _, _ := strings.Cut(keyReference, "?")
+		for _, reference := range references {
+			field, _, _ := strings.Cut(reference, "?")
+			if field == keyField {
+				return nil, errors.New("BOARD_SSH_KEY reference must not be shared through other environment variables")
+			}
+		}
+		keyring, err := loadKeyring(ctx, keyReference)
+		if err != nil {
+			return nil, err
+		}
+		s.proxy.keyring = keyring
+	}
 	// tmux and shell startup files can retain an obsolete authentication socket.
 	// An empty value explicitly removes it; older helpers omit this field.
 	authSocket := ""
@@ -65,9 +84,9 @@ func Start(ctx context.Context, dir, source string, inherited []string) (_ *Serv
 		}
 	}
 	env := environment{Values: make(map[string]string), AuthSocket: &authSocket}
-	if source != "" {
+	if s.proxy != nil {
 		env.SSHSocket = filepath.Join(dir, "agent.sock")
-		if source == env.SSHSocket {
+		if s.proxy.keyring == nil && source == env.SSHSocket {
 			return nil, errors.New("credential helper cannot proxy itself")
 		}
 		signer, err := exec.LookPath("ssh-keygen")
@@ -86,7 +105,6 @@ func Start(ctx context.Context, dir, source string, inherited []string) (_ *Serv
 		if err != nil {
 			return nil, err
 		}
-		s.proxy = &signingProxy{source: source, requests: make(chan struct{}, 1), clients: make(map[net.Conn]struct{})}
 		go s.proxy.serve(ctx, listener)
 	}
 
@@ -120,6 +138,7 @@ func Start(ctx context.Context, dir, source string, inherited []string) (_ *Serv
 	})
 	s.http = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 10 * time.Second}
 	go func() { _ = s.http.Serve(listener) }()
+	context.AfterFunc(ctx, s.Close)
 	return s, nil
 }
 
@@ -128,7 +147,7 @@ func secretReferences(inherited []string) map[string]string {
 	references := make(map[string]string)
 	for _, entry := range inherited {
 		name, value, ok := strings.Cut(entry, "=")
-		if !ok || name == "" {
+		if !ok || name == "" || name == sshKeyVariable {
 			continue
 		}
 		if strings.HasPrefix(value, "op://") {
@@ -145,7 +164,7 @@ func literalEnvironment(inherited []string) map[string]string {
 	values := make(map[string]string)
 	for _, entry := range inherited {
 		name, value, ok := strings.Cut(entry, "=")
-		if !ok || name == "" {
+		if !ok || name == "" || name == sshKeyVariable {
 			continue
 		}
 		delete(values, name)
@@ -257,15 +276,17 @@ func (s *Server) listen(path string) (net.Listener, error) {
 
 // Close revokes the sockets and releases the directory for the next Board run.
 func (s *Server) Close() {
-	s.cancel()
-	if s.http != nil {
-		_ = s.http.Close()
-	}
-	for _, listener := range s.listeners {
-		_ = listener.Close()
-	}
-	if s.proxy != nil {
-		s.proxy.close()
-	}
-	_ = s.lock.Close()
+	s.closeOnce.Do(func() {
+		s.cancel()
+		if s.http != nil {
+			_ = s.http.Close()
+		}
+		for _, listener := range s.listeners {
+			_ = listener.Close()
+		}
+		if s.proxy != nil {
+			s.proxy.close()
+		}
+		_ = s.lock.Close()
+	})
 }
