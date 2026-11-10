@@ -16,7 +16,12 @@ function harness() {
   const observers = [];
   const timers = new Map();
   let fits = 0, timerId = 0;
-  const dialog = { open: false, showModal() { this.open = true; } };
+  const keyListeners = new Map();
+  const dialog = {
+    open: false,
+    showModal() { this.open = true; },
+    addEventListener(type, callback, capture) { keyListeners.set(type, { callback, capture }); },
+  };
   const elements = {
     'terminal-dialog': dialog, 'terminal-container': { innerHTML: '' }, 'terminal-title': { textContent: '' },
   };
@@ -26,8 +31,10 @@ function harness() {
     dispose() { this.disposed = true; }
   }
   class WebSocket {
-    constructor(url) { this.url = url; sockets.push(this); }
-    close() { this.closed = true; }
+    static OPEN = 1;
+    constructor(url) { this.url = url; this.readyState = 0; this.sent = []; sockets.push(this); }
+    send(data) { this.sent.push(data); }
+    close() { this.closed = true; this.readyState = 3; }
   }
   const context = vm.createContext({
     ghosttyReady, GhosttyTerminal: Terminal, FitAddon: class { fit() { fits++; } }, WebSocket,
@@ -45,9 +52,22 @@ function harness() {
   const stateStart = source.indexOf('let activeTerm = null;');
   const stateEnd = source.indexOf('function renderTerminalCardMeta()', stateStart);
   assert.ok(stateStart >= 0 && stateEnd > stateStart);
-  vm.runInContext(source.slice(stateStart, stateEnd) + source.slice(start, end), context);
+  const keysStart = source.indexOf('function sendToAgent(');
+  const keysEnd = source.indexOf('// Generic close button', keysStart);
+  assert.ok(keysStart >= 0 && keysEnd > keysStart);
+  vm.runInContext(source.slice(stateStart, stateEnd) + source.slice(start, end) + source.slice(keysStart, keysEnd), context);
   return {
-    context, ready, terminals, sockets, listeners, observers, timers,
+    context, ready, terminals, sockets, listeners, observers, timers, keyListeners,
+    key(overrides = {}) {
+      const event = {
+        key: 'Escape',
+        preventDefault() { this.prevented = true; },
+        stopPropagation() { this.stopped = true; },
+        ...overrides,
+      };
+      keyListeners.get('keydown').callback(event);
+      return event;
+    },
     get fits() { return fits; },
     flushTimers() { for (const [id, f] of timers) { timers.delete(id); f(); } },
     flush() { while (frames.length) frames.shift()(); },
@@ -111,4 +131,54 @@ test('rapid pane resizes apply one trailing fit and cancel it on close', async (
   h.observers[0].callback();
   h.close();
   assert.equal(h.timers.size, 0);
+});
+
+test('Escape uses an unambiguous tmux sequence and never dismisses the terminal', async () => {
+  const h = harness(); h.ready();
+  await h.context.openTerminal('a', 'A', 'a'); h.flush();
+  const socket = h.sockets[0];
+  socket.readyState = 1;
+  assert.equal(h.keyListeners.get('keydown').capture, true);
+
+  for (const overrides of [{}, { repeat: true }, { altKey: true }, { ctrlKey: true }]) {
+    const event = h.key(overrides);
+    assert.equal(event.prevented, true);
+    assert.equal(event.stopped, true);
+  }
+  assert.deepEqual(socket.sent, Array(4).fill('\x1bO['));
+
+  const cancel = { preventDefault() { this.prevented = true; } };
+  h.keyListeners.get('cancel').callback(cancel);
+  assert.equal(cancel.prevented, true);
+});
+
+test('Escape is safe before connection and after closing or switching terminals', async () => {
+  const h = harness(); h.ready();
+  assert.equal(h.key().prevented, true);
+  await h.context.openTerminal('a', 'A', 'a'); h.flush();
+  h.key(); // Still connecting.
+  assert.deepEqual(h.sockets[0].sent, []);
+  h.sockets[0].readyState = 1;
+  h.close(); h.key();
+  assert.deepEqual(h.sockets[0].sent, []);
+
+  await h.context.openTerminal('b', 'B', 'b'); h.flush();
+  h.sockets[1].readyState = 1;
+  h.key();
+  assert.deepEqual(h.sockets[0].sent, []);
+  assert.deepEqual(h.sockets[1].sent, ['\x1bO[']);
+});
+
+test('Ctrl+digit encoding and ordinary keys are unaffected by Escape handling', async () => {
+  const h = harness(); h.ready();
+  await h.context.openTerminal('a', 'A', 'a'); h.flush();
+  h.sockets[0].readyState = 1;
+  assert.equal(h.key({ key: '1', ctrlKey: true }).stopped, true);
+  assert.equal(h.key({ key: '2', ctrlKey: true, shiftKey: true }).stopped, true);
+  assert.deepEqual(h.sockets[0].sent, ['\x1b[49;5u', '\x1b[50;6u']);
+  for (const overrides of [{ key: 'a' }, { key: 'c', ctrlKey: true }, { key: 'ArrowUp' }]) {
+    const event = h.key(overrides);
+    assert.equal(event.prevented, undefined);
+    assert.equal(event.stopped, undefined);
+  }
 });

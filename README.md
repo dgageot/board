@@ -69,6 +69,8 @@ own instead.
 
 ## Development
 
+Board requires tmux 3.2 or newer for its terminal keyboard handling.
+
 Run `go test -race ./...` for Go tests and `node --test tests/*.test.cjs`
 for browser-logic regression tests (requires Node.js). `gogo dev` runs both
 test suites, lint, and build; use the race command separately for race detection.

@@ -824,8 +824,9 @@ function csiuModifiers(e) {
 // keydown handler) and stopped so the <dialog> never dismisses and ghostty
 // never double-encodes:
 //
-//   - ESC: sent as a plain `\x1b`. ghostty would encode it as `\x1b[27u`
-//     (Kitty protocol), which shows up as garbage in bubbletea TUIs.
+//   - ESC: use tmux's application Escape sequence. A bare `\x1b` can merge
+//     with the next key in the PTY and be interpreted as an Alt combination.
+//     tmux decodes `\x1bO[` to a single Escape for the agent.
 //   - Ctrl+<digit/symbol> (e.g. C-1, C-2): these have no legacy byte, so
 //     ghostty (not in Kitty mode here) drops the Ctrl and sends a bare `1`.
 //     We emit the CSI-u sequence (`\x1b[<code>;<mods>u`) ourselves; tmux's
@@ -835,7 +836,7 @@ document.getElementById("terminal-dialog").addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     e.preventDefault();
     e.stopPropagation();
-    sendToAgent("\x1b");
+    sendToAgent("\x1bO[");
     return;
   }
   if (e.ctrlKey && e.key.length === 1 && !/[a-z]/i.test(e.key)) {
