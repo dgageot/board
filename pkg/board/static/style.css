@@ -1818,6 +1818,34 @@ details[open] > .diff-file-header {
   }
 }
 
+#new-task-dialog {
+  width: min(94vw, 880px);
+  max-width: 100vw;
+
+  & .new-task-form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  & .task-selectors,
+  & #task-arguments {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    column-gap: 12px;
+  }
+
+  & .dialog-body > label {
+    margin-bottom: 0;
+  }
+
+  & .dialog-actions {
+    margin: 0;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+  }
+}
+
 #template-fields {
   border: 0;
   padding: 0;

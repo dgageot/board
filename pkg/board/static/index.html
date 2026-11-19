@@ -104,19 +104,22 @@
       <span id="new-task-title">New task</span>
       <button class="icon-btn dialog-close" data-close title="Close" aria-label="Close"><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button>
     </div>
-    <form method="dialog" autocomplete="off" class="dialog-body">
-      <p class="dialog-subtitle">Create a new task for an agent to work on</p>
-      <label>Project
-        <select id="task-project" required></select>
-      </label>
-      <label>Task
-        <select id="task-template"><option value="">Custom task</option></select>
-      </label>
-      <p id="task-template-status" class="template-help" role="status"></p>
-      <div id="task-arguments"></div>
-      <label><span id="task-prompt-label">Prompt</span>
-        <textarea id="task-prompt" rows="10" placeholder="Describe in detail what the agent should do..." required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-      </label>
+    <form method="dialog" autocomplete="off" class="new-task-form">
+      <div class="dialog-body">
+        <div class="task-selectors">
+          <label>Project
+            <select id="task-project" required></select>
+          </label>
+          <label>Task
+            <select id="task-template"><option value="">Custom task</option></select>
+          </label>
+        </div>
+        <p id="task-template-status" class="template-help" role="status"></p>
+        <div id="task-arguments"></div>
+        <label><span id="task-prompt-label">Prompt</span>
+          <textarea id="task-prompt" rows="14" placeholder="Describe what the agent should do…" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+        </label>
+      </div>
       <div class="dialog-actions">
         <button type="submit" class="btn btn-primary" title="Create task"><span class="btn-label">Create task</span><span class="btn-kbd"><kbd>⌘</kbd><kbd>Enter</kbd></span></button>
       </div>
