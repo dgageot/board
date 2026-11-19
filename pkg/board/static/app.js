@@ -116,6 +116,30 @@ function unlockNotificationAudio() {
 document.addEventListener("pointerdown", unlockNotificationAudio, { once: true });
 document.addEventListener("keydown", unlockNotificationAudio, { once: true });
 
+// --- Session layout ---
+
+// Agent sessions open fullscreen by default; "side" docks them to the right
+// half of the screen, leaving the board usable on the left.
+const sessionLayoutKey = "session-layout";
+let sessionLayout = localStorage.getItem(sessionLayoutKey) === "side" ? "side" : "fullscreen";
+
+function updateSessionLayoutButton() {
+  const button = document.getElementById("btn-session-layout");
+  const side = sessionLayout === "side";
+  button.title = side
+    ? "Open agent sessions fullscreen"
+    : "Open agent sessions side by side with the board";
+  button.setAttribute("aria-pressed", String(side));
+}
+
+updateSessionLayoutButton();
+
+document.getElementById("btn-session-layout").addEventListener("click", () => {
+  sessionLayout = sessionLayout === "side" ? "fullscreen" : "side";
+  localStorage.setItem(sessionLayoutKey, sessionLayout);
+  updateSessionLayoutButton();
+});
+
 // --- API ---
 
 async function api(path, opts = {}) {
@@ -609,7 +633,13 @@ async function openTerminal(sessionName, title, cardId) {
   const token = terminalOpenToken;
   // The dialog may already be open when switching terminals in place (e.g. the
   // agent's session to its coach): showModal() on an open dialog throws.
-  if (!dialog.open) dialog.showModal();
+  // Side by side, the dialog is non-modal so the board stays interactive.
+  if (!dialog.open) {
+    const side = sessionLayout === "side";
+    dialog.classList.toggle("dialog-side", side);
+    if (side) dialog.show();
+    else dialog.showModal();
+  }
 
   await ghosttyReady;
   if (token !== terminalOpenToken || !dialog.open) return;
@@ -1758,7 +1788,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "n" && e.key !== "N") return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target.matches("input, textarea, select")) return;
-  if (document.querySelector("dialog[open]")) return;
+  // A side-by-side session leaves the board usable, but keys typed in the
+  // terminal belong to the agent.
+  if (e.target.closest?.("dialog")) return;
+  if (document.querySelector("dialog[open]:not(.dialog-side)")) return;
 
   e.preventDefault();
   openNewTaskDialog();

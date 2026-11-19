@@ -295,6 +295,12 @@ a {
   padding: 0;
 }
 
+/* On/off header switch: tinted with the accent while enabled. */
+#btn-session-layout[aria-pressed="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 .btn-danger {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
@@ -1337,6 +1343,19 @@ dialog.dialog-terminal[open] {
   flex: 1;
 }
 
+/* Side-by-side agent session: the board keeps the left half of the screen
+   while the non-modal terminal panel fills the right half. */
+dialog.dialog-terminal.dialog-side[open] {
+  inset: 0 0 0 auto;
+  width: 50vw;
+  z-index: 10;
+  border-left: 1px solid var(--border-strong);
+}
+
+body:has(> #terminal-dialog.dialog-side[open]) {
+  padding-right: 50vw;
+}
+
 #terminal-container {
   flex: 1;
   min-height: 0;
@@ -1733,6 +1752,16 @@ details[open] > .diff-file-header {
 
   dialog.dialog-terminal .dialog-close {
     margin-left: auto;
+  }
+
+  /* Too narrow to split: the side panel covers the board instead. */
+  dialog.dialog-terminal.dialog-side[open] {
+    width: 100vw;
+    border-left: none;
+  }
+
+  body:has(> #terminal-dialog.dialog-side[open]) {
+    padding-right: 0;
   }
 
   .header-project {
