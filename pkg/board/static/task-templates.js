@@ -15,6 +15,7 @@ export function initTaskTemplates({ api, esc }) {
   const prompt = byID('task-prompt');
   const argumentsContainer = byID('task-arguments');
   const editor = byID('tasks-dialog');
+  const preferenceKey = 'new-task-template';
   const form = byID('template-form');
   const list = byID('template-list');
   let templates = [];
@@ -50,7 +51,11 @@ export function initTaskTemplates({ api, esc }) {
     else prompt.value = customPrompt;
   }
 
-  picker.addEventListener('change', selectTemplate);
+  picker.addEventListener('change', () => {
+    selectTemplate();
+    localStorage.setItem(preferenceKey, picker.value);
+    argumentInputs()[0]?.focus();
+  });
   argumentsContainer.addEventListener('input', (event) => {
     event.target.setCustomValidity('');
     updatePreview();
@@ -75,7 +80,13 @@ export function initTaskTemplates({ api, esc }) {
       picker.innerHTML = '<option value="">Custom task</option>' + pickerTemplates.map((template) =>
         `<option value="${esc(template.id)}">${esc(template.name)}</option>`
       ).join('');
+      const remembered = localStorage.getItem(preferenceKey);
       picker.value = selectedTemplate?.id || '';
+      if (!selectedTemplate && !prompt.value && pickerTemplates.some((t) => t.id === remembered)) {
+        picker.value = remembered;
+        selectTemplate();
+        if (document.activeElement === prompt) focus();
+      }
       if (!templates.length) byID('task-template-status').textContent = 'Save predefined tasks with the Tasks button in the header.';
     } catch (error) {
       if (request === pickerLoad) byID('task-template-status').textContent = `Could not load predefined tasks: ${error.message}`;

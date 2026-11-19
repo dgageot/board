@@ -7,13 +7,14 @@ const vm = require('node:vm');
 const file = path.join(__dirname, '../pkg/board/static/task-templates.js');
 const source = fs.readFileSync(file, 'utf8');
 
-function harness(api = async () => []) {
+function harness(api = async () => [], storage = new Map()) {
   const elements = new Map();
+  const document = { getElementById: element, activeElement: null };
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
       value: '', textContent: '', disabled: false, readOnly: false, dataset: {}, listeners: {},
       addEventListener(event, callback) { this.listeners[event] = callback; },
-      showModal() { this.open = true; }, focus() { this.focused = true; },
+      showModal() { this.open = true; }, focus() { document.activeElement = this; },
       setCustomValidity(message) { this.validation = message; },
       reportValidity() { return !this.validation; },
       querySelectorAll() { return this.inputs || []; },
@@ -31,7 +32,7 @@ function harness(api = async () => []) {
     return elements.get(id);
   }
   const context = vm.createContext({
-    document: { getElementById: element },
+    document, localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     confirm: () => true,
   });
   vm.runInContext(source.replaceAll('export function ', 'function '), context);
@@ -234,11 +235,54 @@ test('focus targets the first missing argument for a template and the prompt oth
   const h = harness(async () => [template]);
   await h.controller.loadPicker();
   h.controller.focus();
-  assert.equal(h.element('task-prompt').focused, true);
+  assert.equal(h.context.document.activeElement, h.element('task-prompt'));
   h.select('review');
+  assert.equal(h.context.document.activeElement, h.element('task-argument-0'));
   h.input(0, 'url');
   h.controller.focus();
-  assert.equal(h.element('task-argument-1').focused, true);
+  assert.equal(h.context.document.activeElement, h.element('task-argument-1'));
+});
+
+test('the last task choice survives creation and reload, but arguments do not', async () => {
+  const storage = new Map();
+  const first = harness(async () => [template], storage);
+  await first.controller.loadPicker();
+  first.select('review');
+  first.input(0, 'previous URL');
+  first.controller.resetPicker();
+  await first.controller.loadPicker();
+  assert.equal(first.element('task-template').value, 'review');
+  assert.equal(first.element('task-argument-0').value, '');
+
+  const reopened = harness(async () => [template], storage);
+  reopened.controller.focus();
+  await reopened.controller.loadPicker();
+  assert.equal(reopened.element('task-template').value, 'review');
+  assert.equal(reopened.context.document.activeElement, reopened.element('task-argument-0'));
+
+  const deleted = harness(async () => [], storage);
+  await deleted.controller.loadPicker();
+  assert.equal(deleted.element('task-template').value, '');
+
+  reopened.select('');
+  const custom = harness(async () => [template], storage);
+  await custom.controller.loadPicker();
+  assert.equal(custom.element('task-template').value, '');
+});
+
+test('restoring a task does not overwrite a custom prompt or steal focus from another control', async () => {
+  const storage = new Map([['new-task-template', 'review']]);
+  const h = harness(async () => [template], storage);
+  const loading = h.controller.loadPicker();
+  h.element('task-prompt').value = 'Started typing while tasks load';
+  await loading;
+  assert.equal(h.controller.getPrompt(), 'Started typing while tasks load');
+
+  h.controller.resetPicker();
+  h.element('task-project').focus();
+  await h.controller.loadPicker();
+  assert.equal(h.element('task-template').value, 'review');
+  assert.equal(h.context.document.activeElement, h.element('task-project'));
 });
 
 test('the editor shows which arguments a task text asks for', async () => {
@@ -314,7 +358,7 @@ test('closing the editor mid-load releases it; a pending save stays visible when
 });
 
 // Harness for the New task dialog section of app.js, with the template module stubbed.
-function newTaskHarness({ createCard, getPrompt = () => 'Prompt' }) {
+function newTaskHarness({ createCard, getPrompt = () => 'Prompt', storage = new Map() }) {
   const app = fs.readFileSync(path.join(__dirname, '../pkg/board/static/app.js'), 'utf8');
   const start = app.indexOf('// New task dialog');
   const end = app.indexOf('// Projects dialog', start);
@@ -331,11 +375,13 @@ function newTaskHarness({ createCard, getPrompt = () => 'Prompt' }) {
     showModal() { this.open = true; }, close() { this.open = false; this.listeners.close?.(); },
     querySelector: (selector) => selector === 'form' ? form : submitBtn,
   };
-  const elements = { 'new-task-dialog': dialog, 'task-project': { value: 'p1', innerHTML: '' } };
+  const project = { value: '', innerHTML: '', addEventListener(_, callback) { this.change = callback; } };
+  const elements = { 'new-task-dialog': dialog, 'task-project': project };
   const calls = { reset: 0, focus: 0, loads: 0 };
   const alerts = [];
   const context = vm.createContext({
-    projects: [{ id: 'p1', name: 'P' }], alerts,
+    projects: [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }], alerts,
+    localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     document: { getElementById: (id) => elements[id] },
     initTaskTemplates: () => ({
       loadPicker: async () => { calls.loads++; }, focus: () => { calls.focus++; },
@@ -344,8 +390,28 @@ function newTaskHarness({ createCard, getPrompt = () => 'Prompt' }) {
     api: () => {}, esc: (s) => s, API: { createCard }, alert: (message) => alerts.push(message),
   });
   vm.runInContext(app.slice(start, end), context);
-  return { context, dialog, form, submitBtn, label, classes, calls, open: () => context.openNewTaskDialog(), submit: () => form.listeners.submit({ preventDefault() {} }), dispatchClose: () => dialog.listeners.close() };
+  return { context, dialog, form, submitBtn, label, classes, calls, project, open: () => context.openNewTaskDialog(), submit: () => form.listeners.submit({ preventDefault() {} }), dispatchClose: () => dialog.listeners.close() };
 }
+
+test('the last project is restored across openings and reload; deleted projects fall back to the first', async () => {
+  const storage = new Map();
+  const first = newTaskHarness({ storage });
+  await first.open();
+  assert.equal(first.project.value, 'p1');
+  first.project.value = 'p2';
+  first.project.change();
+  first.dialog.close();
+  await first.open();
+  assert.equal(first.project.value, 'p2');
+
+  const reopened = newTaskHarness({ storage });
+  await reopened.open();
+  assert.equal(reopened.project.value, 'p2');
+  reopened.context.projects.pop();
+  reopened.dialog.close();
+  await reopened.open();
+  assert.equal(reopened.project.value, 'p1');
+});
 
 test('a queued close event from a previous opening does not re-enable a reopened dialog', async () => {
   const resolvers = [];

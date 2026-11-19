@@ -881,6 +881,10 @@ document.querySelectorAll("dialog").forEach((d) => {
 
 // New task dialog
 const taskTemplates = initTaskTemplates({ api, esc });
+const taskProject = document.getElementById("task-project");
+const taskProjectPreference = "new-task-project";
+taskProject.addEventListener("change", () => localStorage.setItem(taskProjectPreference, taskProject.value));
+
 // Each opening of the dialog is a generation: a creation started in an
 // earlier opening must not close, reset or re-enable the current one.
 let taskDialogGeneration = 0;
@@ -888,8 +892,9 @@ let taskSubmittingGeneration = -1;
 
 async function openNewTaskDialog() {
   taskDialogGeneration++;
-  const select = document.getElementById("task-project");
-  select.innerHTML = projects.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  const previousProject = localStorage.getItem(taskProjectPreference);
+  taskProject.innerHTML = projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  taskProject.value = projects.find((p) => p.id === previousProject)?.id ?? projects[0]?.id ?? "";
   resetNewTaskSubmit();
   document.getElementById("new-task-dialog").showModal();
   taskTemplates.focus();
@@ -917,7 +922,7 @@ async function submitNewTask(e) {
   const generation = taskDialogGeneration;
   if (taskSubmittingGeneration === generation) return;
   const prompt = taskTemplates.getPrompt();
-  const projectId = document.getElementById("task-project").value;
+  const projectId = taskProject.value;
 
   if (!prompt) return;
 
