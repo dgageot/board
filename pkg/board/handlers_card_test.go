@@ -40,7 +40,7 @@ func TestCreateCardSnapshotsProjectInstructions(t *testing.T) {
 	project := &Project{ID: "project", Name: "Project", RepoPath: projectTestRepo(t), Agent: "/agent", Instructions: " \nAlways test.\n"}
 	require.NoError(t, store.InsertProject(project))
 
-	card, err := b.createCard("Do the work", project.ID)
+	card, err := b.createCard("Do the work", project.ID, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { b.controller.Stop(card.ID) })
 	assert.Equal(t, project.Instructions, card.Instructions)
@@ -55,7 +55,7 @@ func TestCreateCardSnapshotsProjectInstructions(t *testing.T) {
 	stored, err := store.GetCard(card.ID)
 	require.NoError(t, err)
 	assert.Equal(t, card.Instructions, stored.Instructions)
-	future, err := b.createCard("Next task", project.ID)
+	future, err := b.createCard("Next task", project.ID, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { b.controller.Stop(future.ID) })
 	assert.Equal(t, project.Instructions, future.Instructions)

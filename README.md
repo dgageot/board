@@ -37,7 +37,8 @@ when their agent resumes.
 
 Use **Tasks**, next to **Projects**, to add, edit or delete reusable tasks. Give
 each task a name and prompt, then choose it from the **Task** list when creating
-a **New task**. Choose **Custom task** to write a one-off prompt instead.
+a **New task**. Choose **Custom task** to write a one-off prompt instead. The
+browser remembers your last project and task selections.
 
 Prompts can include named arguments, for example:
 
@@ -51,6 +52,11 @@ values are inserted literally, not evaluated or expanded again. Argument names
 must start with a letter or underscore and may contain letters, numbers,
 underscores and hyphens. Saved tasks persist across restarts and can be used with
 any project. Editing or deleting one does not change existing cards.
+
+Use **Attach files** to add up to 10 files (20 MiB total) to a new task. Board
+keeps a private copy of each file outside the Git worktree and includes its path
+in the initial prompt. The agent needs a tool that can read local files outside
+the worktree. Board deletes the copies when you delete the card.
 
 ## Harness coach
 

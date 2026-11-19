@@ -31,6 +31,7 @@
       <symbol id="i-fullscreen" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.75 6V2.75H6M10 2.75h3.25V6M13.25 10v3.25H10M6 13.25H2.75V10"/></symbol>
       <symbol id="i-dock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.75V6H2.75M10 2.75V6h3.25M13.25 10H10v3.25M2.75 10H6v3.25"/></symbol>
       <symbol id="i-close" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></symbol>
+      <symbol id="i-paperclip" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="m6.5 9.5 4.25-4.25a1.5 1.5 0 0 1 2.12 2.12l-5.3 5.3a3 3 0 0 1-4.24-4.24l5.3-5.3"/></symbol>
       <symbol id="i-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.75" y="5.75" width="7.5" height="7.5" rx="1.5"/><path d="M10.25 5.75v-2a1 1 0 0 0-1-1h-5.5a1 1 0 0 0-1 1v5.5a1 1 0 0 0 1 1h2"/></symbol>
       <symbol id="i-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.25 8.5l3 3 6.5-7"/></symbol>
       <symbol id="i-coach" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.75 6L8 3l6.25 3L8 9z"/><path d="M4.25 7.3v3.2c0 .9 1.7 1.75 3.75 1.75s3.75-.85 3.75-1.75V7.3M14.25 6v3.5"/></symbol>
@@ -119,8 +120,12 @@
         <label><span id="task-prompt-label">Prompt</span>
           <textarea id="task-prompt" rows="14" placeholder="Describe what the agent should do…" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
         </label>
+        <ul id="task-files" aria-label="Attached files"></ul>
+        <p id="task-upload-status" class="template-help" role="status"></p>
       </div>
       <div class="dialog-actions">
+        <input type="file" id="task-file-input" multiple hidden>
+        <button type="button" id="task-attach" class="btn btn-ghost" title="Up to 10 files, 20 MiB total. The agent needs access to files outside the worktree."><svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-paperclip"/></svg>Attach files</button>
         <button type="submit" class="btn btn-primary" title="Create task"><span class="btn-label">Create task</span><span class="btn-kbd"><kbd>⌘</kbd><kbd>Enter</kbd></span></button>
       </div>
     </form>

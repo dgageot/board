@@ -135,7 +135,16 @@ async function api(path, opts = {}) {
 
 const API = {
   listCards: () => api("/cards"),
-  createCard: (data) => api("/cards", { method: "POST", body: JSON.stringify(data) }),
+  createCard({ prompt, projectId, attachments }) {
+    const task = JSON.stringify({ prompt, projectId });
+    if (!attachments.length) {
+      return api("/cards", { method: "POST", body: task });
+    }
+    const body = new FormData();
+    body.set("task", task);
+    for (const file of attachments) body.append("attachments", file);
+    return api("/cards", { method: "POST", headers: {}, body });
+  },
   jumpCard: (id) => api(`/cards/${id}/jump`, { method: "POST" }),
   coachCard: (id) => api(`/cards/${id}/coach`, { method: "POST" }),
   deleteCard: (id) => api(`/cards/${id}`, { method: "DELETE" }),
@@ -883,6 +892,41 @@ document.querySelectorAll("dialog").forEach((d) => {
 const taskTemplates = initTaskTemplates({ api, esc });
 const taskProject = document.getElementById("task-project");
 const taskProjectPreference = "new-task-project";
+const taskFileInput = document.getElementById("task-file-input");
+const taskFileList = document.getElementById("task-files");
+const taskUploadStatus = document.getElementById("task-upload-status");
+const taskAttach = document.getElementById("task-attach");
+let taskFiles = [];
+
+taskAttach.addEventListener("click", () => taskFileInput.click());
+taskFileInput.addEventListener("change", () => {
+  const files = taskFiles.concat([...taskFileInput.files]);
+  taskFileInput.value = "";
+  if (taskAttach.disabled) return;
+  if (files.length > 10 || files.reduce((total, file) => total + file.size, 0) > 20 * 1024 * 1024) {
+    taskUploadStatus.textContent = "You can attach up to 10 files, totaling 20 MiB.";
+    return;
+  }
+  taskFiles = files;
+  taskUploadStatus.textContent = "";
+  renderTaskFiles();
+});
+taskFileList.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-remove-file]");
+  if (!button || taskAttach.disabled) return;
+  const index = Number(button.dataset.removeFile);
+  taskFiles.splice(index, 1);
+  taskUploadStatus.textContent = "";
+  renderTaskFiles();
+  (taskFileList.querySelectorAll("button")[index] ?? taskAttach).focus();
+});
+
+function renderTaskFiles() {
+  taskFileList.innerHTML = taskFiles.map((file, index) => `
+    <li><span title="${esc(file.name)}">${esc(file.name)}</span>
+    <button type="button" class="icon-btn" aria-label="Remove ${esc(file.name)}" data-remove-file="${index}">${icon("close")}</button></li>
+  `).join("");
+}
 taskProject.addEventListener("change", () => localStorage.setItem(taskProjectPreference, taskProject.value));
 
 // Each opening of the dialog is a generation: a creation started in an
@@ -895,13 +939,20 @@ async function openNewTaskDialog() {
   const previousProject = localStorage.getItem(taskProjectPreference);
   taskProject.innerHTML = projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
   taskProject.value = projects.find((p) => p.id === previousProject)?.id ?? projects[0]?.id ?? "";
+  taskUploadStatus.textContent = "";
   resetNewTaskSubmit();
   document.getElementById("new-task-dialog").showModal();
   taskTemplates.focus();
   await taskTemplates.loadPicker();
 }
 
+function setTaskUploadPending(pending) {
+  taskAttach.disabled = pending;
+  taskFileList.querySelectorAll("button").forEach((button) => { button.disabled = pending; });
+}
+
 function resetNewTaskSubmit() {
+  setTaskUploadPending(false);
   const submitBtn = document.getElementById("new-task-dialog").querySelector("button[type=submit]");
   submitBtn.disabled = false;
   submitBtn.classList.remove("btn-loading");
@@ -929,23 +980,23 @@ async function submitNewTask(e) {
   const dialog = document.getElementById("new-task-dialog");
   const submitBtn = dialog.querySelector("button[type=submit]");
   const label = submitBtn.querySelector(".btn-label");
-  const originalLabel = label.textContent;
   taskSubmittingGeneration = generation;
+  setTaskUploadPending(true);
   submitBtn.disabled = true;
   submitBtn.classList.add("btn-loading");
   label.textContent = "Creating…";
 
   try {
-    await API.createCard({ prompt, projectId });
+    await API.createCard({ prompt, projectId, attachments: taskFiles });
     if (generation !== taskDialogGeneration) return;
     dialog.close();
     taskTemplates.resetPicker();
+    taskFiles = [];
+    renderTaskFiles();
   } catch (err) {
     alert(err.message);
     if (generation !== taskDialogGeneration) return;
-    submitBtn.disabled = false;
-    submitBtn.classList.remove("btn-loading");
-    label.textContent = originalLabel;
+    resetNewTaskSubmit();
   } finally {
     if (taskSubmittingGeneration === generation) taskSubmittingGeneration = -1;
   }

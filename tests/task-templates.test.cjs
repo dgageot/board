@@ -376,7 +376,14 @@ function newTaskHarness({ createCard, getPrompt = () => 'Prompt', storage = new 
     querySelector: (selector) => selector === 'form' ? form : submitBtn,
   };
   const project = { value: '', innerHTML: '', addEventListener(_, callback) { this.change = callback; } };
-  const elements = { 'new-task-dialog': dialog, 'task-project': project };
+  const fileInput = { value: '', files: [], addEventListener(_, callback) { this.change = callback; } };
+  const fileList = { innerHTML: '', addEventListener(_, callback) { this.click = callback; }, querySelectorAll: () => [] };
+  const attach = { focus() {}, addEventListener() {} };
+  const uploadStatus = { textContent: '' };
+  const elements = {
+    'new-task-dialog': dialog, 'task-project': project, 'task-file-input': fileInput,
+    'task-files': fileList, 'task-attach': attach, 'task-upload-status': uploadStatus,
+  };
   const calls = { reset: 0, focus: 0, loads: 0 };
   const alerts = [];
   const context = vm.createContext({
@@ -387,10 +394,10 @@ function newTaskHarness({ createCard, getPrompt = () => 'Prompt', storage = new 
       loadPicker: async () => { calls.loads++; }, focus: () => { calls.focus++; },
       getPrompt, resetPicker: () => { calls.reset++; },
     }),
-    api: () => {}, esc: (s) => s, API: { createCard }, alert: (message) => alerts.push(message),
+    api: () => {}, esc: (s) => s.replaceAll('<', '&lt;'), icon: () => '', API: { createCard }, alert: (message) => alerts.push(message),
   });
   vm.runInContext(app.slice(start, end), context);
-  return { context, dialog, form, submitBtn, label, classes, calls, project, open: () => context.openNewTaskDialog(), submit: () => form.listeners.submit({ preventDefault() {} }), dispatchClose: () => dialog.listeners.close() };
+  return { context, dialog, form, submitBtn, label, classes, calls, project, fileInput, fileList, attach, uploadStatus, open: () => context.openNewTaskDialog(), submit: () => form.listeners.submit({ preventDefault() {} }), dispatchClose: () => dialog.listeners.close() };
 }
 
 test('the last project is restored across openings and reload; deleted projects fall back to the first', async () => {
@@ -486,6 +493,33 @@ test('an empty or invalid prompt never sends a request', async () => {
   assert.equal(h.submitBtn.disabled, false);
 });
 
+test('selected files can be removed, survive a failed submission, and clear after success', async () => {
+  const calls = [];
+  const h = newTaskHarness({ createCard: async (data) => {
+    calls.push(data);
+    if (calls.length === 1) throw new Error('Upload failed');
+  } });
+  await h.open();
+  h.fileInput.files = [{ name: '<summary>.txt', size: 100 }, { name: 'screenshot.png', size: 100 }];
+  h.fileInput.change();
+  assert.match(h.fileList.innerHTML, /&lt;summary>/);
+  h.fileList.click({ target: { closest: () => ({ dataset: { removeFile: '1' } }) } });
+  assert.doesNotMatch(h.fileList.innerHTML, /screenshot/);
+  h.fileInput.files = [{ name: 'huge.zip', size: 21 * 1024 * 1024 }];
+  h.fileInput.change();
+  assert.match(h.uploadStatus.textContent, /20 MiB/);
+  const uploading = h.submit();
+  assert.equal(h.attach.disabled, true);
+  h.fileList.click({ target: { closest: () => ({ dataset: { removeFile: '0' } }) } });
+  await uploading;
+  assert.equal(h.attach.disabled, false);
+  assert.deepEqual(Array.from(calls[0].attachments, (file) => file.name), ['<summary>.txt']);
+  assert.match(h.fileList.innerHTML, /&lt;summary>/);
+  await h.submit();
+  assert.equal(h.dialog.open, false);
+  assert.equal(h.fileList.innerHTML, '');
+});
+
 test('Tasks follows Projects in the header and the picker is wired into new-task submission', () => {
   const html = fs.readFileSync(path.join(__dirname, '../pkg/board/static/index.html'), 'utf8');
   assert.ok(html.indexOf('id="btn-projects"') < html.indexOf('id="btn-tasks"'));
@@ -494,6 +528,6 @@ test('Tasks follows Projects in the header and the picker is wired into new-task
   const app = fs.readFileSync(path.join(__dirname, '../pkg/board/static/app.js'), 'utf8');
   assert.match(app, /await taskTemplates\.loadPicker\(\)/);
   assert.match(app, /const prompt = taskTemplates\.getPrompt\(\)/);
-  assert.match(app, /await API\.createCard\(\{ prompt, projectId \}\)/);
+  assert.match(app, /await API\.createCard\(\{ prompt, projectId, attachments: taskFiles \}\)/);
   assert.match(app, /taskTemplates\.resetPicker\(\)/);
 });

@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -78,7 +80,7 @@ func (b *Board) resolveProject(projectID string) (*Project, error) {
 // the worktree lives and starts watching the session. The title is left as a
 // placeholder derived from the prompt and replaced when the agent emits its
 // session_title event, so card creation is instant.
-func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
+func (b *Board) createCard(prompt, projectID string, files []*multipart.FileHeader) (card *Card, err error) {
 	project, err := b.resolveProject(projectID)
 	if err != nil {
 		return nil, err
@@ -100,23 +102,35 @@ func (b *Board) createCard(prompt, projectID string) (card *Card, err error) {
 	wtPath := git.WorktreeDir(worktreeName)
 	sessionName := newSessionName()
 	agentSession := newAgentSessionID()
+	cardID := newID()
+	initialPrompt := prompt
+	if len(files) > 0 {
+		suffix, err := stageCardAttachments(cardID, files)
+		if err != nil {
+			return nil, fmt.Errorf("stage attachments: %w", err)
+		}
+		initialPrompt += suffix
+	}
 
 	defer func() {
 		if err != nil {
 			_ = b.sessions.KillSession(sessionName)
 			git.RemoveWorktree(project.RepoPath, wtPath, branch)
+			if len(files) > 0 {
+				cleanupCardAttachments(cardID)
+			}
 		}
 	}()
 
 	// Launch from the repository: --worktree branches the new worktree from the
 	// repo's upstream base (detected, not assumed — see git.UpstreamBase).
 	worktreeBase := git.UpstreamBase(project.RepoPath)
-	if err := b.sessions.NewSession(sessionName, project.RepoPath, project.Agent, agentSession, socketPath(agentSession), worktreeName, worktreeBase, prompt, project.Instructions); err != nil {
+	if err := b.sessions.NewSession(sessionName, project.RepoPath, project.Agent, agentSession, socketPath(agentSession), worktreeName, worktreeBase, initialPrompt, project.Instructions); err != nil {
 		return nil, fmt.Errorf("tmux session: %w", err)
 	}
 
 	card = &Card{
-		ID:           newID(),
+		ID:           cardID,
 		Title:        placeholderTitle(prompt),
 		Prompt:       prompt,
 		Instructions: project.Instructions,
@@ -158,13 +172,25 @@ func readCreateCardRequest(w http.ResponseWriter, r *http.Request) (*createCardR
 	return &req, true
 }
 
-func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
+func parseCardSubmission(w http.ResponseWriter, r *http.Request) (*createCardRequest, []*multipart.FileHeader, bool) {
+	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if mediaType == "multipart/form-data" {
+		return readCardUpload(w, r)
+	}
 	req, ok := readCreateCardRequest(w, r)
+	return req, nil, ok
+}
+
+func (b *Board) handleCreateCard(w http.ResponseWriter, r *http.Request) {
+	req, files, ok := parseCardSubmission(w, r)
+	if r.MultipartForm != nil {
+		defer func() { _ = r.MultipartForm.RemoveAll() }()
+	}
 	if !ok {
 		return
 	}
 
-	card, err := b.createCard(req.Prompt, req.ProjectID)
+	card, err := b.createCard(req.Prompt, req.ProjectID, files)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -413,6 +439,9 @@ func (b *Board) handleClearColumn(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Board) deleteCard(card *Card) error {
+	if err := removeCardAttachments(card.ID); err != nil {
+		return fmt.Errorf("remove card attachments: %w", err)
+	}
 	if err := b.store.DeleteCard(card.ID); err != nil {
 		return fmt.Errorf("delete card: %w", err)
 	}

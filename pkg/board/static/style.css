@@ -1846,6 +1846,51 @@ details[open] > .diff-file-header {
   }
 }
 
+#task-attach {
+  margin-right: auto;
+}
+
+#task-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  margin: 10px 0 0;
+  list-style: none;
+
+  &:empty {
+    display: none;
+  }
+
+  & li {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+    padding-left: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  & span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  & button {
+    flex-shrink: 0;
+  }
+}
+
+#task-upload-status {
+  margin: 8px 0 0;
+  color: var(--danger);
+}
+
 #template-fields {
   border: 0;
   padding: 0;
