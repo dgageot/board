@@ -18,7 +18,12 @@ function harness(hash = '') {
       this.attributes = {};
       this.dataset = {};
       this.style = { setProperty() {} };
-      this.classList = { add() {}, remove() {} };
+      this.classes = new Set();
+      this.classList = {
+        add: (name) => this.classes.add(name),
+        remove: (name) => this.classes.delete(name),
+        toggle: (name, on) => (on ? this.classes.add(name) : this.classes.delete(name)),
+      };
       this.hidden = false;
       this.value = '';
       this.innerHTML = '';
@@ -44,6 +49,7 @@ function harness(hash = '') {
     }
     querySelectorAll() { return []; }
     showModal() { this.open = true; }
+    show() { this.open = true; }
     close() { this.open = false; this.fire('close'); }
     focus() { this.focused = true; }
   }
@@ -57,8 +63,9 @@ function harness(hash = '') {
   document.documentElement = new Element();
   document.createElement = () => new Element();
   document.querySelector = (selector) => {
-    assert.equal(selector, 'dialog[open]');
-    return [...elements.entries()].find(([id, element]) => id.endsWith('-dialog') && element.open)?.[1];
+    assert.equal(selector, 'dialog[open]:not(.dialog-side)');
+    return [...elements.entries()].find(([id, element]) =>
+      id.endsWith('-dialog') && element.open && !element.classes.has('dialog-side'))?.[1];
   };
   document.querySelectorAll = (selector) => selector === 'dialog'
     ? [...elements.entries()].filter(([id]) => id.endsWith('-dialog')).map(([, element]) => element)
@@ -91,7 +98,7 @@ function harness(hash = '') {
   assert.match(source, templatesImport);
   vm.runInContext(templatesSource.replaceAll('export function ', 'function '), context);
   vm.runInContext(source.replace(terminalImport, '').replace(templatesImport, ''), context);
-  return { context, document, get, requests, events, responses };
+  return { context, document, get, requests, events, responses, stored };
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -150,6 +157,38 @@ test('new-task shortcut still respects typing, modifiers and open dialogs', asyn
   h.get('projects-dialog').close();
   h.get('btn-new-task').fire('click');
   assert.equal(h.get('new-task-dialog').open, true);
+});
+
+test('new-task shortcut works beside a side-by-side session but not inside it', async () => {
+  const h = harness();
+  await flush();
+  const terminal = h.get('terminal-dialog');
+  terminal.classList.toggle('dialog-side', true);
+  terminal.show();
+  h.document.fire('keydown', {
+    key: 'n', target: { matches: () => false, closest: () => terminal },
+    preventDefault() { assert.fail('keys typed in the session belong to the agent'); },
+  });
+  assert.ok(!h.get('new-task-dialog').open);
+  h.document.fire('keydown', {
+    key: 'n', target: { matches: () => false, closest: () => null }, preventDefault() {},
+  });
+  assert.equal(h.get('new-task-dialog').open, true);
+});
+
+test('session layout switch defaults to fullscreen, toggles and persists', async () => {
+  const h = harness();
+  await flush();
+  const button = h.get('btn-session-layout');
+  assert.equal(button.getAttribute('aria-pressed'), 'false');
+  button.fire('click');
+  assert.equal(button.getAttribute('aria-pressed'), 'true');
+  assert.equal(h.stored.get('session-layout'), 'side');
+  assert.equal(vm.runInContext('sessionLayout', h.context), 'side');
+  button.fire('click');
+  assert.equal(button.getAttribute('aria-pressed'), 'false');
+  assert.equal(h.stored.get('session-layout'), 'fullscreen');
+  assert.equal(vm.runInContext('sessionLayout', h.context), 'fullscreen');
 });
 
 test('board page has no loops UI or asset dependencies and retains hidden styling', () => {

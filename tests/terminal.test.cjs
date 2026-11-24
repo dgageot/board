@@ -9,7 +9,7 @@ const start = source.indexOf('async function openTerminal(');
 const end = source.indexOf('document.getElementById("close-terminal")', start);
 assert.ok(start >= 0 && end > start);
 
-function harness() {
+function harness({ layout = 'fullscreen' } = {}) {
   let ready;
   const ghosttyReady = new Promise((resolve) => { ready = resolve; });
   const frames = [], terminals = [], sockets = [], listeners = new Set();
@@ -17,9 +17,14 @@ function harness() {
   const timers = new Map();
   let fits = 0, timerId = 0;
   const keyListeners = new Map();
+  const classes = new Set();
   const dialog = {
     open: false,
-    showModal() { this.open = true; },
+    modal: false,
+    classes,
+    classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)) },
+    showModal() { if (this.open) throw new Error('already open'); this.open = true; this.modal = true; },
+    show() { if (this.open) throw new Error('already open'); this.open = true; this.modal = false; },
     addEventListener(type, callback, capture) { keyListeners.set(type, { callback, capture }); },
   };
   const elements = {
@@ -48,6 +53,7 @@ function harness() {
       observe() {} disconnect() { this.disconnected = true; }
     },
     location: { protocol: 'http:', host: 'localhost' },
+    sessionLayout: layout,
   });
   const stateStart = source.indexOf('let activeTerm = null;');
   const stateEnd = source.indexOf('function renderTerminalCardMeta()', stateStart);
@@ -71,6 +77,7 @@ function harness() {
     get fits() { return fits; },
     flushTimers() { for (const [id, f] of timers) { timers.delete(id); f(); } },
     flush() { while (frames.length) frames.shift()(); },
+    dialog,
     close() { dialog.open = false; context.closeTerminal(); },
   };
 }
@@ -181,4 +188,33 @@ test('Ctrl+digit encoding and ordinary keys are unaffected by Escape handling', 
     assert.equal(event.prevented, undefined);
     assert.equal(event.stopped, undefined);
   }
+});
+
+test('fullscreen layout opens the terminal as a modal panel', async () => {
+  const h = harness(); h.ready();
+  await h.context.openTerminal('a', 'A', 'a'); h.flush();
+  assert.equal(h.dialog.modal, true);
+  assert.equal(h.dialog.classes.has('dialog-side'), false);
+});
+
+test('side layout opens a non-modal panel and switches sessions in place', async () => {
+  const h = harness({ layout: 'side' }); h.ready();
+  await h.context.openTerminal('a', 'A', 'a'); h.flush();
+  assert.equal(h.dialog.open, true);
+  assert.equal(h.dialog.modal, false);
+  assert.equal(h.dialog.classes.has('dialog-side'), true);
+
+  await h.context.openTerminal('b', 'B', 'b'); h.flush();
+  assert.equal(h.sockets[0].closed, true);
+  assert.match(h.sockets[1].url, /\/terminal\/b\?/);
+  assert.equal(h.listeners.size, 1);
+});
+
+test('the layout preference applies when the panel next opens', async () => {
+  const h = harness({ layout: 'side' }); h.ready();
+  await h.context.openTerminal('a', 'A', 'a'); h.flush(); h.close();
+  h.context.sessionLayout = 'fullscreen';
+  await h.context.openTerminal('b', 'B', 'b'); h.flush();
+  assert.equal(h.dialog.modal, true);
+  assert.equal(h.dialog.classes.has('dialog-side'), false);
 });
