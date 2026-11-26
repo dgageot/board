@@ -62,6 +62,7 @@ func TestCreateCardSnapshotsProjectInstructions(t *testing.T) {
 	assert.Equal(t, project.Instructions, sessions.calls()[1].instructions)
 	// Resume from the persisted snapshot, even if its project has been deleted.
 	require.NoError(t, store.DeleteProject(project.ID))
+	b.controller.worktreeExists = func(string) bool { return true }
 	require.NoError(t, b.controller.relaunch(stored, "Next column"))
 	require.Len(t, sessions.calls(), 3)
 	assert.Equal(t, card.Instructions, sessions.calls()[2].instructions)

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,6 +67,9 @@ type Controller struct {
 	// prURLForHead finds the PR whose head commit is the worktree's HEAD. It
 	// is a field so tests can inject a fake without a real `gh` and GitHub repo.
 	prURLForHead func(ctx context.Context, worktree string) (string, error)
+	// worktreeExists reports whether a card's worktree is on disk. It is a
+	// field so tests can use placeholder worktree paths.
+	worktreeExists func(path string) bool
 
 	mu       sync.Mutex
 	watchers map[string]*watcher
@@ -95,8 +100,12 @@ func newController(ctx context.Context, store Store, sessions SessionManager, on
 		onChanged:    onChanged,
 		clientFor:    func(socket, session string) sessionClient { return agent.NewClient(socket, session) },
 		prURLForHead: git.PRURLForHead,
-		watchers:     make(map[string]*watcher),
-		expectTurn:   make(map[string]time.Time),
+		worktreeExists: func(path string) bool {
+			info, err := os.Stat(path)
+			return err == nil && info.IsDir()
+		},
+		watchers:   make(map[string]*watcher),
+		expectTurn: make(map[string]time.Time),
 	}
 }
 
@@ -623,8 +632,23 @@ func (c *Controller) SendPrompt(card *Card, prompt string) error {
 // socket. A non-empty prompt is delivered as the resumed session's next
 // message. Launching from the worktree keeps the agent isolated even if
 // docker-agent's own worktree reattachment does not happen.
+//
+// If the first launch died before docker-agent created the worktree, there
+// is nothing to resume: the initial prompt never ran. The first launch is
+// then retried — from the repository, with --worktree and the initial prompt
+// — instead of resuming into a missing directory (tmux would fall back to
+// the home directory) and silently dropping the prompt.
 func (c *Controller) relaunch(card *Card, prompt string) error {
-	log.Printf("card %s: relaunching agent (tmux session %s, agent session %s)", card.ID, card.Session, card.AgentSession)
+	workDir, worktreeName, worktreeBase := card.Worktree, "", ""
+	if c.neverStarted(card) {
+		log.Printf("card %s: first launch never started; retrying it (tmux session %s, agent session %s)", card.ID, card.Session, card.AgentSession)
+		workDir = card.RepoPath
+		worktreeName = filepath.Base(card.Worktree)
+		worktreeBase = git.UpstreamBase(card.RepoPath)
+		prompt = joinPrompts(card.Prompt+stagedAttachmentsSuffix(card.ID), prompt)
+	} else {
+		log.Printf("card %s: relaunching agent (tmux session %s, agent session %s)", card.ID, card.Session, card.AgentSession)
+	}
 	_ = c.sessions.KillSession(card.Session)
 	socket := socketPath(card.AgentSession)
 	// A killed agent (e.g. after a Docker Desktop restart) leaves its control-
@@ -632,8 +656,8 @@ func (c *Controller) relaunch(card *Card, prompt string) error {
 	// otherwise the new agent fails to start and the card stays stuck "starting".
 	_ = os.Remove(socket)
 	err := c.sessions.NewSession(
-		card.Session, card.Worktree, card.Agent, card.AgentSession,
-		socket, "", "", prompt, card.Instructions,
+		card.Session, workDir, card.Agent, card.AgentSession,
+		socket, worktreeName, worktreeBase, prompt, card.Instructions,
 	)
 	if err != nil {
 		log.Printf("card %s: relaunch failed: %v", card.ID, err)
@@ -654,6 +678,25 @@ func (c *Controller) relaunch(card *Card, prompt string) error {
 		c.setStatus(card.ID, StatusStarting)
 	}
 	return nil
+}
+
+// neverStarted reports whether the card's first launch died before running:
+// docker-agent creates the worktree before the first turn, and a generated
+// title proves a turn ran.
+func (c *Controller) neverStarted(card *Card) bool {
+	return !card.TitleGenerated && card.Prompt != "" && card.Worktree != "" && card.RepoPath != "" &&
+		!c.worktreeExists(card.Worktree)
+}
+
+// joinPrompts combines non-empty prompts into one message.
+func joinPrompts(prompts ...string) string {
+	var parts []string
+	for _, p := range prompts {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // sleep waits before retrying, or returns true when ctx is canceled.
