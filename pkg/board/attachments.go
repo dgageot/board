@@ -82,8 +82,7 @@ func stageCardAttachments(cardID string, files []*multipart.FileHeader) (string,
 		return "", err
 	}
 
-	var suffix strings.Builder
-	suffix.WriteString("\n\nFiles attached to this task (use your tools to read them as needed):\n")
+	paths := make([]string, 0, len(files))
 	for i, file := range files {
 		name := filepath.Base(strings.ReplaceAll(file.Filename, `\`, "/"))
 		path := filepath.Join(dir, fmt.Sprintf("%02d-%s", i+1, attachmentFilename(name)))
@@ -91,9 +90,43 @@ func stageCardAttachments(cardID string, files []*multipart.FileHeader) (string,
 			_ = os.RemoveAll(dir)
 			return "", err
 		}
+		paths = append(paths, path)
+	}
+	return attachmentsSuffix(paths), nil
+}
+
+// stagedAttachmentsSuffix rebuilds the prompt suffix for the files already
+// staged for a card, so a first launch that never ran can be retried with the
+// same attachments. Staged names are numbered, so directory order is upload
+// order.
+func stagedAttachmentsSuffix(cardID string) string {
+	dir, err := cardAttachmentDir(cardID)
+	if err != nil {
+		return ""
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Type().IsRegular() {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	return attachmentsSuffix(paths)
+}
+
+func attachmentsSuffix(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	var suffix strings.Builder
+	suffix.WriteString("\n\nFiles attached to this task (use your tools to read them as needed):\n")
+	for _, path := range paths {
 		fmt.Fprintf(&suffix, "- %q\n", path)
 	}
-	return suffix.String(), nil
+	return suffix.String()
 }
 
 func attachmentFilename(name string) string {

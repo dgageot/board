@@ -772,6 +772,58 @@ func TestControllerRelaunchesWhenSessionDead(t *testing.T) {
 	assert.Equal(t, card.Instructions, call.instructions)
 }
 
+// A first launch that died before docker-agent created the worktree never ran
+// the initial prompt: the watcher's relaunch must retry that first launch
+// (from the repo, with --worktree and the prompt) instead of resuming into a
+// missing directory with no prompt.
+func TestControllerRetriesFirstLaunchThatNeverStarted(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	store := openTestStore(t)
+	card := devCard()
+	card.Status = StatusStarting
+	card.Prompt = "Do the work"
+	card.Worktree = filepath.Join(t.TempDir(), "board-abc") // never created
+	require.NoError(t, store.InsertCard(card))
+
+	dir, err := cardAttachmentDir(card.ID)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "01-notes.txt"), []byte("x"), 0o600))
+
+	sessions := newFakeSessionManager()
+	sessions.alive = false
+	c := newTestController(t, store, sessions, &fakeClient{snapErr: errors.New("connection refused")})
+	c.Start(card)
+
+	require.Eventually(t, func() bool { return len(sessions.calls()) > 0 }, time.Second, 5*time.Millisecond)
+	c.Stop(card.ID)
+
+	call := sessions.calls()[0]
+	assert.Equal(t, "rp", call.workDir, "the retried first launch starts from the repository")
+	assert.Equal(t, "board-abc", call.worktreeName, "the retried first launch creates the worktree")
+	assert.Equal(t, "Do the work"+attachmentsSuffix([]string{filepath.Join(dir, "01-notes.txt")}), call.prompt,
+		"the initial prompt and its attachments are delivered")
+}
+
+// A card whose first turn ran resumes normally even if its worktree is gone:
+// replaying the initial prompt would run it twice.
+func TestRelaunchResumesStartedCardWithoutReplayingPrompt(t *testing.T) {
+	store := openTestStore(t)
+	sessions := newFakeSessionManager()
+	c := newTestController(t, store, sessions, &fakeClient{})
+	c.worktreeExists = func(string) bool { return false }
+	card := devCard()
+	card.Prompt = "Do the work"
+	card.TitleGenerated = true
+
+	require.NoError(t, c.relaunch(card, "Next column"))
+
+	call := sessions.calls()[0]
+	assert.Empty(t, call.worktreeName)
+	assert.Equal(t, "Next column", call.prompt)
+}
+
 // A killed agent leaves its control-plane socket file behind; a unix listener
 // cannot bind a path that already exists, so relaunch must remove the stale
 // socket or the resumed run never exposes its control plane.
